@@ -64,13 +64,14 @@ def fmt_args(args: dict, limit: int = 90) -> str:
         return str(args)[:limit]
 
 
-async def run_turn(session_id: str, user_text: str, model: str | None = None) -> int:
+async def run_turn(session_id: str, user_text: str, model: str | None = None,
+                   chat_mode: str = "agent") -> int:
     """Run one user turn, stream to terminal. Returns 0 on success."""
     agent = Agent(store, session_id, model=model)
     demo = config.get_api_key() is None
     if demo and not user_text.startswith("/"):
         console.print("[dim yellow]⚡ DEMO MODE — chưa có API key. Lưu key bằng /key <api>[/dim yellow]")
-    source = send_demo(agent, user_text) if demo else agent.send(user_text)
+    source = send_demo(agent, user_text) if demo else agent.send(user_text, chat_mode=chat_mode)
 
     stream = Text()
     live = Live(console=console, refresh_per_second=12, vertical_overflow="ellipsis")
@@ -155,13 +156,13 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None) ->
     return 0
 
 
-async def run_batch_cli(prompts: list[str], model: str | None = None) -> None:
+async def run_batch_cli(tasks: list[dict], label: str = "⚡ tác vụ song song") -> None:
     """Parallel sub-agents in terminal, output tagged [T#]."""
     demo = config.get_api_key() is None
     console.print(Panel(
-        f"⚡ [bold]{len(prompts)} tác vụ song song[/bold] — mỗi tác vụ 1 session + workspace riêng",
+        f"[bold]{len(tasks)} {label}[/bold] — mỗi tác vụ 1 session + workspace riêng",
         border_style="cyan"))
-    async for ev in run_batch(store, prompts, model=model, demo=demo):
+    async for ev in run_batch(store, tasks, demo=demo):
         if ev["type"] == "task_created":
             console.print(f"  [green]▶ T{ev['index'] + 1}[/green] [dim]{ev['title']}[/dim]")
         elif ev["type"] == "task_event":
@@ -314,6 +315,10 @@ async def interactive(session_id: str | None, model: str | None) -> None:
 async def main_async() -> int:
     ap = argparse.ArgumentParser(prog="forge")
     ap.add_argument("--once", metavar="PROMPT", help="chạy 1 lượt rồi thoát")
+    ap.add_argument("--mode", default="agent", choices=["direct", "agent", "plan"],
+                    help="chế độ làm việc cho --once")
+    ap.add_argument("--battle", metavar="PROMPT", help="⚔ cùng 1 prompt chạy nhiều model song song")
+    ap.add_argument("--models", nargs="+", metavar="MODEL", help="danh sách model cho --battle (tối đa 4)")
     ap.add_argument("--parallel", nargs="+", metavar="TASK", help="chạy song song nhiều tác vụ (sub-agent)")
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL", help="model OpenRouter")
@@ -326,7 +331,14 @@ async def main_async() -> int:
         return 0
 
     if args.parallel:
-        await run_batch_cli(args.parallel[:5], model=args.model)
+        await run_batch_cli([{"prompt": p, "model": args.model or ""} for p in args.parallel[:5]])
+        return 0
+
+    if args.battle:
+        await run_batch_cli(
+            [{"prompt": args.battle, "model": m,
+              "title": f"⚔ {m.split('/')[-1]}"} for m in (args.models or [config.get_model()])][:4],
+            label="⚔ model thi đấu — cùng 1 prompt")
         return 0
 
     model = args.model
@@ -336,7 +348,7 @@ async def main_async() -> int:
         session_id = store.create(model=model or "").id
 
     if args.once:
-        await run_turn(session_id, args.once, model=model)
+        await run_turn(session_id, args.once, model=model, chat_mode=args.mode)
         console.print(f"[dim]Phiên: {session_id}[/dim]")
         return 0
 

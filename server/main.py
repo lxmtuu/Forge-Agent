@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine import config, llm, tools, guard    # noqa: E402
-from engine.agent import Agent, send_demo, run_batch   # noqa: E402
+from engine.agent import Agent, send_demo, run_batch, run_battle   # noqa: E402
 from engine.mcp import manager as mcp_manager, load_servers, save_servers  # noqa: E402
 from engine.session import SessionStore        # noqa: E402
 
@@ -40,6 +40,20 @@ STATIC_DIR = ROOT / "server" / "static"
 class ChatBody(BaseModel):
     text: str
     model: str | None = None
+    mode: str = "agent"  # direct | agent | plan
+
+
+class BattleBody(BaseModel):
+    prompt: str
+    models: list[str] = []
+
+
+class ExecBody(BaseModel):
+    command: str
+
+
+class OpenWorkspaceBody(BaseModel):
+    path: str
 
 
 class SettingsBody(BaseModel):
@@ -273,11 +287,12 @@ async def chat(sid: str, body: ChatBody, request: Request):
 
     demo = config.get_api_key() is None
     model = body.model or None
+    chat_mode = body.mode if body.mode in ("direct", "agent", "plan") else "agent"
 
     async def gen():
         try:
             agent = Agent(store, sid, model=model)
-            source = send_demo(agent, text) if demo else agent.send(text)
+            source = send_demo(agent, text) if demo else agent.send(text, chat_mode=chat_mode)
             async for ev in source:
                 if await request.is_disconnected():
                     return
@@ -309,7 +324,8 @@ async def batch(body: BatchBody, request: Request):
 
     async def gen():
         try:
-            async for ev in run_batch(store, prompts, model=body.model, demo=demo):
+            async for ev in run_batch(store, [{"prompt": p, "model": body.model or ""} for p in prompts],
+                                      demo=demo):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
@@ -322,6 +338,69 @@ async def batch(body: BatchBody, request: Request):
         headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
                  "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/api/battle")
+async def battle(body: BattleBody, request: Request):
+    """⚔ Cùng 1 prompt chạy trên nhiều model song song."""
+    prompt = body.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "Thiếu prompt")
+    demo = config.get_api_key() is None
+
+    async def gen():
+        try:
+            async for ev in run_battle(store, prompt, body.models, demo=demo):
+                if await request.is_disconnected():
+                    return
+                yield sse(ev)
+        except Exception as e:
+            yield sse({"type": "error", "message": f"Lỗi battle: {e}"})
+        yield sse({"type": "done"})
+
+    return StreamingResponse(
+        gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
+                 "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/workspace/exec")
+async def workspace_exec(sid: str, body: ExecBody):
+    """Terminal tích hợp: NGƯỜI DÙNG chạy lệnh trực tiếp trong workspace."""
+    ws = _ws(sid)
+    cmd = body.command.strip()
+    if not cmd:
+        raise HTTPException(400, "Thiếu lệnh")
+    verdict = guard.assess_command(cmd)
+    if verdict["level"] == "danger" and config.load_config().get("approval_mode", "guarded") != "auto":
+        return {"blocked": True, "level": "danger", "reasons": verdict["reasons"],
+                "output": f"BLOCKED: lệnh nguy hiểm ({'; '.join(verdict['reasons'])}). "
+                          "Đổi sang Auto trong ⚙ nếu bạn thực sự muốn chạy."}
+    result = await tools.execute_tool("run_command", {"command": cmd}, ws)
+    return {"blocked": False, "ok": result["ok"], "output": result["output"]}
+
+
+@app.post("/api/workspace/open")
+async def workspace_open(sid: str, body: OpenWorkspaceBody):
+    """Mở một thư mục dự án thật làm workspace. Yêu cầu env FORGE_ALLOW_OPEN=1."""
+    import os
+    if os.environ.get("FORGE_ALLOW_OPEN", "").strip() != "1":
+        raise HTTPException(403,
+                            "Tính năng mở dự án thật đang TẮT vì lý do an toàn. "
+                            "Chạy server với biến môi trường FORGE_ALLOW_OPEN=1 để bật.")
+    _ws(sid)  # ensure session exists
+    try:
+        target = store.open_workspace(sid, body.path)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "workspace": str(target)}
+
+
+@app.post("/api/workspace/close")
+async def workspace_close(sid: str):
+    store.close_workspace(sid)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

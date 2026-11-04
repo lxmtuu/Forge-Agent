@@ -18,14 +18,27 @@ MAX_ITERATIONS = 30
 
 SYSTEM_PROMPT = """You are Forge, an expert AI coding agent running inside the user's \
 workspace (similar to Claude Code / Codex CLI). Today is {date}. Platform: {platform}.
+Workspace directory: {workspace}
+
+OS command rules (CRITICAL - read carefully):
+- If the OS is Windows: commands run in cmd.exe, NOT bash. Use `python` (NEVER `python3` - \
+it does not exist there), `dir` / `type` instead of ls / cat, `findstr` instead of grep, \
+there is no pwd/tail/head. Prefer writing small Python scripts over shell tricks.
+- If the OS is Linux/macOS: use standard POSIX shell commands.
+- NEVER repeat a failing command unchanged. Read the error, fix the cause, change approach.
 
 You operate on files in the current workspace using these tools:
 - list_dir / read_file / write_file / edit_file / search_files
-- run_command: execute bash commands in the workspace (builds, tests, git, scripts)
+- run_command: execute shell commands in the workspace (builds, tests, git, scripts)
 
 Additional tools prefixed with "mcp_" come from external MCP servers connected by the
 user - prefer them when the user's task matches their descriptions. A shell command may
 be BLOCKED by the safety guard; if so, tell the user instead of retrying it.
+
+Git rules: git is available. Commit only when the user asks. Stage only files you changed \
+(`git add <paths>`, never blanket `git add -A` unless asked). Write concise conventional \
+commit messages. NEVER force-push, rewrite history, or push to main without explicit \
+instruction.
 
 Working style:
 1. EXPLORE before you change: list/read relevant files first, understand context.
@@ -33,9 +46,37 @@ Working style:
 3. ACT with tools: prefer write_file/edit_file over printing code in chat; verify your \
 work by running tests or the code when possible.
 4. Be concise in prose. Let the tools do the talking. Never invent file contents - read them.
-5. If a command fails, read the error, fix, and retry (max a few times).
+5. If a command fails, read the error, fix, and retry ONCE with a changed approach.
 6. Finish with a short summary of what changed and how to run it.
+{agents_md}
 """
+
+PLAN_ADDENDUM = """
+
+=== PLAN MODE (READ-ONLY) ===
+You are in PLAN mode: you may ONLY explore (list_dir, read_file, search_files).
+Do NOT create, modify, or delete anything. Do NOT run mutating commands.
+Explore the workspace, then produce: (1) a short understanding of the current state,
+(2) a numbered step-by-step implementation plan with files to touch, (3) risks/unknowns,
+(4) how to verify. The user will review this plan and switch to Agent mode to execute.
+"""
+
+READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files"}
+CHAT_MODES = ("direct", "agent", "plan")
+
+
+def _agents_md_block(workspace: Path) -> str:
+    """Đọc quy tắc dự án từ AGENTS.md (chuẩn Claude Code/Codex/OpenCode)."""
+    for name in ("AGENTS.md", "AGENTS.txt"):
+        p = workspace / name
+        if p.is_file():
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")[:4000]
+                if text.strip():
+                    return f"\n=== PROJECT INSTRUCTIONS ({name}) — follow strictly ===\n{text}\n"
+            except Exception:
+                pass
+    return ""
 
 
 class Agent:
@@ -56,28 +97,44 @@ class Agent:
                 date=datetime.date.today().isoformat(),
                 platform=f"{platform.system()} {platform.release()} ({platform.machine()}) / Python {platform.python_version()}",
                 workspace=str(self.workspace),
+                agents_md=_agents_md_block(self.workspace),
             ),
         }
 
-    async def send(self, user_text: str):
-        """Run one full user turn; async-generator of events."""
+    async def send(self, user_text: str, chat_mode: str = "agent"):
+        """Run one full user turn; async-generator of events.
+
+        chat_mode: "agent" (full loop) | "direct" (no tools) | "plan" (read-only).
+        """
         s = self.session
         s.messages.append({"role": "user", "content": user_text})
         if s.title == "New session":
             s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
         self.store.save(s)
 
-        messages = [self._system_message()] + s.messages
+        if chat_mode not in CHAT_MODES:
+            chat_mode = "agent"
+        sys_msg = self._system_message()
+        if chat_mode == "plan":
+            sys_msg["content"] += PLAN_ADDENDUM
+        messages = [sys_msg] + s.messages
         total_usage = None
         mcp_specs: list[dict] = []
         mcp_routing: dict = {}
-        try:
-            mcp_specs, mcp_routing = await mcp_manager.get_tool_specs()
-            if mcp_routing:
-                yield {"type": "mcp_ready", "tools": list(mcp_routing.keys())}
-        except Exception as e:
-            yield {"type": "error", "message": f"MCP: {e}"}
+        if chat_mode != "direct":
+            try:
+                mcp_specs, mcp_routing = await mcp_manager.get_tool_specs()
+                if mcp_routing:
+                    yield {"type": "mcp_ready", "tools": list(mcp_routing.keys())}
+            except Exception as e:
+                yield {"type": "error", "message": f"MCP: {e}"}
         all_specs = tools.TOOL_SPECS + mcp_specs
+        if chat_mode == "direct":
+            active_specs: list[dict] | None = None
+        elif chat_mode == "plan":
+            active_specs = [sp for sp in all_specs if sp["function"]["name"] in READ_ONLY_TOOLS]
+        else:
+            active_specs = all_specs
 
         try:
             for _ in range(MAX_ITERATIONS):
@@ -85,7 +142,7 @@ class Agent:
                 tool_calls: list[dict] | None = None
                 usage = None
 
-                async for ev in llm.stream_chat(messages, tools=all_specs, model=self.model):
+                async for ev in llm.stream_chat(messages, tools=active_specs, model=self.model):
                     et = ev["type"]
                     if et == "delta":
                         content_parts.append(ev["text"])
@@ -189,27 +246,30 @@ def _accumulate(session_usage: dict, turn_usage: dict | None) -> dict:
     return session_usage
 
 
-async def run_batch(store: SessionStore, prompts: list[str],
-                    model: str | None = None, demo: bool = False):
-    """Parallel sub-agents: each prompt becomes its own session+workspace.
+async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):
+    """Parallel sub-agents. tasks: [{prompt, model?, title?}] (tối đa 5).
 
     Yields: task_created, task_event {index, event}, batch_done {tasks}.
     """
     import asyncio as _aio
 
-    prompts = [p.strip() for p in prompts if p.strip()][:5]
+    tasks = [t for t in tasks if (t.get("prompt") or "").strip()][:5]
     created = []
-    for i, p in enumerate(prompts):
-        s = store.create(model=model or "", title=f"Task {i + 1}: {p[:40]}")
-        created.append((i, s))
-        yield {"type": "task_created", "index": i, "session_id": s.id, "title": s.title}
+    for i, t in enumerate(tasks):
+        prompt = t["prompt"].strip()
+        model = (t.get("model") or "").strip()
+        title = t.get("title") or f"Task {i + 1}: {prompt[:40]}"
+        s = store.create(model=model, title=title)
+        created.append((i, s, prompt, model))
+        yield {"type": "task_created", "index": i, "session_id": s.id,
+               "title": s.title, "model": model}
 
     queue: _aio.Queue = _aio.Queue()
 
-    async def pump(i: int, sid: str) -> None:
+    async def pump(i: int, sid: str, prompt: str, model: str) -> None:
         try:
-            ag = Agent(store, sid, model=model)
-            src = send_demo(ag, prompts[i]) if demo else ag.send(prompts[i])
+            ag = Agent(store, sid, model=model or None)
+            src = send_demo(ag, prompt) if demo else ag.send(prompt)
             async for ev in src:
                 await queue.put((i, ev))
         except Exception as e:
@@ -217,7 +277,7 @@ async def run_batch(store: SessionStore, prompts: list[str],
         finally:
             await queue.put((i, {"type": "task_done", "index": i, "session_id": sid}))
 
-    runners = [_aio.create_task(pump(i, s.id)) for i, s in created]
+    runners = [_aio.create_task(pump(i, s.id, p, m)) for i, s, p, m in created]
     remaining = len(runners)
     while remaining:
         i, ev = await queue.get()
@@ -227,7 +287,20 @@ async def run_batch(store: SessionStore, prompts: list[str],
     for r in runners:
         r.cancel()
     yield {"type": "batch_done",
-           "tasks": [{"index": i, "session_id": s.id, "title": s.title} for i, s in created]}
+           "tasks": [{"index": i, "session_id": s.id, "title": s.title, "model": m}
+                     for i, s, p, m in created]}
+
+
+async def run_battle(store: SessionStore, prompt: str, models: list[str],
+                     demo: bool = False):
+    """⚔ Battle: cùng 1 prompt chạy trên nhiều model song song (mỗi model 1 session + workspace)."""
+    models = [m.strip() for m in models if m.strip()][:4]
+    if not models:
+        models = [config.get_model()]
+    tasks = [{"prompt": prompt, "model": m,
+              "title": f"⚔ {m.split('/')[-1]}: {prompt[:36]}"} for m in models]
+    async for ev in run_batch(store, tasks, demo=demo):
+        yield ev
 
 
 # ---------------------------------------------------------------------------

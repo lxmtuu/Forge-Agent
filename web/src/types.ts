@@ -112,11 +112,13 @@ export type AgentEvent =
 export type TaskDoneEvent = { type: 'task_done'; index: number; session_id: string }
 
 export type BatchEvent =
-  | { type: 'task_created'; index: number; session_id: string; title: string }
+  | { type: 'task_created'; index: number; session_id: string; title: string; model?: string }
   | { type: 'task_event'; index: number; event: AgentEvent | TaskDoneEvent }
-  | { type: 'batch_done'; tasks: { index: number; session_id: string; title: string }[] }
+  | { type: 'batch_done'; tasks: { index: number; session_id: string; title: string; model?: string }[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+export type ChatMode = 'direct' | 'agent' | 'plan' | 'battle'
 
 export interface TaskGroup {
   index: number

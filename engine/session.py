@@ -44,9 +44,33 @@ class SessionStore:
         return config.SESSIONS_DIR / f"{safe}.json"
 
     def workspace(self, sid: str) -> Path:
+        # Nếu phiên được "mở" vào một dự án thật (pointer file), dùng thư mục đó.
+        ptr = config.WORKSPACES_DIR / f"{sid}.path"
+        if ptr.exists():
+            try:
+                target = Path(ptr.read_text(encoding="utf-8").strip())
+                if target.is_dir():
+                    return target
+            except Exception:
+                pass
         ws = config.WORKSPACES_DIR / sid
         ws.mkdir(parents=True, exist_ok=True)
         return ws
+
+    def open_workspace(self, sid: str, path: str) -> Path:
+        """Trỏ workspace của phiên tới một thư mục có thật (project thật)."""
+        target = Path(path).expanduser().resolve()
+        if not target.is_dir():
+            raise ValueError(f"Thư mục không tồn tại: {path}")
+        config.ensure_dirs()
+        ptr = config.WORKSPACES_DIR / f"{sid}.path"
+        ptr.write_text(str(target), encoding="utf-8")
+        return target
+
+    def close_workspace(self, sid: str) -> None:
+        ptr = config.WORKSPACES_DIR / f"{sid}.path"
+        if ptr.exists():
+            ptr.unlink()
 
     # -- CRUD ---------------------------------------------------------------
     def create(self, model: str = "", title: str = "New session") -> Session:

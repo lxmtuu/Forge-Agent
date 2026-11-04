@@ -21,7 +21,10 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--repl", action="store_true", help="REPL terminal đơn giản")
     ap.add_argument("--once", metavar="PROMPT", help="chạy 1 lượt rồi thoát")
-    ap.add_argument("--parallel", nargs="+", metavar="TASK", help="sub-agent song song (tối đa 5)")
+    ap.add_argument("--mode", default="agent", choices=["direct", "agent", "plan"],
+                    help="chế độ làm việc cho --once")
+    ap.add_argument("--battle", metavar="PROMPT", help="⚔ cùng 1 prompt chạy nhiều model song song")
+    ap.add_argument("--models", nargs="+", metavar="MODEL", help="danh sách model cho --battle")
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL")
     ap.add_argument("--list-sessions", action="store_true")
@@ -45,17 +48,23 @@ def main() -> int:
         uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
         return 0
 
-    if args.once or args.parallel:
+    if args.once or args.parallel or args.battle:
         from cli.main import run_batch_cli, run_turn
         from engine.session import SessionStore
 
         async def _go() -> None:
             store = SessionStore()
-            if args.parallel:
-                await run_batch_cli(args.parallel[:5], model=args.model)
+            if args.battle:
+                models = args.models or [args.model or __import__("engine.config", fromlist=["get_model"]).get_model()]
+                await run_batch_cli(
+                    [{"prompt": args.battle, "model": m, "title": f"⚔ {m.split('/')[-1]}"}
+                     for m in models[:4]],
+                    label="⚔ model thi đấu — cùng 1 prompt")
+            elif args.parallel:
+                await run_batch_cli([{"prompt": p, "model": args.model or ""} for p in args.parallel[:5]])
             else:
                 sid = args.session or store.create(model=args.model or "").id
-                await run_turn(sid, args.once, model=args.model)
+                await run_turn(sid, args.once, model=args.model, chat_mode=args.mode)
                 print(f"Phiên: {sid}")
         asyncio.run(_go())
         return 0

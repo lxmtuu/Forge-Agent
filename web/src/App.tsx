@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { uid } from './types'
-import type { AgentEvent, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage } from './types'
+import type { AgentEvent, ChatMode, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage } from './types'
 import { Sidebar } from './components/Sidebar'
 import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
@@ -109,6 +109,8 @@ export default function App() {
   const [parallel, setParallel] = useState(false)
   const [batch, setBatch] = useState<TaskGroup[] | null>(null)
   const [sessionUsage, setSessionUsage] = useState<Usage | null>(null)
+  const [chatMode, setChatMode] = useState<ChatMode>('agent')
+  const [battleModels, setBattleModels] = useState('openrouter/free, google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash')
 
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -176,15 +178,25 @@ export default function App() {
     setStreaming(true)
 
     try {
-      if (parallel) {
-        const prompts = text.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 5)
+      if (parallel || chatMode === 'battle') {
+        const isBattle = chatMode === 'battle'
+        const prompts = isBattle ? [text] : text.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 5)
         if (!prompts.length) return
         setItems([])
-        setBatch(prompts.map((p, i) => ({
-          index: i, sessionId: '', title: p, status: 'running' as const,
-          items: [{ kind: 'user', id: uid(), text: p } as Item],
-        })))
-        await api.batchStream(prompts, (ev) => {
+        if (isBattle) {
+          const models = battleModels.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4)
+          if (!models.length) { setErrorBanner('Battle cần ít nhất 1 model'); return }
+          setBatch(models.map((m, i) => ({
+            index: i, sessionId: '', title: m, status: 'running' as const,
+            items: [{ kind: 'user', id: uid(), text } as Item],
+          })))
+        } else {
+          setBatch(prompts.map((p, i) => ({
+            index: i, sessionId: '', title: p, status: 'running' as const,
+            items: [{ kind: 'user', id: uid(), text: p } as Item],
+          })))
+        }
+        const onBatch = (ev: BatchEvent) => {
           if (ev.type === 'task_created') {
             setBatch((prev) => prev?.map((g) => g.index === ev.index ? { ...g, sessionId: ev.session_id } : g) ?? null)
           } else if (ev.type === 'task_event') {
@@ -201,10 +213,12 @@ export default function App() {
           } else if (ev.type === 'error') {
             setErrorBanner(ev.message)
           }
-        }, ac.signal)
+        }
+        if (isBattle) await api.battleStream(text, battleModels.split(',').map((s) => s.trim()).filter(Boolean), onBatch, ac.signal)
+        else await api.batchStream(prompts, onBatch, ac.signal)
       } else {
         setItems((prev) => [...prev, { kind: 'user', id: uid(), text }])
-        await api.streamChat(sid, text, (ev: AgentEvent) => {
+        await api.streamChat(sid, text, chatMode, (ev: AgentEvent) => {
           if (ev.type === 'turn_end') {
             if (ev.session_usage) setSessionUsage(ev.session_usage)
             return
@@ -391,7 +405,8 @@ export default function App() {
                   {g.status === 'running' ? 'đang chạy…' : g.status}
                 </span>
                 <b>Task {g.index + 1}</b>
-                <span className="batch-title">{g.title}</span>
+                <span className="batch-title">{g.title.replace(/^⚔ [^:]+: /, '')}</span>
+                {/⚔ /.test(g.title) && <span className="model-tag">{g.title.replace(/^⚔ ([^:]+):.*/, '$1')}</span>}
                 {g.sessionId && <code className="batch-sid">{g.sessionId}</code>}
               </div>
               <div className="batch-body">{g.items.map(renderItem)}</div>
@@ -415,27 +430,46 @@ export default function App() {
               DEMO MODE — chưa có OpenRouter API key. Agent vẫn chạy tool thật, nhưng "não" là kịch bản mẫu. Nhập key ở ⚙ để kích hoạt model thật.
             </div>
           )}
+          <div className="mode-chips">
+            {([
+              ['direct', '💬', 'Trực tiếp', 'Chat thuần — không dùng tool, nhanh và rẻ'],
+              ['agent', '🤖', 'Agent', 'Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi'],
+              ['plan', '📋', 'Kế hoạch', 'Chỉ đọc + xuất kế hoạch, không sửa gì — duyệt xong chuyển Agent'],
+              ['battle', '⚔', 'Battle', 'Cùng 1 prompt chạy N model song song, chọn phiên thắng'],
+            ] as [ChatMode, string, string, string][]).map(([m, icon, label, tip]) => (
+              <button key={m} className={`mode-chip ${chatMode === m ? 'on' : ''}`} title={tip}
+                onClick={() => setChatMode(m)}>{icon} {label}</button>
+            ))}
+            <span className="mode-sep" />
+            <button className={`mode-chip ${parallel ? 'on' : ''}`}
+              title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ trên)"
+              onClick={() => setParallel(!parallel)}>⚡ Song song</button>
+          </div>
+          {chatMode === 'battle' && (
+            <input className="battle-models" value={battleModels}
+              onChange={(e) => setBattleModels(e.target.value)}
+              placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
+          )}
           <div className="composer-row">
-            <button
-              className={`btn-mode ${parallel ? 'on' : ''}`}
-              title="Chế độ sub-agent song song: mỗi dòng trong ô nhập là 1 tác vụ (tối đa 5), chạy đồng thời ở workspace riêng"
-              onClick={() => setParallel(!parallel)}
-            >⚡<span>{parallel ? 'Song song' : 'Thường'}</span></button>
             <textarea
               value={input}
               placeholder={streaming
                 ? 'Agent đang làm việc…'
-                : parallel
-                  ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
-                  : 'Nhập nhiệm vụ… (Enter gửi · Shift+Enter xuống dòng)'}
+                : chatMode === 'battle'
+                  ? 'Nhiệm vụ thi đấu… (Enter gửi)'
+                  : parallel
+                    ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
+                    : chatMode === 'direct' ? 'Hỏi gì đó… (Enter gửi)'
+                      : chatMode === 'plan' ? 'Mô tả tính năng cần lập kế hoạch…'
+                        : 'Nhập nhiệm vụ… (Enter gửi · Shift+Enter xuống dòng)'}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.key === 'Enter' && !e.shiftKey && !parallel) ||
+                if ((e.key === 'Enter' && !e.shiftKey && (!parallel || chatMode === 'battle')) ||
                     (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
                   e.preventDefault(); send()
                 }
               }}
-              rows={parallel ? Math.min(6, Math.max(3, input.split('\n').length)) : Math.min(6, input.split('\n').length)}
+              rows={parallel && chatMode !== 'battle' ? Math.min(6, Math.max(3, input.split('\n').length)) : Math.min(6, input.split('\n').length)}
             />
             {streaming
               ? <button className="btn-stop" onClick={stop}>■ Dừng</button>
@@ -450,6 +484,7 @@ export default function App() {
       </main>
 
       <FilesPane
+        sid={sid ?? ''}
         tree={tree}
         selected={fileSel}
         content={fileContent}

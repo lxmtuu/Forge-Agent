@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
+import { api } from '../api'
 import type { FileNode } from '../types'
 
 function TreeRow(props: {
@@ -32,7 +33,63 @@ function TreeRow(props: {
   )
 }
 
+function Terminal({ sid }: { sid: string }) {
+  const [cmd, setCmd] = useState('')
+  const [out, setOut] = useState('')
+  const [busy, setBusy] = useState(false)
+  const histRef = useRef<string[]>([])
+  const histIdx = useRef(-1)
+  const outRef = useRef<HTMLPreElement>(null)
+
+  async function run() {
+    const c = cmd.trim()
+    if (!c || busy) return
+    setCmd('')
+    histRef.current.unshift(c)
+    histIdx.current = -1
+    setBusy(true)
+    setOut((o) => `${o}$ ${c}\n`)
+    try {
+      const r = await api.exec(sid, c)
+      const text = r.blocked ? `⛔ ${r.output}` : (r.output || '(no output)')
+      setOut((o) => `${o}${text}\n`)
+    } catch (e) {
+      setOut((o) => `${o}⚠ ${String(e)}\n`)
+    } finally {
+      setBusy(false)
+      requestAnimationFrame(() => { if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight })
+    }
+  }
+
+  return (
+    <div className="term">
+      <div className="term-head">TERMINAL</div>
+      <pre className="term-out" ref={outRef}>{out || '(gõ lệnh để chạy trong workspace — ví dụ: dir / ls)'} </pre>
+      <div className="term-row">
+        <span className="term-ps1">$</span>
+        <input
+          value={cmd}
+          disabled={busy}
+          placeholder={busy ? 'đang chạy…' : 'lệnh…'}
+          onChange={(e) => setCmd(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); run() }
+            else if (e.key === 'ArrowUp' && histRef.current.length) {
+              histIdx.current = Math.min(histIdx.current + 1, histRef.current.length - 1)
+              setCmd(histRef.current[histIdx.current])
+            } else if (e.key === 'ArrowDown') {
+              histIdx.current = Math.max(histIdx.current - 1, -1)
+              setCmd(histIdx.current >= 0 ? histRef.current[histIdx.current] : '')
+            }
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function FilesPane(props: {
+  sid: string
   tree: FileNode[]
   selected: string | null
   content: string | null
@@ -88,6 +145,7 @@ export function FilesPane(props: {
           />
         </div>
       )}
+      <Terminal sid={props.sid} />
     </div>
   )
 }

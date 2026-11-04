@@ -129,12 +129,32 @@ export const api = {
     }).then((r) => j<{ ok: boolean }>(r)),
 
   /** POST chat and stream SSE events (proxy-safe, abortable). */
-  streamChat: (sid: string, text: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal) =>
-    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text }, onEvent, signal),
+  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal) =>
+    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode }, onEvent, signal),
 
   /** Parallel sub-agents: one prompt per line/task. */
   batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
     sseRequest<BatchEvent>('/api/batch', { prompts }, onEvent, signal),
+
+  /** ⚔ Battle: cùng 1 prompt chạy trên nhiều model song song. */
+  battleStream: (prompt: string, models: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
+    sseRequest<BatchEvent>('/api/battle', { prompt, models }, onEvent, signal),
+
+  /** Terminal tích hợp: chạy lệnh trong workspace. */
+  exec: (sid: string, command: string) =>
+    fetch(`/api/workspace/exec?sid=${encodeURIComponent(sid)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    }).then((r) => j<{ blocked: boolean; ok?: boolean; output: string }>(r)),
+
+  /** Mở thư mục dự án thật làm workspace (cần FORGE_ALLOW_OPEN=1). */
+  openWorkspace: (sid: string, path: string) =>
+    fetch(`/api/workspace/open?sid=${encodeURIComponent(sid)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }).then((r) => j<{ ok: boolean; workspace: string }>(r)),
 
   resolveApproval: (aid: string, decision: 'approve' | 'approve_always' | 'deny') =>
     fetch(`/api/approvals/${encodeURIComponent(aid)}`, {

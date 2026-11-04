@@ -45,6 +45,23 @@ Một engine duy nhất, **ba hình thái phần mềm** (chi tiết: BUILD_DESK
 `search_files` (grep) · `run_command` (bash, timeout, giới hạn output) ·
 **+ mọi tool từ MCP servers bên ngoài** (tự động namespace `mcp_<server>_<tool>`).
 
+### 🎛 4 chế độ làm việc (v0.6)
+| Chế độ | Hành vi |
+|---|---|
+| 💬 **Direct** | Chat thuần không tool — hỏi đáp nhanh, rẻ |
+| 🤖 **Agent** | Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi |
+| 📋 **Plan** | Chỉ ĐỌC (list/read/search) + xuất kế hoạch chi tiết — không sửa gì; duyệt xong chuyển Agent thực thi (kiểu Cline/OpenCode Plan/Act) |
+| ⚔ **Battle** | Cùng 1 prompt chạy song song trên tối đa 4 model, mỗi model 1 session+workspace, xem side-by-side rồi chọn phiên thắng cuộc (duy nhất ở Forge!) |
+
+Kèm theo: **Terminal tích hợp** trong panel Files (bạn gõ lệnh chạy trực tiếp trong
+workspace, vẫn qua guard), **AGENTS.md** (quy tắc dự án chuẩn Codex/OpenCode — đặt
+file này vào workspace là agent tuân theo), và **mở dự án thật** làm workspace qua
+`POST /api/workspace/open` (bật bằng env `FORGE_ALLOW_OPEN=1`).
+
+CLI/TUI: `forge --battle "prompt" --models m1 m2 m3` · `forge --once "..." --mode plan`.
+
+Định hướng sản phẩm chi tiết: **PRODUCT_DIRECTION.md**.
+
 Mọi đường dẫn file bị chặn thoát khỏi workspace của phiên; lệnh shell chạy với
 timeout 30s (tối đa 120s) và output bị cắt ở 12k ký tự.
 
