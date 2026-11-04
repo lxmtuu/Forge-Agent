@@ -71,6 +71,18 @@ export interface Settings {
   deny_commands: string[]
 }
 
+export interface ContextStats {
+  messages: number
+  chars: number
+  est_tokens: number
+  limit: number
+  percent: number | null
+  memory: boolean
+}
+
+export interface DoctorCheck { name: string; ok: boolean; detail: string }
+export interface DoctorReport { checks: DoctorCheck[]; ok: boolean; summary: string }
+
 export interface KeyCheckResult {
   valid: boolean
   label?: string

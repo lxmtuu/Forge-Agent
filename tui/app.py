@@ -1,6 +1,7 @@
 """Forge TUI — full-screen terminal app (opencode-style): chat + sessions + files + status."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, ListView, ListItem, Markdown, Static, Tree
+from rich.text import Text as RichText
 
 from engine import approvals, config, tools
 from engine.agent import Agent, compact_session, init_agents_md, send_demo
@@ -32,6 +34,27 @@ def _walk_tree(node, path, depth=0):
                 _walk_tree(branch, e, depth + 1)
         else:
             node.add_leaf(f"📄 {e.name}")
+
+
+def _diff_rich(diff: str, max_lines: int = 40) -> RichText:
+    """Unified diff → rich Text màu (+ xanh, - đỏ, @@ cyan)."""
+    out = RichText()
+    lines = diff.split("\n")
+    for i, ln in enumerate(lines[:max_lines]):
+        if ln.startswith("+++") or ln.startswith("---"):
+            out.append(ln + "\n", style="dim")
+        elif ln.startswith("@@"):
+            out.append(ln + "\n", style="cyan")
+        elif ln.startswith("+"):
+            out.append(ln + "\n", style="green")
+        elif ln.startswith("-"):
+            out.append(ln + "\n", style="red")
+        else:
+            out.append(ln + "\n", style="grey50")
+    if len(lines) > max_lines:
+        out.append(f"… còn {len(lines) - max_lines} dòng (mở web để xem đầy đủ)\n",
+                   style="italic grey50")
+    return out
 
 
 class ApprovalModal(ModalScreen[None]):
@@ -324,8 +347,9 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /usage /files /quit · Gõ @file.py để đính kèm file · "
-                          "Custom: .forge/commands/<tên>.md → gõ /<tên> [args]",
+                          "/profile [tên] /context /memory /doctor /agents /run <tên> <task> "
+                          "/usage /files /quit · @file.py đính file · "
+                          "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
                           cls="sys-line")
         elif cmd == "/new":
             self.new_session()
@@ -376,6 +400,47 @@ class ForgeTUI(App):
             self.refresh_files()
         elif cmd in ("/quit", "/exit"):
             self.exit()
+        elif cmd == "/context":
+            if self.agent:
+                ctx = self.agent.context_stats()
+                pct = f"{ctx['percent']}%" if ctx["percent"] is not None else "∞"
+                lim = f"{ctx['limit']:,}" if ctx["limit"] else "không giới hạn"
+                self.add_line(f"🧠 Context: {pct} ({ctx['chars']:,} ký tự ≈ {ctx['est_tokens']:,} "
+                              f"tokens / {lim}) · {ctx['messages']} tin · "
+                              f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
+        elif cmd == "/memory":
+            if self.agent:
+                mp = self.agent.workspace / "MEMORY.md"
+                if mp.exists():
+                    self.add_line("🧠 MEMORY.md:\n" + mp.read_text(encoding="utf-8",
+                                  errors="replace")[:1500], cls="sys-line")
+                else:
+                    self.add_line("(chưa có MEMORY.md — agent tự ghi qua tool memory_save)",
+                                  cls="sys-line")
+        elif cmd == "/doctor":
+            from engine.diagnostics import doctor
+            self.add_line("🩺 Đang chẩn đoán…", cls="sys-line")
+
+            async def _doctor() -> None:
+                rep = await doctor(store)
+                for c in rep["checks"]:
+                    self.add_line(("✓ " if c["ok"] else "✗ ") + f"{c['name']} — {c['detail']}",
+                                  cls="tool-ok" if c["ok"] else "tool-bad")
+                self.add_line(rep["summary"], cls="sys-line")
+            asyncio.create_task(_doctor())
+        elif cmd == "/agents":
+            from engine import agents as fagents
+            ws = self.agent.workspace if self.agent else Path.cwd()
+            rows = fagents.list_agents(ws)
+            if not rows:
+                self.add_line("(chưa có custom agent — tạo .forge/agents/<tên>.md)", cls="sys-line")
+            for r in rows:
+                self.add_line(f"🤖 {r['name']} — {r['description'] or '(không mô tả)'}", cls="sys-line")
+        elif cmd.startswith("/run ") or cmd == "/run":
+            if self.busy:
+                self.add_line("⏳ Đang chạy — chờ xong đã.", cls="sys-line")
+            else:
+                self.run_turn(text)
         elif cmd == "/fork":
             if self._require_idle():
                 ns = store.fork(self.sid)
@@ -501,6 +566,9 @@ class ForgeTUI(App):
                         w.remove_class("tool-line")
                         w.add_class(cls)
                         w.update(f"{mark} {ev['name']} — {out}")
+                    if ev.get("diff"):
+                        self.add_line("", cls="sys-line").update(
+                            _diff_rich(ev["diff"]))
                     self.refresh_files()
                 elif t == "approval_request":
                     self.app.push_screen(ApprovalModal(ev["id"], ev["command"],

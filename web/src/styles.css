@@ -563,3 +563,29 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .elic-btn.bad:hover { background: var(--red-soft); }
 .elic-btn.dim:hover { color: var(--text); }
 .elic-done { margin-top: 8px; color: var(--dim); }
+
+/* ═══ v0.10: themes (áp qua <html data-theme>) ═══ */
+[data-theme='light'] {
+  --bg: #f4f2ee; --panel: #ffffff; --panel2: #eceae5; --panel3: #e0ddd6;
+  --border: #d6d2c8; --border-soft: #e3e0d8;
+  --text: #2b2a27; --dim: #6f6c64; --faint: #a09d94;
+  --accent: #c8591f; --accent-bright: #a84a17; --accent-soft: rgba(200, 89, 31, 0.1);
+  --green: #1a7f4b; --green-soft: rgba(26, 127, 75, 0.1);
+  --red: #c9372c; --red-soft: rgba(201, 55, 44, 0.08);
+  --yellow: #9a6b0a; --yellow-soft: rgba(154, 107, 10, 0.1);
+  --cyan: #0f7f96;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb { background: #c9c5ba; border-color: var(--bg); }
+[data-theme='light'] .who, [data-theme='light'] .mini-label { color: var(--dim); }
+
+[data-theme='amber'] {
+  --bg: #0d0a06; --panel: #141009; --panel2: #1c160c; --panel3: #251d10;
+  --border: #33270f; --border-soft: #2a2010;
+  --text: #ffb454; --dim: #b57f2e; --faint: #7a5620;
+  --accent: #ff9e2c; --accent-bright: #ffc06e; --accent-soft: rgba(255, 158, 44, 0.12);
+  --green: #9acd6a; --green-soft: rgba(154, 205, 106, 0.1);
+  --red: #ff6b57; --red-soft: rgba(255, 107, 87, 0.1);
+  --yellow: #ffd166; --yellow-soft: rgba(255, 209, 102, 0.1);
+  --cyan: #e8a34d;
+}
+[data-theme='amber'] ::-webkit-scrollbar-thumb { background: #33270f; border-color: var(--bg); }

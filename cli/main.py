@@ -70,14 +70,47 @@ def fmt_args(args: dict, limit: int = 90) -> str:
 
 
 async def run_turn(session_id: str, user_text: str, model: str | None = None,
-                   chat_mode: str = "agent") -> int:
-    """Run one user turn, stream to terminal. Returns 0 on success."""
+                   chat_mode: str = "agent", json_out: bool = False) -> int:
+    """Run one user turn. json_out=True: không render, in JSON cuối (headless)."""
     agent = Agent(store, session_id, model=model)
+    # /run <tên> <task> — custom agent
+    from engine import agents as fagents
+    ag = fagents.expand(user_text, agent.workspace)
+    if ag is not None:
+        user_text, ag_model, ag_mode = ag
+        model = ag_model or model
+        chat_mode = ag_mode or chat_mode
+        if not json_out:
+            console.print(f"[dim]🤖 Custom agent «{ag[0].split('«')[1].split('»')[0]}»[/dim]")
     from engine import atfiles
     user_text, attached = atfiles.expand_at_refs(user_text, agent.workspace)
-    if attached:
+    if attached and not json_out:
         console.print(f"[dim]📎 Đã đính kèm: {', '.join('@' + a for a in attached)}[/dim]")
     demo = config.get_api_key() is None
+    if json_out:
+        # ---- headless JSON mode: thu thập, không render ----
+        import json as _json
+        src = send_demo(agent, user_text) if demo else agent.send(user_text, chat_mode=chat_mode)
+        result: dict = {"session": session_id, "text": "", "tools": [], "usage": None, "error": None}
+        try:
+            async for ev in src:
+                t = ev["type"]
+                if t == "assistant_message":
+                    result["text"] = ev.get("content") or result["text"]
+                elif t == "tool_result":
+                    result["tools"].append({"name": ev.get("name"),
+                                            "ok": ev.get("ok"),
+                                            "output": (ev.get("output") or "")[:1000]})
+                elif t == "usage":
+                    result["usage"] = ev.get("usage")
+                elif t == "turn_end":
+                    result["usage"] = ev.get("usage") or result["usage"]
+                elif t == "error":
+                    result["error"] = ev.get("message")
+        finally:
+            store.save(store.get(session_id))
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["error"] is None else 1
     if demo and not user_text.startswith("/"):
         console.print("[dim yellow]⚡ DEMO MODE — chưa có API key. Lưu key bằng /key <api>[/dim yellow]")
     source = send_demo(agent, user_text) if demo else agent.send(user_text, chat_mode=chat_mode)
@@ -360,6 +393,47 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             else:
                 console.print(f"  [red]⚠ Không có profile «{arg}»[/red] — xem /profile")
             continue
+        if text == "/context":
+            agent = Agent(store, session_id, model=model)
+            ctx = agent.context_stats()
+            pct = f"{ctx['percent']}%" if ctx["percent"] is not None else "∞"
+            lim = f"{ctx['limit']:,}" if ctx["limit"] else "không giới hạn"
+            console.print(f"  🧠 Context: [bold]{pct}[/bold] ({ctx['chars']:,} ký tự ≈ "
+                          f"{ctx['est_tokens']:,} tokens / {lim}) · {ctx['messages']} tin nhắn · "
+                          f"memory: {'✓' if ctx['memory'] else '—'}")
+            continue
+        if text == "/memory":
+            agent = Agent(store, session_id, model=model)
+            mp = agent.workspace / "MEMORY.md"
+            if mp.exists():
+                console.print(f"  [dim]{mp}[/dim]")
+                console.print(mp.read_text(encoding="utf-8", errors="replace"))
+            else:
+                console.print("  (chưa có MEMORY.md — agent tự ghi qua tool memory_save)")
+            continue
+        if text == "/doctor":
+            from engine.diagnostics import doctor
+            rep = await doctor(store)
+            for c in rep["checks"]:
+                style = "green" if c["ok"] else "red"
+                console.print(f"  [{style}]{'✓' if c['ok'] else '✗'}[/{style}] "
+                              f"[bold]{c['name']}[/bold] — {c['detail']}")
+            console.print(f"  [bold]{rep['summary']}[/bold]")
+            continue
+        if text == "/agents":
+            from engine import agents as fagents
+            agent = Agent(store, session_id, model=model)
+            rows = fagents.list_agents(agent.workspace)
+            if not rows:
+                console.print("  (chưa có custom agent — tạo .forge/agents/<tên>.md với "
+                              "frontmatter description/model/mode)")
+            for r in rows:
+                console.print(f"  🤖 [bold]{r['name']}[/bold] — {r['description'] or '(không mô tả)'}"
+                              + (f" · {r['model']}" if r["model"] else ""))
+            continue
+        if text.startswith("/run "):
+            await run_turn(session_id, text, model=model)  # expand trong run_turn
+            continue
         if text == "/fork":
             ns = store.fork(session_id)
             if ns:
@@ -407,6 +481,8 @@ async def main_async() -> int:
     ap.add_argument("--profile", metavar="NAME", help="dùng profile trong data/config.json (vd: safe)")
     ap.add_argument("--list-sessions", action="store_true")
     ap.add_argument("--demo", action="store_true", help="ép chạy demo (bỏ qua API key)")
+    ap.add_argument("--json", action="store_true",
+                    help="(--once) đầu ra JSON structured cho script/CI thay vì render")
     args = ap.parse_args()
 
     if args.profile:
@@ -439,9 +515,8 @@ async def main_async() -> int:
         session_id = store.create(model=model or "").id
 
     if args.once:
-        await run_turn(session_id, args.once, model=model, chat_mode=args.mode)
-        console.print(f"[dim]Phiên: {session_id}[/dim]")
-        return 0
+        return await run_turn(session_id, args.once, model=model, chat_mode=args.mode,
+                              json_out=args.json)
 
     await interactive(session_id, model)
     return 0

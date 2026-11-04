@@ -79,7 +79,7 @@ class LspSession:
         self._wlock = asyncio.Lock()
         self._reader_task: asyncio.Task | None = None
         self._init_ok = False
-        self._init_resp = 0
+        self._pending: dict[int, asyncio.Future] = {}  # id → future (response)
 
     # ---- framing Content-Length ------------------------------------------
     async def _send(self, obj: dict) -> None:
@@ -105,16 +105,19 @@ class LspSession:
             pass
 
     def _on_message(self, msg: dict) -> None:
+        mid = msg.get("id")
+        if mid is not None and mid in self._pending:
+            fut = self._pending.pop(mid)
+            if not fut.done():
+                fut.set_result(msg.get("result"))
+            return
         if msg.get("method") == "textDocument/publishDiagnostics":
             params = msg.get("params") or {}
             uri = params.get("uri", "")
             self.diags[uri] = params.get("diagnostics") or []
             self.diag_ts[uri] = time.time()
-        elif msg.get("method") and msg.get("id") is not None:
+        elif msg.get("method") and mid is not None:
             self._handle_server_request(msg)
-        elif msg.get("id") is not None:
-            # response cho request của ta (vd initialize)
-            self._init_resp = msg.get("id")
 
     async def _reader(self) -> None:
         assert self.proc and self.proc.stdout
@@ -145,6 +148,18 @@ class LspSession:
         except Exception:
             pass
 
+    async def _request(self, method: str, params: dict, timeout: float = 15.0):
+        """Gửi request và chờ response (future được reader set)."""
+        self._rid += 1
+        rid = self._rid
+        fut: asyncio.Future = asyncio.get_event_loop().create_future()
+        self._pending[rid] = fut
+        await self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        finally:
+            self._pending.pop(rid, None)
+
     # ---- lifecycle ---------------------------------------------------------
     async def start(self) -> bool:
         try:
@@ -155,27 +170,13 @@ class LspSession:
                 cwd=str(self.workspace),
             )
             self._reader_task = asyncio.get_event_loop().create_task(self._reader())
-            self._rid += 1
-            await self._send({
-                "jsonrpc": "2.0", "id": self._rid, "method": "initialize",
-                "params": {
-                    "processId": None,
-                    "rootUri": self.workspace.as_uri(),
-                    "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
-                    "clientInfo": {"name": "forge-agent", "version": "0.9.0"},
-                },
-            })
-            deadline = time.time() + 15
-            rid = self._rid
-            while time.time() < deadline:
-                if self.proc.returncode is not None:
-                    return False
-                # initialize response đi qua _on_message? — không: response là msg có id==rid
-                # ta kiểm tra qua cờ: reader đánh dấu
-                if getattr(self, "_init_resp", None) == rid:
-                    break
-                await asyncio.sleep(0.05)
-            else:
+            result = await self._request("initialize", {
+                "processId": None,
+                "rootUri": self.workspace.as_uri(),
+                "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
+                "clientInfo": {"name": "forge-agent", "version": "0.10.0"},
+            }, timeout=15)
+            if result is None:
                 return False
             await self._send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
             self._init_ok = True
@@ -211,6 +212,46 @@ class LspSession:
                 "params": {"textDocument": {"uri": uri, "languageId": self.lang,
                                             "version": ver, "text": text}},
             })
+
+    SYMBOL_KIND = {1: "File", 2: "Module", 3: "Namespace", 4: "Package", 5: "Class",
+                   6: "Method", 7: "Property", 8: "Field", 9: "Constructor", 10: "Enum",
+                   11: "Interface", 12: "Function", 13: "Variable", 14: "Constant",
+                   15: "String", 16: "Number", 17: "Boolean", 18: "Array", 22: "Struct",
+                   23: "Event", 24: "Operator", 25: "TypeParameter"}
+
+    async def symbols(self, path: Path, timeout: float = 10.0) -> list[dict]:
+        """documentSymbol → danh sách phẳng {name, kind, line, depth}."""
+        uri = path.as_uri()
+        if uri not in self.opened:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+                await self.refresh_file(path, text)
+            except OSError:
+                return []
+        result = await self._request("textDocument/documentSymbol",
+                                     {"textDocument": {"uri": uri}}, timeout=timeout)
+        out: list[dict] = []
+
+        def walk(items, depth):
+            for it in items or []:
+                if not isinstance(it, dict):
+                    continue
+                if "location" in it:  # DocumentSymbol flat
+                    line = it["location"]["range"]["start"]["line"] + 1
+                    children = []
+                else:
+                    line = (it.get("range", {}).get("start", {}).get("line", 0)) + 1
+                    children = it.get("children") or []
+                out.append({"name": it.get("name", "?"),
+                            "kind": self.SYMBOL_KIND.get(it.get("kind"), "Symbol"),
+                            "line": line, "depth": depth})
+                walk(children, depth + 1)
+
+        try:
+            walk(result if isinstance(result, list) else [], 0)
+        except Exception:
+            pass
+        return out[:200]
 
     def normalized(self, uri: str) -> list[dict]:
         sev = {1: "error", 2: "warning", 3: "info", 4: "hint"}

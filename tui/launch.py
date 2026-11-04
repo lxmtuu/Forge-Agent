@@ -30,6 +30,8 @@ def main() -> int:
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL")
     ap.add_argument("--profile", metavar="NAME", help="dùng profile trong data/config.json (vd: safe)")
+    ap.add_argument("--json", action="store_true",
+                    help="(--once) đầu ra JSON structured cho script/CI")
     ap.add_argument("--list-sessions", action="store_true")
     args = ap.parse_args()
 
@@ -76,7 +78,8 @@ def main() -> int:
                 await run_batch_cli([{"prompt": p, "model": args.model or ""} for p in args.parallel[:5]])
             else:
                 sid = args.session or store.create(model=args.model or "").id
-                await run_turn(sid, args.once, model=args.model, chat_mode=args.mode)
+                await run_turn(sid, args.once, model=args.model, chat_mode=args.mode,
+                               json_out=args.json)
                 print(f"Phiên: {sid}")
         asyncio.run(_go())
         return 0

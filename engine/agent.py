@@ -61,7 +61,7 @@ Explore the workspace, then produce: (1) a short understanding of the current st
 (4) how to verify. The user will review this plan and switch to Agent mode to execute.
 """
 
-READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files"}
+READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols"}
 CHAT_MODES = ("direct", "agent", "plan")
 
 
@@ -103,6 +103,39 @@ class Agent:
         self.model = self.session.model or config.get_model()
         self.workspace: Path = store.workspace(session_id)
 
+    def _memory_block(self) -> str:
+        """MEMORY.md (workspace + global) — kiến thức các phiên trước, auto-memory."""
+        blocks = []
+        for label, path, cap in (
+            ("WORKSPACE MEMORY (workspace/MEMORY.md)", self.workspace / "MEMORY.md", 2000),
+            ("GLOBAL MEMORY (data/MEMORY.md)", config.DATA_DIR / "MEMORY.md", 1000),
+        ):
+            try:
+                if path.is_file():
+                    t = path.read_text(encoding="utf-8", errors="replace").strip()
+                    if t:
+                        blocks.append(f"=== {label} ===\n{t[:cap]}")
+            except Exception:
+                pass
+        if not blocks:
+            return ""
+        return ("\n\n=== LONG-TERM MEMORY — bài học các phiên trước (tool memory_save "
+                "để ghi thêm) ===\n" + "\n\n".join(blocks) + "\n")
+
+    def context_stats(self) -> dict:
+        """Mức dùng context hiện tại (cho /context)."""
+        chars = len(self._system_message()["content"]) + _conversation_chars(self.session.messages)
+        limit = config.get_auto_compact_chars()
+        return {
+            "messages": len(self.session.messages),
+            "chars": chars,
+            "est_tokens": chars // 4,
+            "limit": limit,
+            "percent": (min(100, round(chars * 100 / limit)) if limit else None),
+            "memory": (self.workspace / "MEMORY.md").exists()
+                      or (config.DATA_DIR / "MEMORY.md").exists(),
+        }
+
     def _system_message(self) -> dict:
         return {
             "role": "system",
@@ -111,7 +144,7 @@ class Agent:
                 platform=f"{platform.system()} {platform.release()} ({platform.machine()}) / Python {platform.python_version()}",
                 workspace=str(self.workspace),
                 agents_md=_agents_md_block(self.workspace),
-            ),
+            ) + self._memory_block(),
         }
 
     async def send(self, user_text: str, chat_mode: str = "agent", content=None):

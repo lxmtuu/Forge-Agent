@@ -95,6 +95,21 @@ file này vào workspace là agent tuân theo), và **mở dự án thật** là
 | **MCP elicitation** *(spec 2026-07-28)* | MCP server có thể **hỏi người dùng giữa chừng tool call** (`elicitation/create`): web hiện form (string/number/boolean), TUI hiện modal; trả lời accept/decline/cancel. An toàn: hiện rõ server nào hỏi; **form xin secret (password/api-key/…) bị tự động từ chối theo spec**; URL-mode không tự mở trình duyệt |
 | **Profiles** *(Codex-style)* | `data/config.json` → `"profiles": {"safe": {"model": "...", "approval_mode": "guarded"}, "yolo": {...}}` → `forge --profile safe` hoặc lệnh `/profile safe` (TUI/CLI) — merge đè lên config gốc, không ghi đè file |
 
+### 🧹 Gap Closer (v0.10) — 10 mục còn thiếu cuối cùng
+
+| Tính năng | Dùng thế nào |
+|---|---|
+| **🧠 Auto-memory** | Agent tự gọi tool `memory_save` ghi bài học vào `MEMORY.md` → tự nạp vào mọi phiên sau (`/memory` xem) |
+| **LSP tools chủ động** | `lsp_diagnostics` (kiểm tra 1 file) + `lsp_symbols` (cấu trúc hàm/lớp kèm dòng) — dùng được cả Plan mode |
+| **Diff inline TUI** | Tool card TUI hiện diff +xanh/−đỏ ngay khi agent sửa file |
+| **Custom agents** | `.forge/agents/<tên>.md` (frontmatter: description/model/mode) → `/run <tên> <task>` |
+| **🩺 /doctor** | 11 mục chẩn đoán — `/doctor` (TUI/CLI) hoặc nút trong ⚙ Settings |
+| **/context** | Mức dùng context: lệnh `/context` + chip 🧠 % ở footer web |
+| **Hooks** | `"on_file_change": "black ."` trong config — chạy formatter/lint sau mỗi lần agent sửa file |
+| **Network kill-switch** | `"block_network": true` — chặn mọi lệnh ra mạng (curl/pip/git push…) kể cả trên Windows |
+| **Headless JSON** | `forge --once "task" --json` → JSON {session, text, tools, usage} cho script/CI |
+| **Themes** | ⚙ Settings → 🌑 Tối / ☀ Sáng / 🌌 Amber CRT |
+
 Ví dụ `profiles` trong `data/config.json`:
 ```json
 {

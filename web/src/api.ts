@@ -132,6 +132,11 @@ export const api = {
   streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[]) =>
     sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, images: images ?? [] }, onEvent, signal),
 
+  context: (sid: string) =>
+    fetch(`/api/sessions/${sid}/context`).then((r) => j<ContextStats>(r)),
+
+  doctor: () => fetch('/api/doctor').then((r) => j<DoctorReport>(r)),
+
   fork: (sid: string) =>
     fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),
 

@@ -17,6 +17,51 @@ TOOL_SPECS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "memory_save",
+            "description": "Lưu kiến thức dài hạn vào MEMORY.md của workspace (TỰ ĐỘNG nạp "
+                           "vào các phiên sau). Dùng ngay khi phát hiện: quyết định kiến trúc, "
+                           "sở thích/lưu ý của người dùng, lỗi đã gặp và cách khắc phục, "
+                           "lệnh build/test chạy được. Ngắn gọn, một dòng một ý.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Ý cần nhớ (≤500 ký tự, markdown)"},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lsp_diagnostics",
+            "description": "Kiểm tra lỗi (LSP diagnostics: type, undefined name, cú pháp…) "
+                           "của MỘT file code bất kỳ — read-only. Dùng sau khi sửa nhiều file "
+                           "liên quan hoặc trước khi báo hoàn thành.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Đường dẫn file (relative)"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lsp_symbols",
+            "description": "Liệt kê cấu trúc file code qua LSP (documentSymbol): hàm, lớp, "
+                           "phương thức kèm số dòng — read-only. Dùng để định vị nhanh trước "
+                           "khi edit thay vì đọc cả file.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Đường dẫn file (relative)"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_dir",
             "description": "List files and folders in the workspace. Use it to explore "
                            "the project before reading files. Paths are relative to the workspace root.",
@@ -123,6 +168,36 @@ def _resolve(workspace: Path, rel: str) -> Path:
     if p != root and root not in p.parents:
         raise ValueError(f"Path '{rel}' is outside the workspace")
     return p
+
+
+def _memory_save(workspace: Path, args: dict) -> str:
+    """Append một ý ghi nhớ vào <ws>/MEMORY.md (cap 8KB — cắt phần cũ)."""
+    content = str(args.get("content", "")).strip()
+    if not content:
+        return "Error: thiếu content"
+    import time as _t
+    mem = workspace / "MEMORY.md"
+    try:
+        old = mem.read_text(encoding="utf-8", errors="replace") if mem.exists() else ""
+    except OSError:
+        old = ""
+    if len(old.encode("utf-8")) > 8192:  # giữ 6KB cuối (mới nhất)
+        lines = old.splitlines()
+        keep: list[str] = []
+        size = 0
+        for ln in reversed(lines):
+            size += len(ln.encode("utf-8")) + 1
+            if size > 6000:
+                break
+            keep.append(ln)
+        old = "\n".join(reversed(keep)).lstrip("\n") + "\n"
+    stamp = _t.strftime("%Y-%m-%d")
+    entry = f"- [{stamp}] {content.replace(chr(10), ' ')[:500]}"
+    if entry in old:
+        return f"Đã có trong MEMORY.md (bỏ qua trùng): {content[:80]}"
+    mem.write_text((old.rstrip() + "\n" if old.strip() else "") + entry + "\n",
+                   encoding="utf-8")
+    return f"Đã ghi vào MEMORY.md: {content[:100]}"
 
 
 def _iter_files(base: Path):
@@ -295,6 +370,7 @@ _IMPL = {
     "write_file": _write_file,
     "edit_file": _edit_file,
     "search_files": _search_files,
+    "memory_save": _memory_save,
 }
 
 
@@ -308,13 +384,15 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
     diff = None
     changed_path = None
     try:
-        if name in ("write_file", "edit_file", "run_command"):
+        if name in ("write_file", "edit_file", "run_command", "memory_save"):
             await checkpoints.snapshot(
                 checkpoints.key_for(workspace), workspace,
                 f"{name}: {args.get('path', args.get('command', ''))[:60]}")
         if name == "run_command":
             output = await _run_command(workspace, args, override=override)
             ok = not output.startswith(("Error", "BLOCKED"))
+        elif name in ("lsp_diagnostics", "lsp_symbols"):
+            output, ok, changed_path = await _run_lsp_tool(name, workspace, args)
         elif name in _IMPL:
             res = _IMPL[name](workspace, args)
             if isinstance(res, dict):
@@ -342,6 +420,30 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
         except Exception as _e:  # LSP không bao giờ được làm hỏng tool call
             print(f"[lsp] bỏ qua lỗi: {_e}")
 
+    # ---- hook on_file_change (kiểu Claude Code hooks — chạy formatter/lint tự đặt) ----
+    if ok and changed_path and name in ("write_file", "edit_file"):
+        try:
+            from . import config as _cfg_mod
+            hook_cmd = _cfg_mod.load_config().get("on_file_change")
+            if hook_cmd and str(hook_cmd).strip():
+                import os as _os
+                env = {**_os.environ,
+                       "FORGE_CHANGED_FILE": str(changed_path),
+                       "FORGE_WORKSPACE": str(workspace)}
+                proc = await asyncio.create_subprocess_shell(
+                    str(hook_cmd), cwd=str(workspace), env=env,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                try:
+                    out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+                    hook_out = out.decode("utf-8", "replace").strip()[:600]
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    hook_out, proc.returncode = "timeout 30s", 124
+                output += (f"\n🔗 Hook on_file_change (exit {proc.returncode}): "
+                           + (hook_out or "(không output)"))
+        except Exception as _e:
+            output += f"\n🔗 Hook on_file_change lỗi: {_e}"
+
     result = {"ok": ok, "output": output}
     if diff:
         result["diff"] = diff
@@ -350,3 +452,35 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
     if diags:
         result["diagnostics"] = diags
     return result
+
+
+async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bool, None]:
+    """lsp_diagnostics / lsp_symbols — read-only, không bao giờ hỏng tool call."""
+    from . import lsp as _lsp
+    rel = str(args.get("path", "")).strip()
+    if not rel:
+        return "Error: thiếu path", False, None
+    p = Path(rel) if str(rel).startswith("/") else workspace / rel
+    if not p.is_file():
+        return f"Error: không tìm thấy file {rel}", False, None
+    if _lsp.lang_for(p) is None:
+        return f"Bỏ qua: {p.suffix} không phải file code có language server", True, None
+    if not _lsp.server_cmd(_lsp.lang_for(p)):
+        lang = _lsp.lang_for(p)
+        return (f"LSP cho {lang} chưa cài trên máy. Hướng dẫn: pip install "
+                f'\"python-lsp-server[pyflakes,pycodestyle]\" (Python) hoặc '
+                f"npm i -g typescript typescript-language-server (TS/JS).", True, None)
+    if name == "lsp_diagnostics":
+        diags = await _lsp.diagnostics_for(workspace, p)
+        if not diags:
+            return f"✓ {rel}: không có lỗi LSP", True, None
+        return _lsp.format_diags(diags).replace("sau khi ghi file", f"({rel})"), True, None
+    # lsp_symbols
+    sess = await _lsp._get_session(workspace, _lsp.lang_for(p))
+    if sess is None:
+        return f"Error: không khởi động được language server cho {p.suffix}", False, None
+    syms = await sess.symbols(p)
+    if not syms:
+        return f"(không có symbol — file rỗng hoặc ngôn ngữ chưa hỗ trợ)", True, None
+    lines = [f"{'  ' * x['depth']}{x['kind']} {x['name']} (dòng {x['line']})" for x in syms[:80]]
+    return f"Cấu trúc {rel}:\n" + "\n".join(lines), True, None

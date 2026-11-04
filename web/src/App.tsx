@@ -7,6 +7,7 @@ import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolCard } from './components/ToolCard'
 import { ApprovalCard } from './components/ApprovalCard'
+import type { ContextStats } from './types'
 import { ElicitationCard } from './components/ElicitationCard'
 import { Markdown } from './md'
 
@@ -123,6 +124,7 @@ export default function App() {
   const [info, setInfo] = useState<string | null>(null)
   const [busyTool, setBusyTool] = useState<string | null>(null)
   const [pendingImages, setPendingImages] = useState<string[]>([])
+  const [ctx, setCtx] = useState<ContextStats | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -151,6 +153,7 @@ export default function App() {
       setItems(buildTimeline(s.session?.messages ?? []))
       setSessionUsage(s.session?.usage ?? null)
       setBatch(null)
+      api.context(id).then(setCtx).catch(() => {})
     } catch (e) { setErrorBanner(String(e)) }
   }, [])
 
@@ -171,6 +174,11 @@ export default function App() {
     }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const refreshCtx = (sessionId: string | null) => {
+    if (!sessionId) { setCtx(null); return }
+    api.context(sessionId).then(setCtx).catch(() => {})
+  }
 
   // autoscroll while streaming — chỉ khi người dùng đang ở gần đáy (tôn trọng cuộn tay)
   useEffect(() => {
@@ -240,6 +248,7 @@ export default function App() {
           setItems((prev) => applyEvent(prev, ev))
         }, ac.signal, imgs)
         await loadSession(sid)
+        refreshCtx(sid)
       }
     } catch (e) {
       if ((e as Error).name !== 'AbortError') {
@@ -376,7 +385,7 @@ export default function App() {
     setBusyTool('compact')
     try {
       const r = await api.compact(sid)
-      if (r.ok) { await loadSession(sid); setInfo(`🧹 Đã nén ${r.before} → ${r.after} tin nhắn`) }
+      if (r.ok) { await loadSession(sid); refreshCtx(sid); setInfo(`🧹 Đã nén ${r.before} → ${r.after} tin nhắn`) }
       else setErrorBanner(r.message ?? 'Không nén được')
     } catch (e) { setErrorBanner(String(e)) }
     finally { setBusyTool(null) }
@@ -583,6 +592,7 @@ export default function App() {
             <span>Phiên: <code>{sid ?? '—'}</code></span>
             <span>Model: <code>{settings?.model ?? '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
+            {ctx && <span title={`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}`}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
             <span className="foot-actions">
               <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
               <button className="foot-btn" disabled={busyTool !== null} title="Nén hội thoại bằng LLM để giải phóng context" onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} Nén</button>

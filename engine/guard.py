@@ -40,6 +40,13 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
 
 DOCKER_AVAILABLE = shutil.which("docker") is not None
 
+_NET_RX = re.compile(
+    r"\b(curl|wget|ftp|scp|rsync|ssh|telnet|nc|netcat|ping)\b"
+    r"|\b(pip3?|npm|yarn|pnpm|bun|cargo|go|gem|composer|dotnet)\s+(install|add|publish|upload)\b"
+    r"|\bgit\s+(push|pull|fetch|clone|remote)\b"
+    r"|\b(apt|apt-get|brew|choco|winget)\s+(install|upgrade)\b"
+    r"|\brsync\b|\bhuggingface-cli\b|\bollama\s+(pull|push)\b", re.I)
+
 
 def _config_patterns() -> tuple[list[str], list[str]]:
     """Đọc allow/deny glob từ config.json (vd "git push *", "rm -rf *")."""
@@ -57,8 +64,14 @@ def assess_command(cmd: str) -> dict:
     kể cả khi allow match); allow_commands nâng warn → safe (danger vẫn danger).
     """
     from fnmatch import fnmatch
+    from . import config as _cfg
     c = (cmd or "").strip().lower()
     deny, allow = _config_patterns()
+    # Network kill-switch (sandbox một phần cho máy không có Docker — cả Windows):
+    # block_network=true → mọi lệnh ra mạng bị xếp danger bất kể mức khác.
+    if _cfg.load_config().get("block_network") and _NET_RX.search(c):
+        return {"level": "danger",
+                "reasons": ["block_network=true — lệnh ra mạng bị chặn (tắt trong config nếu cần)"]}
     reasons: dict[str, list[str]] = {"danger": [], "warn": []}
     for rx, level, reason in _PATTERNS:
         if rx.search(cmd or ""):

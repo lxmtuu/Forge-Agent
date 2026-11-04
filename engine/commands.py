@@ -22,7 +22,9 @@ def _strip_frontmatter(md: str) -> str:
 
 
 def _candidates(workspace: Path, name: str):
+    # skills của Claude Code ≈ lệnh: .forge/skills/<name>.md cũng được nhận (alias)
     yield Path(workspace) / ".forge" / "commands" / f"{name}.md"
+    yield Path(workspace) / ".forge" / "skills" / f"{name}.md"
     yield config.DATA_DIR / "forge" / "commands" / f"{name}.md"
 
 

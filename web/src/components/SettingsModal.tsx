@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import type { KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+import type { DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+
+const THEMES = [
+  { id: 'dark', label: '🌑 Tối (mặc định)' },
+  { id: 'light', label: '☀ Sáng' },
+  { id: 'amber', label: '🌌 Amber CRT' },
+] as const
 
 const STATUS_STYLE: Record<string, string> = {
   ready: 'st-ok', starting: 'st-warn', stopped: 'st-dim', error: 'st-bad',
@@ -29,6 +35,14 @@ export function SettingsModal(props: {
   const [totals, setTotals] = useState<UsageTotals | null>(null)
   const [keyCheck, setKeyCheck] = useState<KeyCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
+  const [theme, setTheme] = useState(localStorage.getItem('forge-theme') || 'dark')
+  const [doctorRep, setDoctorRep] = useState<DoctorReport | null>(null)
+
+  const applyTheme = (t: string) => {
+    setTheme(t)
+    localStorage.setItem('forge-theme', t)
+    document.documentElement.dataset.theme = t === 'dark' ? '' : t
+  }
 
   const doKeyCheck = (k?: string) => {
     setChecking(true)
@@ -178,6 +192,31 @@ export function SettingsModal(props: {
                 placeholder={'git push *\nrm -rf *\ncurl * | sh'} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} />
             </div>
           </div>
+        </div>
+
+        <div className="field">
+          <span>Giao diện <em>(theme lưu trên máy bạn)</em></span>
+          <select value={theme} onChange={(e) => applyTheme(e.target.value)} style={{ width: '100%', padding: 8, background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8 }}>
+            {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+
+        <div className="field">
+          <span>Chẩn đoán hệ thống <em>(/doctor)</em></span>
+          <button className="btn-primary" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--dim)' }}
+            onClick={async () => { try { setDoctorRep(await api.doctor()) } catch { /* ignore */ } }}>
+            🩺 Chạy chẩn đoán
+          </button>
+          {doctorRep && (
+            <div className="doctor-list" style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontSize: 12 }}>
+              {doctorRep.checks.map((c, i) => (
+                <div key={i} style={{ padding: '3px 0', color: c.ok ? 'var(--text)' : 'var(--red)' }}>
+                  {c.ok ? '✓' : '✗'} <b>{c.name}</b> — <span style={{ color: 'var(--dim)' }}>{c.detail}</span>
+                </div>
+              ))}
+              <div style={{ padding: '4px 0', fontWeight: 700 }}>{doctorRep.summary}</div>
+            </div>
+          )}
         </div>
 
         <div className="field">

@@ -370,6 +370,22 @@ async def fork_session(sid: str):
                         "updated_at": ns.updated_at}}
 
 
+@app.get("/api/sessions/{sid}/context")
+async def session_context(sid: str):
+    """🧠 Mức dùng context của phiên (cho /context + footer web)."""
+    s = store.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    return Agent(store, sid).context_stats()
+
+
+@app.get("/api/doctor")
+async def doctor_endpoint():
+    """🩺 Chẩn đoán toàn hệ thống (python/git/key/model/MCP/LSP/dữ liệu…)."""
+    from engine.diagnostics import doctor
+    return await doctor(store)
+
+
 @app.get("/api/sessions/{sid}/export")
 async def export_session(sid: str):
     """⤓ /export — tải hội thoại dạng Markdown."""
@@ -404,6 +420,15 @@ async def chat(sid: str, body: ChatBody, request: Request):
     chat_mode = body.mode if body.mode in ("direct", "agent", "plan") else "agent"
     ws = store.workspace(sid)
 
+    # /run <tên> <task> — custom agent từ .forge/agents/<name>.md (đè model/mode nếu có)
+    from engine import agents as fagents
+    agent_exp = fagents.expand(text, ws)
+    if agent_exp is not None:
+        text, ag_model, ag_mode = agent_exp
+        if ag_model:
+            model = ag_model
+        if ag_mode:
+            chat_mode = ag_mode
     # /ten-lenh từ .forge/commands/<name>.md (custom slash commands)
     from engine import commands as fcmd
     expanded = fcmd.expand(text, ws)
