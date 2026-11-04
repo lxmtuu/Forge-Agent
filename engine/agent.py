@@ -9,7 +9,7 @@ import platform
 import traceback
 from pathlib import Path
 
-from . import config, llm, tools
+from . import config, guard, llm, tools
 from .llm import LLMError
 from .mcp import manager as mcp_manager
 from .session import SessionStore
@@ -117,10 +117,42 @@ class Agent:
                     except _json.JSONDecodeError:
                         args = {"_raw": raw_args}
                     yield {"type": "tool_start", "id": tc["id"], "name": name, "args": args}
+
+                    # ---- interactive approval ("ask" mode) ----
+                    override = False
+                    if name == "run_command":
+                        from . import approvals
+                        mode = config.load_config().get("approval_mode", "guarded")
+                        cmd = str(args.get("command", ""))
+                        verdict = guard.assess_command(cmd)
+                        if (mode == "ask" and verdict["level"] in ("warn", "danger")
+                                and cmd not in self.session.allowed_commands):
+                            aid = approvals.create(cmd, verdict["level"], verdict["reasons"])
+                            yield {"type": "approval_request", "id": aid, "command": cmd,
+                                   "level": verdict["level"], "reasons": verdict["reasons"]}
+                            decision = await approvals.wait(aid)
+                            yield {"type": "approval_decision", "id": aid, "decision": decision}
+                            if decision == "deny":
+                                result = {"ok": False, "output": (
+                                    "User DENIED this command. Do not retry it unchanged; "
+                                    "explain and propose a different approach.")}
+                                result_args = args
+                                # skip execution — jump to emitting result
+                                yield {"type": "tool_result", "id": tc["id"], "name": name,
+                                       "args": result_args, "ok": False, "output": result["output"]}
+                                self.session.messages.append({
+                                    "role": "tool", "tool_call_id": tc["id"],
+                                    "content": result["output"]})
+                                messages.append(self.session.messages[-1])
+                                continue
+                            override = True
+                            if decision == "approve_always":
+                                self.session.allowed_commands.append(cmd)
+
                     if name in mcp_routing:
                         result = await mcp_manager.call_namespaced(mcp_routing, name, args)
                     else:
-                        result = await tools.execute_tool(name, args, self.workspace)
+                        result = await tools.execute_tool(name, args, self.workspace, override=override)
                     yield {"type": "tool_result", "id": tc["id"], "name": name,
                            "args": args, "ok": result["ok"], "output": result["output"]}
                     s.messages.append({

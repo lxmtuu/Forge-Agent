@@ -112,6 +112,27 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None) ->
                     reasoning_open = False
                 live.stop()
                 console.print(Panel(str(ev["message"]), title="Lỗi", border_style="red"))
+            elif t == "approval_request":
+                if reasoning_open:
+                    console.print()
+                    reasoning_open = False
+                live.stop()
+                console.print(Panel(
+                    f"[bold]{ev['command']}[/bold]\n\n"
+                    f"Lý do: {', '.join(ev['reasons']) or '—'}  ·  mức: [bold]{ev['level']}[/bold]",
+                    title="🔔 Cần phê duyệt lệnh shell", border_style="yellow"))
+                from engine import approvals as _appr
+                choice = (await asyncio.to_thread(
+                    console.input, "  [Y] Chấp nhận / [A] Luôn cho phép / [n] Từ chối: "
+                )).strip().lower()
+                decision = ("approve_always" if choice in ("a", "always")
+                            else "deny" if choice in ("n", "no")
+                            else "approve")
+                _appr.resolve(ev["id"], decision)
+                console.print(f"  [dim]→ {decision}[/dim]")
+                live.start()
+            elif t == "approval_decision":
+                pass
             elif t == "turn_end":
                 if reasoning_open:
                     console.print()
@@ -240,15 +261,18 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             continue
         if text.startswith("/mode"):
             arg = text[5:].strip().lower()
-            if arg in ("auto", "a", "yolo"):
+            if arg in ("auto", "yolo"):
                 config.save_config({"approval_mode": "auto"})
                 console.print("[red]⚡ AUTO (YOLO)[/red] — mọi lệnh được chạy, cẩn thận!")
+            elif arg in ("ask", "hoi"):
+                config.save_config({"approval_mode": "ask"})
+                console.print("[yellow]🔔 ASK[/yellow] — sẽ hỏi bạn trước khi chạy lệnh warn/danger")
             elif arg in ("guarded", "g", "guard"):
                 config.save_config({"approval_mode": "guarded"})
                 console.print("[green]🛡 GUARDED[/green] — lệnh nguy hiểm sẽ bị chặn")
             else:
                 cur = config.load_config().get("approval_mode", "guarded")
-                console.print(f"Hiện tại: [bold]{cur}[/bold] — dùng /mode auto|guarded")
+                console.print(f"Hiện tại: [bold]{cur}[/bold] — dùng /mode guarded|ask|auto")
             continue
         if text == "/usage":
             s = store.get(session_id)

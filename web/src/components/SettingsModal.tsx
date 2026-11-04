@@ -84,10 +84,14 @@ export function SettingsModal(props: {
 
         <div className="field">
           <span>Chế độ duyệt lệnh shell</span>
-          <div className="seg">
+          <div className="seg seg-3">
             <button className={`seg-btn ${approval === 'guarded' ? 'on' : ''}`}
               onClick={() => setApproval('guarded')}>
               🛡 Guarded<span className="seg-desc">chặn lệnh nguy hiểm</span>
+            </button>
+            <button className={`seg-btn ${approval === 'ask' ? 'on' : ''}`}
+              onClick={() => setApproval('ask')}>
+              🔔 Hỏi từng lệnh<span className="seg-desc">popup phê duyệt warn/danger</span>
             </button>
             <button className={`seg-btn ${approval === 'auto' ? 'on' : ''}`}
               onClick={() => setApproval('auto')}>

@@ -65,6 +65,10 @@ class BatchBody(BaseModel):
     model: str | None = None
 
 
+class ApprovalBody(BaseModel):
+    decision: str  # "approve" | "approve_always" | "deny"
+
+
 def sse(ev: dict) -> str:
     return f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
@@ -103,7 +107,7 @@ async def set_settings(body: SettingsBody):
         patch["api_key"] = body.api_key.strip()
     if body.model is not None and body.model.strip():
         patch["model"] = body.model.strip()
-    if body.approval_mode is not None and body.approval_mode in ("guarded", "auto"):
+    if body.approval_mode is not None and body.approval_mode in ("guarded", "ask", "auto"):
         patch["approval_mode"] = body.approval_mode
     if body.docker_sandbox is not None:
         patch["docker_sandbox"] = body.docker_sandbox
@@ -186,6 +190,18 @@ async def usage_totals():
         tot["cost"] += u.get("cost", 0.0) or 0.0
     tot["cost"] = round(tot["cost"], 4)
     return tot
+
+
+# ---------------------------------------------------------------------------
+# Interactive command approvals ("ask" mode)
+# ---------------------------------------------------------------------------
+@app.post("/api/approvals/{aid}")
+async def resolve_approval(aid: str, body: ApprovalBody):
+    from engine import approvals
+    ok = approvals.resolve(aid, body.decision)
+    if not ok:
+        raise HTTPException(404, "Yêu cầu phê duyệt không tồn tại hoặc đã xử lý")
+    return {"ok": True, "decision": body.decision}
 
 
 @app.get("/api/models")

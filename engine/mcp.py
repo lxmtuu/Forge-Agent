@@ -12,6 +12,8 @@ import re
 import time
 from pathlib import Path
 
+import httpx
+
 from . import config
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -148,17 +150,125 @@ class McpServer:
         return {"ok": not result.get("isError", False), "output": "\n".join(texts) or "(no content)"}
 
 
+class McpHttpServer:
+    """MCP over Streamable-HTTP transport (POST JSON-RPC, optional SSE responses,
+    Mcp-Session-Id session header)."""
+
+    def __init__(self, name: str, url: str, headers: dict | None = None):
+        self.name = name
+        self.url = url
+        self.headers = headers or {}
+        self.session_id: str | None = None
+        self.tools: list[dict] = []
+        self.status = "stopped"
+        self.error: str | None = None
+        self._next_id = 10
+        self.started_at = 0.0
+
+    async def _post(self, payload: dict, expect_response: bool = True) -> dict:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            **self.headers,
+        }
+        if self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
+        async with httpx.AsyncClient(timeout=CALL_TIMEOUT) as c:
+            r = await c.post(self.url, json=payload, headers=headers)
+            sid = r.headers.get("mcp-session-id")
+            if sid:
+                self.session_id = sid
+            if r.status_code >= 400:
+                raise McpError(f"HTTP {r.status_code}: {r.text[:300]}")
+            if not expect_response or r.status_code == 202:
+                return {}
+            ct = r.headers.get("content-type", "")
+            if "text/event-stream" in ct:
+                for line in r.text.splitlines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        obj = json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("id") == payload.get("id"):
+                        if "error" in obj:
+                            raise McpError(f"MCP '{self.name}': {obj['error']}")
+                        return obj.get("result", {})
+                raise McpError(f"MCP '{self.name}': không thấy response trong SSE stream")
+            obj = r.json()
+            if "error" in obj:
+                raise McpError(f"MCP '{self.name}': {obj['error']}")
+            return obj.get("result", {})
+
+    async def start(self) -> None:
+        if self.status == "ready":
+            return
+        self.status = "starting"
+        try:
+            init = await self._post({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "forge-agent", "version": "0.1.0"},
+                },
+            })
+            srv = (init.get("serverInfo") or {}).get("name", "?")
+            await self._post({"jsonrpc": "2.0", "method": "notifications/initialized"},
+                             expect_response=False)
+            result = await self._post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+            self.tools = result.get("tools", [])
+            self.status = "ready"
+            self.error = None
+            self.started_at = time.time()
+            print(f"[mcp-http] '{self.name}' ready ({srv}): {len(self.tools)} tools")
+        except Exception as e:
+            self.status = "error"
+            self.error = str(e)
+            print(f"[mcp-http] '{self.name}' error: {e}")
+
+    async def stop_quiet(self) -> None:
+        self.session_id = None
+        self.tools = []
+        if self.status != "error":
+            self.status = "stopped"
+
+    async def refresh(self) -> None:
+        self.status = "stopped"
+        await self.start()
+
+    async def call(self, tool: str, args: dict) -> dict:
+        if self.status != "ready":
+            await self.start()
+        if self.status != "ready":
+            raise McpError(f"MCP server '{self.name}' không khởi động được: {self.error}")
+        self._next_id += 1
+        rid = self._next_id
+        result = await self._post({
+            "jsonrpc": "2.0", "id": rid,
+            "method": "tools/call",
+            "params": {"name": tool, "arguments": args},
+        })
+        texts = [c.get("text", "") for c in result.get("content", []) if c.get("type") == "text"]
+        return {"ok": not result.get("isError", False), "output": "\n".join(texts) or "(no content)"}
+
+
 class McpManager:
     """Global registry: lazy-start servers, expose namespaced tool specs."""
 
     def __init__(self) -> None:
-        self._servers: dict[str, McpServer] = {}
+        self._servers: dict[str, object] = {}
         self._lock = asyncio.Lock()
 
-    def _build(self, cfg: dict) -> McpServer:
+    def _build(self, cfg: dict):
         key = _sanitize_name(cfg["name"])
         if key not in self._servers:
-            self._servers[key] = McpServer(cfg["name"], cfg["command"], cfg.get("args", []), cfg.get("env"))
+            if cfg.get("url"):  # HTTP transport
+                self._servers[key] = McpHttpServer(cfg["name"], cfg["url"], cfg.get("headers"))
+            else:               # stdio transport
+                self._servers[key] = McpServer(cfg["name"], cfg["command"], cfg.get("args", []), cfg.get("env"))
         return self._servers[key]
 
     async def get_tool_specs(self) -> tuple[list[dict], dict[str, tuple[McpServer, str]]]:
@@ -208,7 +318,10 @@ class McpManager:
             key = _sanitize_name(cfg["name"])
             srv = self._servers.get(key)
             out.append({
-                "name": cfg["name"], "command": cfg["command"], "args": cfg.get("args", []),
+                "name": cfg["name"],
+                "transport": "http" if cfg.get("url") else "stdio",
+                "command": cfg.get("command", ""), "args": cfg.get("args", []),
+                "url": cfg.get("url", ""),
                 "enabled": cfg.get("enabled", True),
                 "status": srv.status if srv else "stopped",
                 "error": srv.error if srv else None,

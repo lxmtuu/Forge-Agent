@@ -61,7 +61,7 @@ export interface Settings {
   model: string
   key_masked: string | null
   default_models: string[]
-  approval_mode: 'guarded' | 'auto'
+  approval_mode: 'guarded' | 'ask' | 'auto'
   docker_sandbox: boolean
   docker_available: boolean
 }
@@ -90,6 +90,8 @@ export type AgentEvent =
   | { type: 'assistant_message'; content: string | null; tool_calls: ToolCall[] | null }
   | { type: 'tool_start'; id: string; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string }
+  | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
+  | { type: 'approval_decision'; id: string; decision: string }
   | { type: 'turn_end'; usage: unknown; session_usage?: Usage; message_count: number }
   | { type: 'mcp_ready'; tools: string[] }
   | { type: 'error'; message: string }
@@ -124,6 +126,15 @@ export type Item =
       args: Record<string, unknown>
       output: string | null
       ok: boolean | null
+    }
+  | {
+      kind: 'approval'
+      id: string
+      approvalId: string
+      command: string
+      level: string
+      reasons: string[]
+      decision: string | null
     }
   | { kind: 'error'; id: string; message: string }
 

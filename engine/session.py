@@ -18,6 +18,7 @@ class Session:
     updated_at: float = field(default_factory=time.time)
     messages: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)  # {prompt_tokens, completion_tokens, total_tokens, cost}
+    allowed_commands: list[str] = field(default_factory=list)  # approved "always" in ask-mode
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -29,6 +30,7 @@ class Session:
             model=d.get("model", ""), created_at=d.get("created_at", 0.0),
             updated_at=d.get("updated_at", 0.0), messages=d.get("messages", []),
             usage=d.get("usage", {}) or {},
+            allowed_commands=d.get("allowed_commands", []) or [],
         )
 
 

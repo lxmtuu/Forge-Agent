@@ -41,11 +41,13 @@ Một engine duy nhất, hai giao diện:
 Mọi đường dẫn file bị chặn thoát khỏi workspace của phiên; lệnh shell chạy với
 timeout 30s (tối đa 120s) và output bị cắt ở 12k ký tự.
 
-### 🛡 An toàn lệnh shell (mới)
-- **Guarded mode** (mặc định): phân loại lệnh thành safe/warn/danger —
-  lệnh nguy hiểm (`sudo`, `rm -rf /`, `curl | bash`…) bị **chặn** và agent phải
-  giải thích cho người dùng thay vì chạy lén.
-- **Auto (YOLO)**: chạy mọi lệnh, bật trong Settings khi bạn chấp nhận rủi ro.
+### 🛡 An toàn lệnh shell — 3 chế độ
+- **Guarded** (mặc định): phân loại lệnh safe/warn/danger — lệnh nguy hiểm
+  (`sudo`, `rm -rf /`, `curl | bash`…) bị **chặn** sẵn, agent phải giải thích.
+- **🔔 Hỏi từng lệnh (ask)**: agent tạm dừng, hiện thẻ phê duyệt với lệnh + lý do;
+  bạn chọn **Chấp nhận / Luôn cho phép lệnh này / Từ chối** (web hoặc terminal).
+  Lệnh được "luôn cho phép" lưu vào phiên, lần sau không hỏi lại. Timeout 3 phút = tự từ chối.
+- **Auto (YOLO)**: chạy mọi lệnh, rủi ro tự chịu.
 - **Docker sandbox**: nếu máy có Docker, bật trong Settings để mọi lệnh chạy
   trong container `--network=none --memory=512m --cpus=1 --cap-drop=ALL`.
 
@@ -57,6 +59,10 @@ Kết nối MCP server chuẩn (stdio JSON-RPC) — agent tự nhận thêm tool
 3. Test nhanh có sẵn: `python3 scripts/demo_mcp_server.py` (echo/add/now_time),
    cấu hình mẫu trong `mcp.example.json`.
 4. Trong CLI: `/mcp` xem trạng thái, `/mcp refresh` khởi động lại.
+
+Hỗ trợ **2 transport**: `stdio` (subprocess) và **`http`** (Streamable-HTTP với
+`Mcp-Session-Id`) — ví dụ trong `mcp.example.json`, server test HTTP:
+`python -m uvicorn scripts.demo_mcp_http_server:app --port 8931`.
 
 ### ⚡ Sub-agent song song (mới)
 Chạy nhiều tác vụ đồng thời, mỗi tác vụ một session + workspace riêng biệt:
@@ -145,8 +151,8 @@ Sự kiện engine phát ra (CLI và web cùng tiêu thụ):
 - [x] Tải file lên workspace, xuất zip
 - [x] Sub-agent / chạy song song nhiều tác vụ
 - [x] Đồng bộ model list tự động từ `openrouter.ai/api/v1/models` + theo dõi tokens
-- [ ] MCP transport HTTP/SSE (hiện hỗ trợ stdio)
-- [ ] Duyệt lệnh tương tác từng lệnh (approval prompt trước khi chạy)
+- [x] MCP transport HTTP (streamable, `Mcp-Session-Id`) — song song với stdio
+- [x] Duyệt lệnh tương tác: chế độ **ask** hiện thẻ phê duyệt trước khi chạy lệnh warn/danger
 
 ---
 *Được xây kèm audit của repo `cporter202/API-mega-list` — xem `AUDIT.md` để hiểu

@@ -3,10 +3,14 @@
     {
       "name": "demo",
       "command": "python3",
-      "args": [
-        "scripts/demo_mcp_server.py"
-      ],
+      "args": ["scripts/demo_mcp_server.py"],
       "enabled": true
+    },
+    {
+      "name": "weather-http",
+      "url": "http://127.0.0.1:8931/mcp",
+      "enabled": false,
+      "_comment": "Ví dụ transport HTTP (streamable). Chạy server test: python -m uvicorn scripts.demo_mcp_http_server:app --port 8931"
     }
   ]
 }

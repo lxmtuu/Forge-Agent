@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolCard } from './components/ToolCard'
+import { ApprovalCard } from './components/ApprovalCard'
 import { Markdown } from './md'
 
 /** Pure reducer: apply one agent event to an item timeline. */
@@ -45,6 +46,17 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
     case 'tool_result':
       return prev.map((it) =>
         it.kind === 'tool' && it.callId === ev.id ? { ...it, output: ev.output, ok: ev.ok } : it,
+      )
+    case 'approval_request':
+      return [...prev, {
+        kind: 'approval', id: uid(), approvalId: ev.id, command: ev.command,
+        level: ev.level, reasons: ev.reasons, decision: null,
+      }]
+    case 'approval_decision':
+      return prev.map((it) =>
+        it.kind === 'approval' && it.approvalId === ev.id
+          ? { ...it, decision: ev.decision }
+          : it,
       )
     case 'error':
       return [...prev, { kind: 'error', id: uid(), message: ev.message }]
@@ -312,6 +324,19 @@ export default function App() {
       ) : null
     }
     if (it.kind === 'tool') return <div key={it.id} className="msg tool-wrap"><ToolCard item={it} /></div>
+    if (it.kind === 'approval') {
+      return (
+        <div key={it.id} className="msg tool-wrap">
+          <ApprovalCard
+            item={it}
+            onResolved={(approvalId, decision) => {
+              setItems((prev) => prev.map((x) =>
+                x.kind === 'approval' && x.approvalId === approvalId ? { ...x, decision } : x))
+            }}
+          />
+        </div>
+      )
+    }
     return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
   }
 

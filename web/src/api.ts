@@ -129,6 +129,13 @@ export const api = {
   batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
     sseRequest<BatchEvent>('/api/batch', { prompts }, onEvent, signal),
 
+  resolveApproval: (aid: string, decision: 'approve' | 'approve_always' | 'deny') =>
+    fetch(`/api/approvals/${encodeURIComponent(aid)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision }),
+    }).then((r) => j<{ ok: boolean }>(r)),
+
   uploadFiles: (sid: string, files: File[]) => {
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))

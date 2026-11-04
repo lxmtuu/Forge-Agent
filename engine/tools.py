@@ -219,13 +219,13 @@ def _search_files(workspace: Path, args: dict) -> str:
     return "\n".join(matches) if matches else f"No matches for '{args['query']}'"
 
 
-async def _run_command(workspace: Path, args: dict) -> str:
+async def _run_command(workspace: Path, args: dict, override: bool = False) -> str:
     from . import config, guard
 
     cmd = args["command"]
     approval = config.load_config().get("approval_mode", "guarded")
     verdict = guard.assess_command(cmd)
-    if verdict["level"] == "danger" and approval != "auto":
+    if verdict["level"] == "danger" and approval != "auto" and not override:
         return guard.guard_message(cmd, verdict)
     if config.load_config().get("docker_sandbox") and guard.DOCKER_AVAILABLE:
         cmd = guard.docker_wrap(cmd)
@@ -258,11 +258,14 @@ _IMPL = {
 }
 
 
-async def execute_tool(name: str, args: dict, workspace: Path) -> dict:
-    """Run one tool. Returns {"ok": bool, "output": str}."""
+async def execute_tool(name: str, args: dict, workspace: Path, override: bool = False) -> dict:
+    """Run one tool. Returns {"ok": bool, "output": str}.
+
+    override=True: user explicitly approved this exact command interactively.
+    """
     try:
         if name == "run_command":
-            output = await _run_command(workspace, args)
+            output = await _run_command(workspace, args, override=override)
             ok = not output.startswith(("Error", "BLOCKED"))
         elif name in _IMPL:
             output = _IMPL[name](workspace, args)
