@@ -1,0 +1,53 @@
+import React from 'react'
+import type { SessionSummary } from '../types'
+
+export function Sidebar(props: {
+  sessions: SessionSummary[]
+  currentId: string | null
+  onSelect: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+  demo: boolean
+  model: string
+  onOpenSettings: () => void
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <svg width="22" height="22" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1f1f24" /><path d="M18.5 4 8 18h6.5L13 28 24 13.5h-6.5L18.5 4z" fill="#d97757" /></svg>
+        <span>Forge <em>agent</em></span>
+      </div>
+
+      <button className="btn-primary" onClick={props.onNew}>＋ Phiên mới</button>
+
+      <div className="session-list">
+        {props.sessions.length === 0 && <div className="empty">Chưa có phiên nào</div>}
+        {props.sessions.map((s) => (
+          <div
+            key={s.id}
+            className={`session-item ${s.id === props.currentId ? 'active' : ''}`}
+            onClick={() => props.onSelect(s.id)}
+          >
+            <div className="session-title">{s.title}</div>
+            <div className="session-meta">
+              {s.message_count} tin · {new Date(s.updated_at * 1000).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <button
+              className="session-del"
+              title="Xóa phiên"
+              onClick={(e) => { e.stopPropagation(); props.onDelete(s.id) }}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+
+      <div className="sidebar-foot">
+        <div className="model-badge" title="Model đang dùng">
+          ⚡ {props.model || '—'}
+        </div>
+        {props.demo && <div className="demo-badge">DEMO (chưa có key)</div>}
+        <button className="btn-ghost" onClick={props.onOpenSettings}>⚙ Cài đặt</button>
+      </div>
+    </aside>
+  )
+}
