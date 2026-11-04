@@ -68,12 +68,13 @@ CHAT_MODES = ("direct", "agent", "plan")
 
 def _agents_md_block(workspace: Path) -> str:
     """Đọc quy tắc dự án: AGENTS.md > AGENTS.txt > CLAUDE.md (chuẩn Codex/OpenCode/Claude Code)."""
+    from .context_files import load_with_imports
     blocks = []
     for name in ("AGENTS.md", "AGENTS.txt", "CLAUDE.md"):
         p = workspace / name
         if p.is_file():
             try:
-                text = p.read_text(encoding="utf-8", errors="replace")[:4000]
+                text = load_with_imports(p)[:4000]
                 if text.strip():
                     blocks.append(f"=== PROJECT INSTRUCTIONS ({name}) — follow strictly ===\n{text}")
                     break  # chỉ 1 file quy tắc cấp dự án (ưu tiên cao nhất)
@@ -83,7 +84,7 @@ def _agents_md_block(workspace: Path) -> str:
     try:
         g = config.DATA_DIR / "AGENTS.md"
         if g.is_file():
-            text = g.read_text(encoding="utf-8", errors="replace")[:2000]
+            text = load_with_imports(g)[:2000]
             if text.strip():
                 blocks.append(f"=== GLOBAL USER RULES (data/AGENTS.md) ===\n{text}")
     except Exception:
@@ -149,7 +150,8 @@ class Agent:
         ):
             try:
                 if path.is_file():
-                    t = path.read_text(encoding="utf-8", errors="replace").strip()
+                    from .context_files import load_with_imports
+                    t = load_with_imports(path).strip()
                     if t:
                         blocks.append(f"=== {label} ===\n{t[:cap]}")
             except Exception:
@@ -201,6 +203,14 @@ class Agent:
         if s.title == "New session":
             s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
         self.store.save(s)
+
+        # '# <nội dung>' → quick-memory (chuẩn Claude Code): ghi MEMORY.md, không tốn LLM
+        if user_text.startswith("# ") and len(user_text.strip()) > 2:
+            from .memory import quick_memory
+            yield {"type": "assistant_message",
+                   "content": quick_memory(self.workspace, user_text.strip()[2:].strip())}
+            yield {"type": "turn_end", "usage": None, "message_count": len(s.messages)}
+            return
 
         if chat_mode not in CHAT_MODES:
             chat_mode = "agent"
@@ -624,6 +634,14 @@ async def send_demo(agent: Agent, user_text: str):
     if s.title == "New session":
         s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
     agent.store.save(s)
+
+    # '# <nội dung>' → quick-memory cũng chạy được ở demo mode
+    if user_text.startswith("# ") and len(user_text.strip()) > 2:
+        from .memory import quick_memory
+        yield {"type": "assistant_message",
+               "content": quick_memory(agent.workspace, user_text.strip()[2:].strip())}
+        yield {"type": "turn_end", "usage": None, "message_count": len(s.messages)}
+        return
 
     yield {"type": "reasoning_delta",
            "text": "Demo mode: chưa có API key. Tôi sẽ chạy một kịch bản mẫu để bạn "

@@ -52,11 +52,15 @@ HELP = """[bold]Lệnh[/bold]
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
+  /review [file|A...B]  code review diff (P0–P3 + verdict, đọc-only)
+  /diff [file]        xem diff (git hoặc checkpoint phiên)
+  /memory [clear]     xem bộ nhớ đang nạp / xoá MEMORY.md dự án
   /quit               thoát
 
 [bold]Mẹo[/bold]: gõ nhiệm vụ tự nhiên, ví dụ:
   "viết script python đếm số từ trong file txt rồi test luôn"
 Gõ @ten_file.py trong prompt để đính kèm file.
+Gõ «# nội dung» để ghi nhớ nhanh vào MEMORY.md (không tốn LLM).
 Custom lệnh: tạo .forge/commands/<tên>.md rồi gõ /<tên> [args].
 Chạy song song nhiều tác vụ:  python cli/main.py --parallel "task A" "task B" """
 
@@ -402,14 +406,41 @@ async def interactive(session_id: str | None, model: str | None) -> None:
                           f"{ctx['est_tokens']:,} tokens / {lim}) · {ctx['messages']} tin nhắn · "
                           f"memory: {'✓' if ctx['memory'] else '—'}")
             continue
-        if text == "/memory":
+        if text == "/memory" or text.startswith("/memory "):
+            from engine import memory as fmem
+            m_arg = text[7:].strip()
             agent = Agent(store, session_id, model=model)
-            mp = agent.workspace / "MEMORY.md"
-            if mp.exists():
-                console.print(f"  [dim]{mp}[/dim]")
-                console.print(mp.read_text(encoding="utf-8", errors="replace"))
+            if m_arg == "clear":
+                console.print(f"  {fmem.clear_memory(agent.workspace)}")
             else:
-                console.print("  (chưa có MEMORY.md — agent tự ghi qua tool memory_save)")
+                console.print(fmem.memory_overview(agent.workspace))
+            continue
+        if text.startswith("/review"):
+            from engine import review as freview
+            r_arg = text[len("/review"):].strip()
+            agent = Agent(store, session_id, model=model)
+            try:
+                diff_text, label = await freview.collect_diff(agent.workspace, session_id, r_arg)
+            except ValueError as e:
+                console.print(f"  🔍 {e}")
+                continue
+            console.print(f"  [dim]Review ({label}) — chế độ đọc-only…[/dim]")
+            await run_turn(session_id, freview.build_prompt(diff_text, r_arg, label),
+                           model=model, chat_mode="plan")
+            continue
+        if text.startswith("/diff"):
+            from engine import review as freview
+            d_arg = text[len("/diff"):].strip()
+            agent = Agent(store, session_id, model=model)
+            try:
+                diff_text, label = await freview.collect_diff(agent.workspace, session_id, d_arg)
+            except ValueError as e:
+                console.print(f"  📄 {e}")
+                continue
+            console.print(f"  [bold]📄 Diff — {label}[/bold]")
+            from rich.syntax import Syntax
+            console.print(Syntax(diff_text[:12000], "diff", theme="ansi_dark",
+                                 word_wrap=True, background_color="default"))
             continue
         if text == "/doctor":
             from engine.diagnostics import doctor

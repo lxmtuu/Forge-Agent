@@ -239,32 +239,8 @@ def _resolve(workspace: Path, rel: str) -> Path:
 
 def _memory_save(workspace: Path, args: dict) -> str:
     """Append một ý ghi nhớ vào <ws>/MEMORY.md (cap 8KB — cắt phần cũ)."""
-    content = str(args.get("content", "")).strip()
-    if not content:
-        return "Error: thiếu content"
-    import time as _t
-    mem = workspace / "MEMORY.md"
-    try:
-        old = mem.read_text(encoding="utf-8", errors="replace") if mem.exists() else ""
-    except OSError:
-        old = ""
-    if len(old.encode("utf-8")) > 8192:  # giữ 6KB cuối (mới nhất)
-        lines = old.splitlines()
-        keep: list[str] = []
-        size = 0
-        for ln in reversed(lines):
-            size += len(ln.encode("utf-8")) + 1
-            if size > 6000:
-                break
-            keep.append(ln)
-        old = "\n".join(reversed(keep)).lstrip("\n") + "\n"
-    stamp = _t.strftime("%Y-%m-%d")
-    entry = f"- [{stamp}] {content.replace(chr(10), ' ')[:500]}"
-    if entry in old:
-        return f"Đã có trong MEMORY.md (bỏ qua trùng): {content[:80]}"
-    mem.write_text((old.rstrip() + "\n" if old.strip() else "") + entry + "\n",
-                   encoding="utf-8")
-    return f"Đã ghi vào MEMORY.md: {content[:100]}"
+    from .memory import append_entry
+    return append_entry(workspace, str(args.get("content", "")))
 
 
 def _iter_files(base: Path):

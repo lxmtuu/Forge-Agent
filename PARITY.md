@@ -18,17 +18,20 @@
 | Permission theo pattern lệnh | ✅ | ✅ | ✅ | 🟡 | ✅ **v0.8** | allow/deny glob trong Settings + config.json |
 | Native sandbox | ➖ | ✅ mạnh nhất | 🟡 | 🟡 | 🟡 | guard + Docker tuỳ chọn — **vẫn yếu hơn trên Windows** |
 
-## B. Bộ nhớ & ngữ cảnh — v0.6: ~35% ⚠️ → **v0.9: ~72%**
+## B. Bộ nhớ & ngữ cảnh — v0.6: ~35% ⚠️ → **v0.12: ~95%**
 
-| Tính năng | Claude Code | Codex | OpenCode | Forge v0.6 | **Forge v0.9** | Ghi chú |
+| Tính năng | Claude Code | Codex | OpenCode | Forge v0.6 | **Forge v0.12** | Ghi chú |
 |---|:-:|:-:|:-:|:-:|:-:|---|
-| File quy tắc dự án | CLAUDE.md | AGENTS.md | AGENTS.md | ✅ | ✅ | AGENTS.md > AGENTS.txt |
+| File quy tắc dự án | CLAUDE.md | AGENTS.md | AGENTS.md | ✅ | ✅ | AGENTS.md > AGENTS.txt > CLAUDE.md |
 | **`/init` tự sinh file quy tắc** | ✅ | ✅ | ✅ | ❌ P0 | ✅ **v0.7** | demo-mode khi chưa có key |
 | CLAUDE.md fallback | — | ✅ | ✅ | ❌ | ✅ **v0.7** | — |
 | Quy tắc global | ✅ | ✅ | ✅ | ❌ | ✅ **v0.7** | `data/AGENTS.md` (≤2000 ký tự) |
 | **/compact + auto-compact** | ✅ | ✅ | ✅ | ❌ P0 | ✅ **v0.7** | LLM tóm tắt + tự nén ở 150k ký tự |
-| /context (xem mức dùng context) | ✅ | ✅ | 🟡 | ❌ | ❌ | **còn thiếu** — chưa có lệnh xem |
-| Auto-memory (tự ghi nhớ) | ✅ MEMORY.md | ➖ | ➖ | ❌ | ❌ | **còn thiếu** (chỉ global rules thủ công) |
+| /context (xem mức dùng context) | ✅ | ✅ | 🟡 | ❌ | ✅ **v0.10** | lệnh + chip 🧠 % + GET /context |
+| Auto-memory (tự ghi nhớ) | ✅ MEMORY.md | ➖ | ➖ | ❌ | ✅ **v0.10** | tool `memory_save`, cap 8KB, nạp tự động |
+| **@import trong file quy tắc** | ✅ | ➖ | ➖ | ❌ | ✅ **v0.12** | `@path` nạp đệ quy ≤5 tầng, bỏ qua code fence/span, chống vòng, cap 8KB/import |
+| **`#` quick-memory** | ✅ | ➖ | ➖ | ❌ | ✅ **v0.12** | gõ «# nội dung» → ghi MEMORY.md ngay, không tốn LLM (cả 3 UI + demo) |
+| /memory (xem bộ nhớ nạp) | ✅ mở editor | ➖ | ➖ | ❌ | ✅ **v0.12** | overview: quy tắc global/dự án + MEMORY.md kèm số liệu; `/memory clear` có .bak |
 
 ## C. An toàn & hoàn tác — v0.6: ~75% → **v0.9: ~97%**
 
@@ -39,13 +42,14 @@
 | **Checkpoints / undo** | ✅ Esc-Esc | ✅ | ✅ | ❌ P0 | ✅ **v0.7** | git-inner riêng, undo theo từng hành động |
 | Phân loại lệnh nguy hiểm | ➖ | ➖ | ➖ | ⭐ | ⭐ | guard 3 mức + allow/deny + anti-loop — **chi tiết hơn cả 3 đối thủ** |
 
-## D. Review & hiển thị — v0.6: ~50% → **v0.9: ~72%**
+## D. Review & hiển thị — v0.6: ~50% → **v0.12: ~95%**
 
-| Tính năng | Claude Code | Codex | OpenCode | Forge v0.6 | **Forge v0.9** | Ghi chú |
+| Tính năng | Claude Code | Codex | OpenCode | Forge v0.6 | **Forge v0.12** | Ghi chú |
 |---|:-:|:-:|:-:|:-:|:-:|---|
-| **Diff view khi sửa file** | ✅ /diff | ✅ | ✅ inline | ❌ P0 | 🟡 **v0.7** | web: ✅ diff xanh/đỏ + badge ±dòng · **TUI: chưa có diff inline** |
+| **Diff view khi sửa file** | ✅ /diff | ✅ | ✅ inline | ❌ P0 | ✅ **v0.7+v0.10** | web: diff xanh/đỏ + badge ±dòng · TUI: diff inline rich |
+| **/diff xem diff phiên** | ✅ | ✅ | ✅ | ❌ | ✅ **v0.12** | git repo (`git diff HEAD`) hoặc checkpoint phiên (file mới có trong diff, loại `.forge/`) |
 | Streaming + reasoning | ✅ | ✅ | ✅ | ✅ | ✅ | web + TUI |
-| /review code review | ✅ | ✅ | ✅ lệnh tuỳ chỉnh | ❌ | 🟡 **v0.8** | tự làm được qua custom command (`.forge/commands/review.md`) — chưa built-in |
+| **/review code review** | ✅ /code-review | ✅ | ✅ | ❌ | ✅ **v0.12** | built-in: nhúng diff thật vào prompt chuẩn Codex (6 tiêu chí bug, P0–P3, verdict, loại pre-existing, "ưa không-finding hơn finding yếu") — chạy plan mode; custom command vẫn đè được |
 | Xác thực key có sẵn | ➖ | ➖ | ➖ | ⭐ | ⭐ | /keycheck + 401/402 tiếng Việt |
 
 ## E. Mở rộng — v0.6: ~40% → **v0.11: ~95%**
@@ -97,13 +101,13 @@
 | Nhóm | v0.6 (audit) | **v0.9** | Đã đóng khoảng trống bằng |
 |---|:-:|:-:|---|
 | A. Lõi agent | ~85% | **~95%** | TUI mode switch, permission patterns |
-| B. Bộ nhớ & ngữ cảnh | ~35% ⚠️ | **~72%** | /init, /compact+auto, CLAUDE.md fallback, global rules |
+| B. Bộ nhớ & ngữ cảnh | ~35% ⚠️ | **~95%** | /init, /compact+auto, global rules, auto-memory, **@imports + # quick-memory (v0.12)** |
 | C. An toàn & hoàn tác | ~75% | **~97%** | checkpoints/undo git-inner |
-| D. Review & hiển thị | ~50% | **~72%** | diff view (web), custom /review |
+| D. Review & hiển thị | ~50% | **~95%** | diff view 3 UI, **/review + /diff built-in (v0.12)** |
 | E. Mở rộng | ~40% | **~95%** | @file, commands, ảnh, web search, LSP diag+nav, elicitation, **skills + hooks + subagent (v0.11)** |
 | F. Phiên & vận hành | ~70% | **~82%** | fork, /export |
 | G. Giao diện | ~75% | **~90%** | elicitation form, diff, settings mở rộng |
-| **TỔNG** | **≈ 62%** | **≈ 92%** | 18 hạng mục nâng hạng v0.7–v0.9 + 10 mục gap v0.10 + 4 mục mở rộng v0.11 |
+| **TỔNG** | **≈ 62%** | **≈ 93%** | 18 hạng mục v0.7–v0.9 + 10 gap v0.10 + 4 mở rộng v0.11 + bộ nhớ/review v0.12 |
 
 ## 🟡 Còn thiếu — cập nhật v0.10 "Gap Closer" (10/10 đã xử lý)
 
@@ -130,6 +134,18 @@
 | 4 | **LSP navigation** | `lsp_definition` / `lsp_references` / `lsp_search_symbols` — đi tới định nghĩa, tìm nơi dùng, tra symbol toàn workspace (tự retry khi server chưa index xong cross-file; báo thân thiện nếu server không hỗ trợ) |
 
 Kết quả test: **5/5 smoke v0.11 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v0.9 + 9/9 v0.10 + TUI + e2e server**.
+
+## 🧠 v0.12 "Memory & Review" — nốt 2 mục yếu cuối (B + D)
+
+| # | Tính năng | Cách dùng |
+|---|---|---|
+| 1 | **@imports** | Trong `AGENTS.md`/`MEMORY.md` ghi `@docs/standard.md` → nội dung được nạp đệ quy (≤5 tầng, chống vòng lặp), bỏ qua bên trong code fence và \`inline code\`, cap 8KB/import — tách bộ nhớ lớn thành nhiều module |
+| 2 | **`#` quick-memory** | Gõ `# luôn dùng pytest -q` → ghi vào MEMORY.md ngay lập tức, không gọi LLM, không tốn token (web + TUI + CLI, kể cả demo mode) |
+| 3 | **/memory** | Xem đúng những gì đang nạp: quy tắc global/dự án (+số @import), MEMORY.md kèm số ghi nhớ + entry gần nhất; `/memory clear` xoá (còn .bak) |
+| 4 | **/review** | Review diff thật (git repo: `HEAD`/file/`A...B`; không repo: checkpoint của phiên) theo prompt chuẩn Codex: 6 tiêu chí bug, P0–P3, Verdict APPROVE/COMMENT/REQUEST_CHANGES, loại bug pre-existing — chạy plan mode (không sửa code) |
+| 5 | **/diff** | Xem diff phiên hiện tại trên cả 3 UI — TUI tô màu, web render markdown diff |
+
+Kết quả test: **5/5 smoke v0.12 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v0.9 + 9/9 v0.10 + 5/5 v0.11 + TUI + e2e server** (tổng 55 test).
 
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 

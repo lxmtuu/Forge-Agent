@@ -347,8 +347,9 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory /doctor /agents /run <tên> <task> "
-                          "/usage /files /quit · @file.py đính file · "
+                          "/profile [tên] /context /memory [clear] /doctor /agents /run <tên> <task> "
+                          "/usage /files /review [file|A...B] /diff [file] /quit · "
+                          "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
                           cls="sys-line")
         elif cmd == "/new":
@@ -409,14 +410,41 @@ class ForgeTUI(App):
                               f"tokens / {lim}) · {ctx['messages']} tin · "
                               f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
         elif cmd == "/memory":
-            if self.agent:
-                mp = self.agent.workspace / "MEMORY.md"
-                if mp.exists():
-                    self.add_line("🧠 MEMORY.md:\n" + mp.read_text(encoding="utf-8",
-                                  errors="replace")[:1500], cls="sys-line")
+            from engine import memory as fmem
+            ws = self.agent.workspace if self.agent else (
+                store.workspace(self.sid) if self.sid else Path.cwd())
+            if arg == "clear":
+                self.add_line(fmem.clear_memory(ws), cls="sys-line")
+            else:
+                self.add_line(fmem.memory_overview(ws), cls="sys-line")
+        elif cmd == "/review":
+            if self.busy:
+                self.add_line("⏳ Đang chạy — chờ xong đã.", cls="sys-line")
+            else:
+                from engine import review as freview
+                if not self.sid:
+                    self.new_session()
+                ws = store.workspace(self.sid)
+                try:
+                    diff_text, label = await freview.collect_diff(ws, self.sid, arg)
+                except ValueError as e:
+                    self.add_line(f"🔍 {e}", cls="tool-bad")
                 else:
-                    self.add_line("(chưa có MEMORY.md — agent tự ghi qua tool memory_save)",
-                                  cls="sys-line")
+                    self.add_line(f"🔍 Review ({label}) — chế độ đọc-only…", cls="sys-line")
+                    await self.run_turn(freview.build_prompt(diff_text, arg, label),
+                                        mode="plan")
+        elif cmd == "/diff":
+            from engine import review as freview
+            if not self.sid:
+                self.new_session()
+            ws = store.workspace(self.sid)
+            try:
+                diff_text, label = await freview.collect_diff(ws, self.sid, arg)
+            except ValueError as e:
+                self.add_line(f"📄 {e}", cls="sys-line")
+            else:
+                self.add_line(f"📄 Diff — {label}:", cls="sys-line")
+                self.add_line(_diff_rich(diff_text, max_lines=60))
         elif cmd == "/doctor":
             from engine.diagnostics import doctor
             self.add_line("🩺 Đang chẩn đoán…", cls="sys-line")
@@ -516,7 +544,7 @@ class ForgeTUI(App):
 
     # ------------------------------------------------------- agent loop
     @work(exclusive=True)
-    async def run_turn(self, text: str) -> None:
+    async def run_turn(self, text: str, mode: str | None = None) -> None:
         if not self.sid:
             self.new_session()
         self.busy = True
@@ -529,7 +557,8 @@ class ForgeTUI(App):
             self.add_line(f"📎 Đã đính kèm: {', '.join('@' + a for a in attached)}", cls="sys-line")
         self.add_user(text.split("\n\n---\n")[0])
         demo = config.get_api_key() is None
-        source = send_demo(self.agent, text) if demo else self.agent.send(text, chat_mode=self.chat_mode)
+        source = send_demo(self.agent, text) if demo else self.agent.send(
+            text, chat_mode=mode or self.chat_mode)
         self._md_widget = None
         self._reasoning_widget = None
         self._tool_widgets = {}

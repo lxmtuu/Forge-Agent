@@ -434,6 +434,42 @@ async def chat(sid: str, body: ChatBody, request: Request):
     expanded = fcmd.expand(text, ws)
     if expanded is not None:
         text = expanded
+    # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
+    synthetic: list[dict] | None = None
+    from engine import memory as fmem
+    if text.startswith("/review"):
+        from engine import review as freview
+        r_arg = text[len("/review"):].strip()
+        try:
+            diff_text, label = await freview.collect_diff(ws, sid, r_arg)
+            if demo:
+                synthetic = [{"type": "assistant_message",
+                              "content": "(demo mode) /review cần API key để chạy LLM review — "
+                                         f"diff đã sẵn sàng ({label}, {len(diff_text):,} ký tự)."}]
+            else:
+                text = freview.build_prompt(diff_text, r_arg, label)
+                chat_mode = "plan"  # review chỉ đọc
+        except ValueError as e:
+            synthetic = [{"type": "assistant_message", "content": f"🔍 {e}"}]
+    elif text.startswith("/diff"):
+        from engine import review as freview
+        d_arg = text[len("/diff"):].strip()
+        try:
+            diff_text, label = await freview.collect_diff(ws, sid, d_arg)
+            body = diff_text if len(diff_text) <= 12000 else diff_text[:12000] + "\n… (cắt ở 12KB)"
+            synthetic = [{"type": "assistant_message",
+                          "content": f"📄 **Diff — {label}:**\n\n```diff\n{body}\n```"}]
+        except ValueError as e:
+            synthetic = [{"type": "assistant_message", "content": f"📄 {e}"}]
+    elif text == "/memory" or text.startswith("/memory "):
+        m_arg = text[7:].strip()
+        synthetic = [{"type": "assistant_message",
+                      "content": fmem.clear_memory(ws) if m_arg == "clear"
+                      else fmem.memory_overview(ws)}]
+    elif text.startswith("# ") and len(text.strip()) > 2:
+        synthetic = [{"type": "assistant_message",
+                      "content": fmem.quick_memory(ws, text.strip()[2:].strip())}]
+
     # @file references → đính kèm nội dung file vào message
     from engine import atfiles
     text, attached = atfiles.expand_at_refs(text, ws)
@@ -447,6 +483,12 @@ async def chat(sid: str, body: ChatBody, request: Request):
 
     async def gen():
         try:
+            if synthetic is not None:
+                for ev in synthetic:
+                    if await request.is_disconnected():
+                        return
+                    yield sse(ev)
+                return
             agent = Agent(store, sid, model=model)
             if demo:
                 demo_text = text

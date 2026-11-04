@@ -132,6 +132,23 @@ Ví dụ hook chặn lệnh nguy hiểm (`.forge/config.json` hoặc `data/confi
 ```
 Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "workspace"}`); **exit 0 = cho qua, exit 2 = chặn** (stderr trở thành lý do LLM thấy); matcher là regex tên tool, bỏ trống = khớp tất cả.
 
+### 🧠 Memory & Review (v0.12)
+
+| Tính năng | Dùng thế nào |
+|---|---|
+| **# ghi nhớ nhanh** | Gõ `# luôn dùng pytest -q` ở khung chat → ghi vào `MEMORY.md` ngay, không tốn token LLM |
+| **@imports** | Trong `AGENTS.md`: `@docs/standard.md` → nạp nội dung đệ quy (≤5 tầng, chống vòng, bỏ qua code block, cap 8KB/import) |
+| **/memory** | Xem bộ nhớ đang nạp (quy tắc + MEMORY.md kèm số liệu) · `/memory clear` xoá (còn `.bak`) |
+| **/review** | Code review diff thật: `git diff HEAD` (repo) hoặc checkpoint phiên — findings P0–P3 + Verdict, chạy read-only |
+| **/diff** | Xem diff phiên hiện tại (TUI tô màu, web render markdown) |
+
+```json
+// AGENTS.md có thể tách module:
+// "# Dự án X
+@docs/api-rules.md
+@docs/test-policy.md"
+```
+
 Ví dụ `profiles` trong `data/config.json`:
 ```json
 {
