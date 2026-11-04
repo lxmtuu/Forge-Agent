@@ -219,6 +219,9 @@ def _search_files(workspace: Path, args: dict) -> str:
     return "\n".join(matches) if matches else f"No matches for '{args['query']}'"
 
 
+_FAIL_STREAK: dict[tuple[str, str], int] = {}
+
+
 async def _run_command(workspace: Path, args: dict, override: bool = False) -> str:
     from . import config, guard
 
@@ -244,7 +247,22 @@ async def _run_command(workspace: Path, args: dict, override: bool = False) -> s
         text = out.decode("utf-8", "replace")
         if len(text) > MAX_CMD_OUTPUT:
             text = text[:MAX_CMD_OUTPUT] + f"\n… (truncated, exit={proc.returncode})"
-        return f"exit={proc.returncode}\n{text}" if text else f"exit={proc.returncode} (no output)"
+        body = f"exit={proc.returncode}\n{text}" if text.strip() else f"exit={proc.returncode} (no output)"
+        # --- anti-loop: cảnh báo khi lệnh giống nhau thất bại nhiều lần ---
+        key = (str(workspace), cmd)
+        if proc.returncode == 0:
+            _FAIL_STREAK.pop(key, None)
+        else:
+            n = _FAIL_STREAK.get(key, 0) + 1
+            _FAIL_STREAK[key] = n
+            if n >= 2:
+                body += (
+                    f"\n\n⚠ This exact command has already failed {n} times in a row. "
+                    "DO NOT run it again unchanged. Read the error carefully, verify with "
+                    "list_dir/read_file, and use a DIFFERENT approach (e.g. on Windows use "
+                    "`python` not `python3`, use dir/type instead of ls/cat)."
+                )
+        return body
     except Exception as e:
         return f"Error running command: {e}"
 

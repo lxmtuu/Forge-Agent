@@ -112,6 +112,20 @@ export default function App() {
 
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const nearBottomRef = useRef(true)
+  const [showJump, setShowJump] = useState(false)
+
+  function onChatScroll() {
+    const el = chatScrollRef.current
+    if (!el) return
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 130
+    setShowJump(!nearBottomRef.current)
+  }
+
+  function jumpToBottom() {
+    const el = chatScrollRef.current
+    if (el) { el.scrollTop = el.scrollHeight; nearBottomRef.current = true; setShowJump(false) }
+  }
 
   const refreshSessions = useCallback(() => {
     api.listSessions().then(setSessions).catch(() => {})
@@ -144,10 +158,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // autoscroll while streaming
+  // autoscroll while streaming — chỉ khi người dùng đang ở gần đáy (tôn trọng cuộn tay)
   useEffect(() => {
     const el = chatScrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
   }, [items, batch])
 
   // ------------------------------------------------------------------ send
@@ -356,7 +370,7 @@ export default function App() {
       )}
 
       <main className="chat-pane">
-        <div className="chat-scroll" ref={chatScrollRef}>
+        <div className="chat-scroll" ref={chatScrollRef} onScroll={onChatScroll}>
           {items.length === 0 && !batch && (
             <div className="hero">
               <div className="hero-logo">⚡</div>
@@ -383,8 +397,17 @@ export default function App() {
               <div className="batch-body">{g.items.map(renderItem)}</div>
             </div>
           ))}
-          {errorBanner && <div className="msg error-msg">⚠ {errorBanner}</div>}
+          {errorBanner && (
+            <div className="msg error-msg">
+              <span className="error-text">⚠ {errorBanner}</span>
+              <button className="error-dismiss" title="Đóng" onClick={() => setErrorBanner(null)}>✕</button>
+            </div>
+          )}
         </div>
+
+        {showJump && (
+          <button className="scroll-bottom" onClick={jumpToBottom} title="Xuống cuối">↓</button>
+        )}
 
         <div className="composer">
           {settings?.demo && (
@@ -403,11 +426,14 @@ export default function App() {
               placeholder={streaming
                 ? 'Agent đang làm việc…'
                 : parallel
-                  ? 'Mỗi dòng = 1 tác vụ song song (Enter xuống dòng, nút Gửi để chạy)'
+                  ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
                   : 'Nhập nhiệm vụ… (Enter gửi · Shift+Enter xuống dòng)'}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !parallel) { e.preventDefault(); send() }
+                if ((e.key === 'Enter' && !e.shiftKey && !parallel) ||
+                    (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+                  e.preventDefault(); send()
+                }
               }}
               rows={parallel ? Math.min(6, Math.max(3, input.split('\n').length)) : Math.min(6, input.split('\n').length)}
             />

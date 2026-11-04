@@ -54,7 +54,8 @@ class Agent:
             "role": "system",
             "content": SYSTEM_PROMPT.format(
                 date=datetime.date.today().isoformat(),
-                platform=f"{platform.system()} {platform.release()} / Python {platform.python_version()}",
+                platform=f"{platform.system()} {platform.release()} ({platform.machine()}) / Python {platform.python_version()}",
+                workspace=str(self.workspace),
             ),
         }
 

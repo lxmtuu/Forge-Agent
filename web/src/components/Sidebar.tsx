@@ -1,6 +1,14 @@
 import React from 'react'
 import type { SessionSummary } from '../types'
 
+function relTime(ts: number): string {
+  const d = Date.now() / 1000 - ts
+  if (d < 60) return 'vừa xong'
+  if (d < 3600) return `${Math.floor(d / 60)}p trước`
+  if (d < 86400) return `${Math.floor(d / 3600)}h trước`
+  return `${Math.floor(d / 86400)} ngày trước`
+}
+
 export function Sidebar(props: {
   sessions: SessionSummary[]
   currentId: string | null
@@ -30,7 +38,7 @@ export function Sidebar(props: {
           >
             <div className="session-title">{s.title}</div>
             <div className="session-meta">
-              {s.message_count} tin · {new Date(s.updated_at * 1000).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              {s.message_count} tin · {relTime(s.updated_at)}
             </div>
             <button
               className="session-del"

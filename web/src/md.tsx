@@ -1,10 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 
-/** Tiny safe markdown renderer: fenced code, inline code, bold, links, bullets. */
+/** Safe markdown renderer: fenced code (with copy button), headings, quote, hr, bold, inline code, links, lists. */
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
-  // split by inline code first, then bold, then links inside remaining text
   const re = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(https?:\/\/[^\s<>()]+)/g
   let last = 0
   let m: RegExpExecArray | null
@@ -29,6 +28,26 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   return nodes
 }
 
+function CodeBlock({ code, lang }: { code: string; lang: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    } catch { /* clipboard blocked */ }
+  }
+  return (
+    <div className="md-codeblock">
+      <div className="md-codebar">
+        <span className="md-codelang">{lang || 'code'}</span>
+        <button className="md-codecopy" onClick={copy}>{copied ? '✓ đã copy' : '⧉ copy'}</button>
+      </div>
+      <pre className="md-pre"><code>{code}</code></pre>
+    </div>
+  )
+}
+
 export function Markdown({ text }: { text: string }) {
   const blocks: React.ReactNode[] = []
   const lines = text.split('\n')
@@ -36,6 +55,8 @@ export function Markdown({ text }: { text: string }) {
   let bi = 0
   while (i < lines.length) {
     const line = lines[i]
+
+    // fenced code
     if (line.trimStart().startsWith('```')) {
       const lang = line.trim().slice(3).trim()
       const buf: string[] = []
@@ -44,14 +65,50 @@ export function Markdown({ text }: { text: string }) {
         buf.push(lines[i])
         i++
       }
-      i++ // skip closing fence
+      i++
+      blocks.push(<CodeBlock key={`b${bi++}`} code={buf.join('\n')} lang={lang} />)
+      continue
+    }
+
+    // headings
+    const hm = /^(#{1,3})\s+(.*)$/.exec(line)
+    if (hm && !hm[2].startsWith('#')) {
+      const level = hm[1].length
+      const content = renderInline(hm[2], `h${bi}`)
       blocks.push(
-        <pre key={`b${bi++}`} className="md-pre" data-lang={lang || undefined}>
-          <code>{buf.join('\n')}</code>
-        </pre>,
+        level === 1
+          ? <h1 key={`b${bi++}`} className="md-h md-h1">{content}</h1>
+          : level === 2
+            ? <h2 key={`b${bi++}`} className="md-h md-h2">{content}</h2>
+            : <h3 key={`b${bi++}`} className="md-h md-h3">{content}</h3>,
+      )
+      i++
+      continue
+    }
+
+    // horizontal rule
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      blocks.push(<hr key={`b${bi++}`} className="md-hr" />)
+      i++
+      continue
+    }
+
+    // blockquote
+    if (line.trimStart().startsWith('>')) {
+      const buf: string[] = []
+      while (i < lines.length && lines[i].trimStart().startsWith('>')) {
+        buf.push(lines[i].replace(/^\s*>\s?/, ''))
+        i++
+      }
+      blocks.push(
+        <blockquote key={`b${bi++}`} className="md-quote">
+          {renderInline(buf.join('\n'), `q${bi}`)}
+        </blockquote>,
       )
       continue
     }
+
+    // unordered list
     if (/^\s*[-*]\s+/.test(line)) {
       const buf: string[] = []
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
@@ -65,6 +122,8 @@ export function Markdown({ text }: { text: string }) {
       )
       continue
     }
+
+    // ordered list
     if (/^\s*\d+[.)]\s+/.test(line)) {
       const buf: string[] = []
       while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
@@ -78,15 +137,20 @@ export function Markdown({ text }: { text: string }) {
       )
       continue
     }
+
     if (line.trim() === '') {
       i++
       continue
     }
-    // paragraph: join until blank line
+
+    // paragraph
     const buf: string[] = []
     while (i < lines.length && lines[i].trim() !== '' &&
            !lines[i].trimStart().startsWith('```') &&
-           !/^\s*([-*]|\d+[.)])\s+/.test(lines[i])) {
+           !lines[i].trimStart().startsWith('>') &&
+           !/^(#{1,3})\s+/.test(lines[i]) &&
+           !/^\s*([-*]|\d+[.)])\s+/.test(lines[i]) &&
+           !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])) {
       buf.push(lines[i])
       i++
     }
