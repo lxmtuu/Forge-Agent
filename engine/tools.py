@@ -17,6 +17,25 @@ TOOL_SPECS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "spawn_subagent",
+            "description": "Giao việc cho MỘT sub-agent có ngữ cảnh hoàn toàn riêng "
+                           "(workspace vẫn dùng chung với bạn) rồi nhận báo cáo tóm tắt. "
+                           "Dùng cho: tìm kiếm/đọc hiểu diện rộng, review một vùng code, "
+                           "làm nhiệm vụ phụ để giữ context chính gọn. Chỉ chạy MỘT lượt "
+                           "nhiệm vụ tự chứa, mô tả rõ mục tiêu + tiêu chí xong.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "Nhiệm vụ tự chứa cho sub-agent"},
+                    "model": {"type": "string", "description": "(tuỳ chọn) model khác cho sub-agent"},
+                },
+                "required": ["task"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "memory_save",
             "description": "Lưu kiến thức dài hạn vào MEMORY.md của workspace (TỰ ĐỘNG nạp "
                            "vào các phiên sau). Dùng ngay khi phát hiện: quyết định kiến trúc, "
@@ -56,6 +75,54 @@ TOOL_SPECS: list[dict] = [
                 "type": "object",
                 "properties": {"path": {"type": "string", "description": "Đường dẫn file (relative)"}},
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lsp_definition",
+            "description": "Tìm nơi ĐỊNH NGHĨA một symbol qua LSP — chính xác tuyệt đối "
+                           "(khác grep). Cần path + dòng chứa cách gọi của symbol (1-based). "
+                           "Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "line": {"type": "number", "description": "Dòng có symbol (1-based)"},
+                    "character": {"type": "number", "description": "Cột (1-based, mặc định 1)"},
+                },
+                "required": ["path", "line"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lsp_references",
+            "description": "Tìm TẤT CẢ nơi dùng một symbol qua LSP (kể cả khai báo) — dùng "
+                           "TRƯỚC khi đổi signature/rename để biết mọi call site. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "line": {"type": "number"},
+                    "character": {"type": "number"},
+                },
+                "required": ["path", "line"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lsp_search_symbols",
+            "description": "Tìm class/hàm/biến theo tên trong TOÀN workspace qua LSP "
+                           "(workspace/symbol) — nhanh và chính xác hơn grep khi tìm định nghĩa.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Tên symbol, vd 'UserService'"}},
+                "required": ["query"],
             },
         },
     },
@@ -391,8 +458,10 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
         if name == "run_command":
             output = await _run_command(workspace, args, override=override)
             ok = not output.startswith(("Error", "BLOCKED"))
-        elif name in ("lsp_diagnostics", "lsp_symbols"):
+        elif name in ("lsp_diagnostics", "lsp_symbols", "lsp_definition", "lsp_references"):
             output, ok, changed_path = await _run_lsp_tool(name, workspace, args)
+        elif name == "lsp_search_symbols":
+            output, ok, changed_path = await _run_lsp_search_symbols(workspace, args)
         elif name in _IMPL:
             res = _IMPL[name](workspace, args)
             if isinstance(res, dict):
@@ -475,12 +544,66 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
         if not diags:
             return f"✓ {rel}: không có lỗi LSP", True, None
         return _lsp.format_diags(diags).replace("sau khi ghi file", f"({rel})"), True, None
-    # lsp_symbols
+    # các tool còn lại cần session
     sess = await _lsp._get_session(workspace, _lsp.lang_for(p))
     if sess is None:
         return f"Error: không khởi động được language server cho {p.suffix}", False, None
-    syms = await sess.symbols(p)
-    if not syms:
-        return f"(không có symbol — file rỗng hoặc ngôn ngữ chưa hỗ trợ)", True, None
-    lines = [f"{'  ' * x['depth']}{x['kind']} {x['name']} (dòng {x['line']})" for x in syms[:80]]
-    return f"Cấu trúc {rel}:\n" + "\n".join(lines), True, None
+    if name == "lsp_symbols":
+        syms = await sess.symbols(p)
+        if not syms:
+            return "(không có symbol — file rỗng hoặc ngôn ngữ chưa hỗ trợ)", True, None
+        lines = [f"{'  ' * x['depth']}{x['kind']} {x['name']} (dòng {x['line']})" for x in syms[:80]]
+        return f"Cấu trúc {rel}:\n" + "\n".join(lines), True, None
+    if name in ("lsp_definition", "lsp_references"):
+        line = int(args.get("line", 1) or 1)
+        char = int(args.get("character", 1) or 1)
+        try:
+            locs = (await sess.definition(p, line, char) if name == "lsp_definition"
+                    else await sess.references(p, line, char))
+        except Exception as e:
+            return f"Error: LSP {name} lỗi: {e}", False, None
+        if not locs:
+            return (f"Không tìm thấy {name.replace('lsp_', '')} cho vị trí {rel}:{line} "
+                    "(kiểm tra lại line/cột — dùng lsp_symbols để định vị trước)", True, None)
+        ws_str = str(workspace)
+        rows = []
+        for l in locs:
+            short = l["file"].replace(ws_str + "/", "").replace(ws_str, ".")
+            rows.append(f"  {short}:{l['line']}:{l['character']}")
+        verb = "Định nghĩa" if name == "lsp_definition" else "Nơi dùng"
+        return f"{verb} ({len(locs)} vị trí):\n" + "\n".join(rows), True, None
+    return f"Error: unknown lsp tool {name}", False, None
+
+
+async def _run_lsp_search_symbols(workspace: Path, args: dict) -> tuple[str, bool, None]:
+    from . import lsp as _lsp
+    q = str(args.get("query", "")).strip()
+    if not q:
+        return "Error: thiếu query", False, None
+    # thử từng ngôn ngữ có language server
+    results: list[dict] = []
+    no_support: list[str] = []
+    for lang, cmds in (("python", _lsp.SERVER_DEFS["python"]), ("typescript", _lsp.SERVER_DEFS["typescript"])):
+        if not any(__import__("shutil").which(c[0]) for c in cmds):
+            continue
+        sess = await _lsp._get_session(workspace, lang)
+        if sess is None:
+            continue
+        if not sess.capabilities.get("workspaceSymbolProvider"):
+            no_support.append(lang)
+            continue
+        try:
+            results = await sess.workspace_symbols(q)
+            if results:
+                break
+        except Exception:
+            continue
+    if not results:
+        if no_support:
+            return (f"Language server ({', '.join(no_support)}) không hỗ trợ tìm symbol toàn "
+                    f"workspace — dùng tool search_files thay thế", True, None)
+        return f"Không tìm thấy symbol nào khớp «{q}» (hoặc máy chưa có language server)", True, None
+    ws_str = str(workspace)
+    rows = [f"  {x['kind']} {x['name']} — {x['file'].replace(ws_str + '/', '')}:{x['line']}"
+            for x in results[:30]]
+    return f"Symbols khớp «{q}» ({len(results)}):\n" + "\n".join(rows), True, None

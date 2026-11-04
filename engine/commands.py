@@ -60,4 +60,6 @@ def expand(text: str, workspace: Path) -> str | None:
     md = _strip_frontmatter(md)
     if not md:
         return None
-    return md.replace("$ARGUMENTS", args).replace("$ARGS", args)
+    if "$ARGUMENTS" in md or "$ARGS" in md:
+        return md.replace("$ARGUMENTS", args).replace("$ARGS", args)
+    return md + (f"\n\n=== USER ARGUMENTS ===\n{args}" if args else "")

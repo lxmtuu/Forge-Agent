@@ -61,7 +61,8 @@ Explore the workspace, then produce: (1) a short understanding of the current st
 (4) how to verify. The user will review this plan and switch to Agent mode to execute.
 """
 
-READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols"}
+READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols",
+                   "lsp_definition", "lsp_references", "lsp_search_symbols"}
 CHAT_MODES = ("direct", "agent", "plan")
 
 
@@ -93,7 +94,9 @@ def _agents_md_block(workspace: Path) -> str:
 
 
 class Agent:
-    def __init__(self, store: SessionStore, session_id: str, model: str | None = None):
+    def __init__(self, store: SessionStore, session_id: str, model: str | None = None,
+                 depth: int = 0):
+        self.depth = depth
         self.store = store
         self.session = store.get(session_id)
         if self.session is None:
@@ -102,6 +105,40 @@ class Agent:
             self.session.model = model
         self.model = self.session.model or config.get_model()
         self.workspace: Path = store.workspace(session_id)
+
+    async def _run_subagent(self, tc_id: str, task: str, sub_model: str | None):
+        """Chạy sub-agent: phiên mới + workspace dùng chung cha, context hoàn toàn riêng."""
+        sub_sid = self.store.create(model=sub_model or "", title=f"\U0001F9E9 {task[:46]}").id
+        try:
+            ptr = config.WORKSPACES_DIR / f"{sub_sid}.path"
+            ptr.write_text(str(self.workspace), encoding="utf-8")
+        except OSError:
+            pass
+        yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid, "task": task[:200]}
+        sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
+        texts: list[str] = []
+        n_tools = 0
+        error: str | None = None
+        try:
+            async for ev in sub.send(task):
+                t = ev["type"]
+                if t == "assistant_message" and ev.get("content"):
+                    texts.append(ev["content"])
+                elif t == "tool_result":
+                    n_tools += 1
+                    yield {"type": "subagent_progress", "id": tc_id, "tools": n_tools,
+                           "last_tool": ev.get("name")}
+                elif t == "error":
+                    error = ev.get("message")
+        except Exception as e:  # noqa: BLE001
+            error = str(e)
+        summary = "\n\n".join(t for t in texts if t).strip()[-4000:] or "(subagent không trả lời)"
+        if error:
+            summary = f"(subagent lỗi: {error})\n" + summary
+        yield {"type": "subagent_done", "id": tc_id, "session_id": sub_sid,
+               "tools": n_tools, "summary": summary[:300]}
+        out = f"KẾT QUẢ SUB-AGENT (phiên {sub_sid}, {n_tools} tool calls):\n\n{summary}"
+        yield {"type": "subagent_output", "id": tc_id, "output": out}
 
     def _memory_block(self) -> str:
         """MEMORY.md (workspace + global) — kiến thức các phiên trước, auto-memory."""
@@ -136,7 +173,11 @@ class Agent:
                       or (config.DATA_DIR / "MEMORY.md").exists(),
         }
 
-    def _system_message(self) -> dict:
+    def _skills_block(self) -> str:
+        from .skills import skills_block
+        return skills_block(self.workspace)
+
+    def _system_message(self, session_extra: str = "") -> dict:
         return {
             "role": "system",
             "content": SYSTEM_PROMPT.format(
@@ -144,7 +185,7 @@ class Agent:
                 platform=f"{platform.system()} {platform.release()} ({platform.machine()}) / Python {platform.python_version()}",
                 workspace=str(self.workspace),
                 agents_md=_agents_md_block(self.workspace),
-            ) + self._memory_block(),
+            ) + self._memory_block() + self._skills_block() + (session_extra or ""),
         }
 
     async def send(self, user_text: str, chat_mode: str = "agent", content=None):
@@ -170,7 +211,14 @@ class Agent:
             cres = await compact_session(self)
             yield {"type": "compacted", "ok": cres.get("ok"),
                    "before": cres.get("before"), "after": cres.get("after")}
-        sys_msg = self._system_message()
+        # hooks: session_start — context bổ sung (chạy 1 lần mỗi phiên mỗi tiến trình)
+        try:
+            from . import hooks as _hooks
+            ss_extra = await _hooks.session_start_cache(self.workspace, s.id)
+        except Exception as _e:
+            print(f"[hooks] session_start lỗi (bỏ qua): {_e}")
+            ss_extra = ""
+        sys_msg = self._system_message(ss_extra)
         if chat_mode == "plan":
             sys_msg["content"] += PLAN_ADDENDUM
         messages = [sys_msg] + s.messages
@@ -232,6 +280,46 @@ class Agent:
                         args = {"_raw": raw_args}
                     yield {"type": "tool_start", "id": tc["id"], "name": name, "args": args}
 
+                    # ---- hooks: pre_tool_use (exit 2 = chặn, chuẩn Claude Code) ----
+                    try:
+                        from . import hooks as _hooks
+                        pre = await _hooks.pre_tool_use(self.workspace, s.id, name, args)
+                        if pre and pre.get("blocked"):
+                            result = {"ok": False,
+                                      "output": f"BLOCKED by hook pre_tool_use: {pre.get('reason')}"}
+                            yield {"type": "tool_result", "id": tc["id"], "name": name,
+                                   "args": args, "ok": False, "output": result["output"]}
+                            s.messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                               "content": result["output"]})
+                            messages.append(s.messages[-1])
+                            self.store.save(s)
+                            continue
+                    except Exception as _he:
+                        print(f"[hooks] pre_tool_use lỗi (bỏ qua): {_he}")
+
+                    # ---- sub-agent delegation (context riêng, workspace chung) ----
+                    if name == "spawn_subagent" and chat_mode == "agent":
+                        sub_task = str(args.get("task", "")).strip()
+                        if not sub_task:
+                            result = {"ok": False, "output": "Error: thiếu task cho sub-agent"}
+                        else:
+                            result = {"ok": False, "output": "sub-agent không trả kết quả"}
+                            async for _sev in self._run_subagent(tc["id"], sub_task,
+                                                                 args.get("model") or None):
+                                if _sev["type"] == "subagent_output":
+                                    result = {"ok": True, "output": _sev["output"]}
+                                else:
+                                    yield _sev
+                        ev = {"type": "tool_result", "id": tc["id"], "name": name,
+                              "args": args, "ok": result.get("ok", False),
+                              "output": result.get("output", "")}
+                        yield ev
+                        s.messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                           "content": result.get("output", "")})
+                        messages.append(s.messages[-1])
+                        self.store.save(s)
+                        continue
+
                     # ---- interactive approval ("ask" mode) ----
                     override = False
                     if name == "run_command":
@@ -286,6 +374,15 @@ class Agent:
                             self.store.save(s)
                     else:
                         result = await tools.execute_tool(name, args, self.workspace, override=override)
+                    # hooks: post_tool_use — nối nhận xét hook vào output cho LLM
+                    try:
+                        from . import hooks as _hooks
+                        extra = await _hooks.post_tool_use(self.workspace, s.id, name, args,
+                                                           str(result.get("output", "")))
+                        if extra:
+                            result["output"] = str(result.get("output", "")) + "\n" + extra
+                    except Exception as _he:
+                        print(f"[hooks] post_tool_use lỗi (bỏ qua): {_he}")
                     ev = {"type": "tool_result", "id": tc["id"], "name": name,
                           "args": args, "ok": result["ok"], "output": result["output"]}
                     if result.get("diff"):

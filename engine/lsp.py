@@ -78,6 +78,7 @@ class LspSession:
         self._wbuf = b""
         self._wlock = asyncio.Lock()
         self._reader_task: asyncio.Task | None = None
+        self.capabilities: dict = {}
         self._init_ok = False
         self._pending: dict[int, asyncio.Future] = {}  # id → future (response)
 
@@ -174,10 +175,11 @@ class LspSession:
                 "processId": None,
                 "rootUri": self.workspace.as_uri(),
                 "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
-                "clientInfo": {"name": "forge-agent", "version": "0.10.0"},
+                "clientInfo": {"name": "forge-agent", "version": "0.11.0"},
             }, timeout=15)
             if result is None:
                 return False
+            self.capabilities = (result or {}).get("capabilities") or {}
             await self._send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
             self._init_ok = True
             return True
@@ -252,6 +254,84 @@ class LspSession:
         except Exception:
             pass
         return out[:200]
+
+    async def _ensure_open(self, path: Path) -> str | None:
+        uri = path.as_uri()
+        if uri not in self.opened:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+            await self.refresh_file(path, text)
+            await asyncio.sleep(0.35)  # server cần thời gian phân tích trước khi hỏi vị trí
+        return uri
+
+    async def definition(self, path: Path, line: int, character: int = 1,
+                         timeout: float = 10.0) -> list[dict]:
+        """textDocument/definition → [{file, line}] (line 1-based)."""
+        uri = await self._ensure_open(path)
+        if not uri:
+            return []
+        pos = {"textDocument": {"uri": uri},
+               "position": {"line": max(0, line - 1), "character": max(0, character - 1)}}
+        result = await self._request("textDocument/definition", pos, timeout=timeout)
+        locs = self._locs(result)
+        if not locs:  # server chưa index xong cross-file → thử lại
+            await asyncio.sleep(0.8)
+            locs = self._locs(await self._request("textDocument/definition", pos, timeout=timeout))
+        return locs
+
+    async def references(self, path: Path, line: int, character: int = 1,
+                         timeout: float = 12.0) -> list[dict]:
+        """textDocument/references → [{file, line}] (bao gồm cả khai báo)."""
+        uri = await self._ensure_open(path)
+        if not uri:
+            return []
+        pos = {"textDocument": {"uri": uri},
+               "position": {"line": max(0, line - 1), "character": max(0, character - 1)},
+               "context": {"includeDeclaration": True}}
+        result = await self._request("textDocument/references", pos, timeout=timeout)
+        locs = self._locs(result)
+        if not locs:  # retry sau khi server kịp index
+            await asyncio.sleep(0.8)
+            locs = self._locs(await self._request("textDocument/references", pos, timeout=timeout))
+        return locs
+
+    async def workspace_symbols(self, query: str, timeout: float = 12.0) -> list[dict]:
+        """workspace/symbol → [{name, kind, file, line}] (tìm toàn workspace)."""
+        result = await self._request("workspace/symbol", {"query": query or ""}, timeout=timeout)
+        out = []
+        for it in (result if isinstance(result, list) else [])[:60]:
+            if not isinstance(it, dict):
+                continue
+            loc = it.get("location") or {}
+            out.append({
+                "name": it.get("name", "?"),
+                "kind": self.SYMBOL_KIND.get(it.get("kind"), "Symbol"),
+                "file": self._uri_to_path(loc.get("uri", "")),
+                "line": ((loc.get("range") or {}).get("start") or {}).get("line", 0) + 1,
+            })
+        return out
+
+    @staticmethod
+    def _uri_to_path(uri: str) -> str:
+        if uri.startswith("file://"):
+            from urllib.parse import unquote, urlparse
+            return unquote(urlparse(uri).path)
+        return uri
+
+    def _locs(self, result) -> list[dict]:
+        items = result if isinstance(result, list) else ([result] if result else [])
+        out = []
+        for it in items[:40]:
+            if not isinstance(it, dict):
+                continue
+            uri = it.get("uri") or (it.get("targetUri") or "")
+            rng = (it.get("range") or it.get("targetSelectionRange") or {}).get("start") or {}
+            out.append({"file": self._uri_to_path(uri),
+                        "line": int(rng.get("line", 0)) + 1,
+                        "character": int(rng.get("character", 0)) + 1})
+        return out
 
     def normalized(self, uri: str) -> list[dict]:
         sev = {1: "error", 2: "warning", 3: "info", 4: "hint"}

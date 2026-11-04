@@ -573,6 +573,15 @@ class ForgeTUI(App):
                 elif t == "approval_request":
                     self.app.push_screen(ApprovalModal(ev["id"], ev["command"],
                                                        ev["level"], ev["reasons"]))
+                elif t == "subagent_started":
+                    self.add_line(f"🧩 Sub-agent bắt đầu: {ev['task'][:80]}", cls="tool-line")
+                elif t == "subagent_progress":
+                    self.add_line(f"   ⚙ sub-agent đã chạy {ev['tools']} tool"
+                                  + (f" (gần nhất: {ev.get('last_tool')})" if ev.get("last_tool") else ""),
+                                  cls="sys-line")
+                elif t == "subagent_done":
+                    self.add_line(f"🧩 Sub-agent xong ({ev['tools']} tools) — phiên {ev['session_id']}",
+                                  cls="tool-ok")
                 elif t == "elicitation_request":
                     self.app.push_screen(ElicitModal(
                         ev["id"], ev.get("server") or "?", ev.get("message") or "",

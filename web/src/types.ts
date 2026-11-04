@@ -119,6 +119,10 @@ export type AgentEvent =
   | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string; diff?: string; path?: string }
   | { type: 'compacting'; chars: number }
   | { type: 'compacted'; ok: boolean; before?: number; after?: number }
+  | { type: 'subagent_started'; id: string; session_id: string; task: string }
+  | { type: 'subagent_progress'; id: string; tools: number; last_tool?: string }
+  | { type: 'subagent_done'; id: string; session_id: string; tools: number; summary: string }
+  | { type: 'subagent_output'; id: string; output: string }
   | { type: 'elicitation_request'; id: string; server?: string; message?: string; schema?: { type: string; properties?: Record<string, { type: string; description?: string }>; required?: string[] } | null; url?: string | null }
   | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
   | { type: 'approval_decision'; id: string; decision: string }
@@ -179,6 +183,7 @@ export type Item =
       url: string | null
       action: string | null
     }
+  | { kind: 'subagent'; id: string; saId: string; task: string; sessionId?: string; tools: number; status: 'running' | 'done'; output?: string }
   | { kind: 'error'; id: string; message: string }
 
 let counter = 0

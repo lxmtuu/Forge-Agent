@@ -110,6 +110,28 @@ file này vào workspace là agent tuân theo), và **mở dự án thật** là
 | **Headless JSON** | `forge --once "task" --json` → JSON {session, text, tools, usage} cho script/CI |
 | **Themes** | ⚙ Settings → 🌑 Tối / ☀ Sáng / 🌌 Amber CRT |
 
+### 🚀 Extensibility Complete (v0.11) — mở rộng đúng chuẩn Claude Code
+
+| Tính năng | Dùng thế nào |
+|---|---|
+| **🧩 Sub-agent** | Agent tự gọi `spawn_subagent(task)` cho việc nặng context (tìm kiếm diện rộng, review vùng code) — phiên mới, **workspace vẫn dùng chung**; trên web/TUI thấy thẻ 🧩 tiến độ realtime |
+| **🛠 Skills model-invoked** | `.forge/skills/review-pr.md` với `description:` ngắn — LLM **tự đọc khi mô tả khớp yêu cầu** (progressive disclosure, không đốt context); thêm `disable-model-invocation: true` để chỉ gọi tay `/review-pr` |
+| **🪝 Hooks vòng đời** | `data/config.json` → `"hooks": {"pre_tool_use": [{"command": "block-danger.sh", "matcher": "run_command"}], "post_tool_use": [...], "session_start": [...]}` — script nhận JSON trên stdin; **exit 2 = chặn tool call** (lý do stderr đi thẳng vào hội thoại) |
+| **🧭 LSP navigation** | `lsp_definition` (đi tới định nghĩa) · `lsp_references` (tìm nơi dùng) · `lsp_search_symbols` (tra symbol toàn workspace) — tự retry khi server chưa index |
+
+Ví dụ hook chặn lệnh nguy hiểm (`.forge/config.json` hoặc `data/config.json`):
+```json
+{
+  "hooks": {
+    "pre_tool_use": [
+      { "command": "guard-hook.sh", "matcher": "run_command|write_file" }
+    ],
+    "session_start": [{ "command": "echo 'Dự án này dùng pytest và ruff'" }]
+  }
+}
+```
+Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "workspace"}`); **exit 0 = cho qua, exit 2 = chặn** (stderr trở thành lý do LLM thấy); matcher là regex tên tool, bỏ trống = khớp tất cả.
+
 Ví dụ `profiles` trong `data/config.json`:
 ```json
 {

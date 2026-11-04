@@ -99,7 +99,8 @@ async def t2():
     assert out2 == "Review code theo chuẩn team: toàn bộ api.py", out2
     # project ưu tiên hơn global
     (d / "review.md").write_text("REVIEW-PROJECT", encoding="utf-8")
-    assert expand("/review x", ws) == "REVIEW-PROJECT"
+    # v0.11: body không có $ARGUMENTS → args được nối cuối (chuẩn Claude Code)
+    assert expand("/review x", ws) == "REVIEW-PROJECT\n\n=== USER ARGUMENTS ===\nx", expand("/review x", ws)
 
 
 # ────────────────────────────────────────────── T3 fork ───────────────────

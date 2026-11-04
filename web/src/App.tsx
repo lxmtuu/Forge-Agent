@@ -56,6 +56,18 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
         kind: 'approval', id: uid(), approvalId: ev.id, command: ev.command,
         level: ev.level, reasons: ev.reasons, decision: null,
       }]
+    case 'subagent_started':
+      return [...prev, { kind: 'subagent', id: uid(), saId: ev.id, task: ev.task,
+                         sessionId: ev.session_id, tools: 0, status: 'running' as const }]
+    case 'subagent_progress':
+      return prev.map((it) => it.kind === 'subagent' && it.saId === ev.id
+        ? { ...it, tools: ev.tools } : it)
+    case 'subagent_done':
+      return prev.map((it) => it.kind === 'subagent' && it.saId === ev.id
+        ? { ...it, status: 'done' as const, tools: ev.tools } : it)
+    case 'subagent_output':
+      return prev.map((it) => it.kind === 'subagent' && it.saId === ev.id
+        ? { ...it, status: 'done' as const, output: ev.output } : it)
     case 'elicitation_request':
       return [...prev, {
         kind: 'elicitation', id: uid(), eid: ev.id, server: ev.server ?? '?',
@@ -441,6 +453,23 @@ export default function App() {
       ) : null
     }
     if (it.kind === 'tool') return <div key={it.id} className="msg tool-wrap"><ToolCard item={it} /></div>
+    if (it.kind === 'subagent') {
+      return (
+        <div key={it.id} className="msg tool-wrap">
+          <div className={`tool-card ${it.status === 'running' ? 'running' : 'ok'}`}>
+            <div className="tool-head">
+              <span className="tool-icon">{it.status === 'running' ? <span className="spinner" /> : '🧩'}</span>
+              <span className="tool-label">Sub-agent</span>
+              <code className="tool-arg">{it.task.slice(0, 60)}</code>
+              <span className="tool-status">{it.status === 'running' ? `${it.tools} tools…` : 'xong'}</span>
+            </div>
+            {it.output && (
+              <div className="tool-body"><pre>{it.output.slice(0, 4000)}</pre></div>
+            )}
+          </div>
+        </div>
+      )
+    }
     if (it.kind === 'elicitation') {
       return (
         <ElicitationCard
