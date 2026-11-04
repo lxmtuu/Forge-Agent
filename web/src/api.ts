@@ -1,5 +1,6 @@
 import type {
-  AgentEvent, BatchEvent, FileNode, McpServerStatus, ModelInfo,
+  AgentEvent, BatchEvent, ContextStats, DoctorReport, FileNode,
+  KeyCheckResult, McpServerStatus, ModelInfo,
   SessionFull, SessionSummary, Settings, UsageTotals,
 } from './types'
 

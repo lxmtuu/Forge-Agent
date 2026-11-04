@@ -110,15 +110,22 @@ class Agent:
         self.workspace: Path = store.workspace(session_id)
 
     async def _llm_with_fallback(self, messages, tools, model):
-        """stream_chat + availability fallback: 402/429/5xx → model dự phòng 1 lần."""
+        """stream_chat + availability fallback: 402/429/5xx → model dự phòng 1 lần.
+
+        Chỉ fallback khi stream CHƯA yield gì (tránh nhân đôi nội dung nếu model
+        chết giữa chừng sau vài delta — khi đó raise cho vòng lặp xử lý lỗi)."""
         cur = llm.resolve_model(model)
         fb = None
         reason = ""
+        yielded_any = False
         try:
             async for ev in llm.stream_chat(messages, tools=tools, model=model):
+                yielded_any = True
                 yield ev
             return
         except llm.LLMError as e:
+            if yielded_any:
+                raise
             fb = llm.pick_fallback(cur, e)
             if not fb:
                 raise

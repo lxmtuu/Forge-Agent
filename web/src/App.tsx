@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import { uid } from './types'
-import type { AgentEvent, ChatMode, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage } from './types'
+import type { AgentEvent, BatchEvent, ChatMode, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage } from './types'
 import { Sidebar } from './components/Sidebar'
 import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
@@ -141,7 +141,16 @@ export default function App() {
   const [busyTool, setBusyTool] = useState<string | null>(null)
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [ctx, setCtx] = useState<ContextStats | null>(null)
+  const [showSb, setShowSb] = useState(false)
+  const [menu, setMenu] = useState<{ kind: 'cmd' | 'file'; items: string[]; sel: number } | null>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
+  const WEB_COMMANDS: [string, string][] = [
+    ['/review', 'code review diff thật — P0–P3 + verdict, chỉ đọc'],
+    ['/diff', 'xem diff phiên (git repo hoặc checkpoint)'],
+    ['/memory', 'xem bộ nhớ đang nạp · “/memory clear” để xoá'],
+    ['/run', 'chạy custom agent từ .forge/agents/<tên>.md'],
+  ]
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -159,6 +168,46 @@ export default function App() {
     if (el) { el.scrollTop = el.scrollHeight; nearBottomRef.current = true; setShowJump(false) }
   }
 
+  const flatFiles = useMemo(() => {
+    const out: string[] = []
+    const walk = (nodes: FileNode[], pre: string) => {
+      for (const n of nodes) {
+        const path = pre ? `${pre}/${n.name}` : n.name
+        if (n.type === 'dir') walk(n.children ?? [], path)
+        else out.push(path)
+      }
+    }
+    walk(tree, '')
+    return out
+  }, [tree])
+
+  function updateInput(v: string) {
+    setInput(v)
+    const mCmd = v.match(/^\/([a-z0-9_-]*)$/)
+    if (mCmd) {
+      const q = mCmd[1].toLowerCase()
+      const items = WEB_COMMANDS.filter(([c]) => c.slice(1).startsWith(q)).map(([c]) => c)
+      setMenu(items.length ? { kind: 'cmd', items, sel: 0 } : null)
+      return
+    }
+    const mAt = v.match(/(?:^|\s)@([^\s@]*)$/)
+    if (mAt) {
+      const q = mAt[1].toLowerCase()
+      const items = flatFiles.filter((f) => f.toLowerCase().includes(q)).slice(0, 8)
+      setMenu(items.length ? { kind: 'file', items, sel: 0 } : null)
+      return
+    }
+    setMenu(null)
+  }
+
+  function applyMenu(item: string) {
+    if (!menu) return
+    if (menu.kind === 'cmd') setInput(item + ' ')
+    else setInput((cur) => cur.replace(/@[^\s@]*$/, `@${item} `))
+    setMenu(null)
+    setTimeout(() => taRef.current?.focus(), 0)
+  }
+
   const refreshSessions = useCallback(() => {
     api.listSessions().then(setSessions).catch(() => {})
   }, [])
@@ -166,8 +215,8 @@ export default function App() {
   const loadSession = useCallback(async (id: string) => {
     try {
       const s = await api.getSession(id)
-      setItems(buildTimeline(s.session?.messages ?? []))
-      setSessionUsage(s.session?.usage ?? null)
+      setItems(buildTimeline(s.messages ?? []))
+      setSessionUsage(s.usage ?? null)
       setBatch(null)
       api.context(id).then(setCtx).catch(() => {})
     } catch (e) { setErrorBanner(String(e)) }
@@ -297,6 +346,7 @@ export default function App() {
 
   async function selectSession(id: string) {
     if (streaming) stop()
+    setShowSb(false)
     setSid(id)
     setFileSel(null); setFileContent(null)
     await loadSession(id)
@@ -500,12 +550,12 @@ export default function App() {
         </div>
       )
     }
-    return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
     if (it.kind === 'notice') return <div key={it.id} className="msg sys-msg">{it.text}</div>
+    return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
   }
 
   return (
-    <div className="app">
+    <div className={`app ${showSb ? 'show-sb' : ''}`}>
       {settings && (
         <Sidebar
           sessions={sessions}
@@ -520,6 +570,8 @@ export default function App() {
       )}
 
       <main className="chat-pane">
+        <button className="sb-toggle" aria-label="Danh sách phiên"
+          onClick={() => setShowSb((v) => !v)}>☰</button>
         <div className="chat-scroll" ref={chatScrollRef} onScroll={onChatScroll}>
           {items.length === 0 && !batch && (
             <div className="hero">
@@ -530,6 +582,14 @@ export default function App() {
                 {['Viết game snake bằng HTML/JS rồi mở thử', 'Phân tích dữ liệu csv trong workspace', 'Tạo REST API Python đơn giản + test'].map((x) => (
                   <button key={x} onClick={() => setInput(x)}>{x}</button>
                 ))}
+              </div>
+              <div className="hero-tips" aria-label="Mẹo nhanh">
+                <span><code>/review</code> review diff</span>
+                <span><code>/diff</code> xem thay đổi</span>
+                <span><code>/memory</code> bộ nhớ</span>
+                <span><code># ghi chú</code> ghi nhớ nhanh</span>
+                <span><code>@file.py</code> đính file</span>
+                <span><code>/run tên</code> custom agent</span>
               </div>
             </div>
           )}
@@ -592,6 +652,23 @@ export default function App() {
               onChange={(e) => setBattleModels(e.target.value)}
               placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
           )}
+          {menu && (
+            <div className="cmd-menu" role="listbox" aria-label="Gợi ý lệnh">
+              {menu.items.map((it, i) => (
+                <button key={it} role="option" aria-selected={i === menu.sel}
+                  className={`cmd-item ${i === menu.sel ? 'on' : ''}`}
+                  onMouseDown={(e) => { e.preventDefault(); applyMenu(it) }}>
+                  <code>{it}</code>
+                  {menu.kind === 'cmd' && (
+                    <span>{WEB_COMMANDS.find(([c]) => c === it)?.[1] ?? ''}</span>
+                  )}
+                </button>
+              ))}
+              {menu.kind === 'cmd' && (
+                <div className="cmd-foot">Lệnh tuỳ chỉnh .forge/commands/&lt;tên&gt;.md cũng gọi được: /&lt;tên&gt;</div>
+              )}
+            </div>
+          )}
           <div className="composer-row">
             <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
               style={{ display: 'none' }} id="img-picker"
@@ -599,6 +676,7 @@ export default function App() {
             <button className="btn-attach" title="Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)"
               onClick={() => document.getElementById('img-picker')?.click()} disabled={streaming || pendingImages.length >= 4}>📎</button>
             <textarea
+              ref={taRef}
               value={input}
               placeholder={streaming
                 ? 'Agent đang làm việc…'
@@ -609,8 +687,14 @@ export default function App() {
                     : chatMode === 'direct' ? 'Hỏi gì đó… (Enter gửi)'
                       : chatMode === 'plan' ? 'Mô tả tính năng cần lập kế hoạch…'
                         : 'Nhập nhiệm vụ… (@file.py đính kèm file · Enter gửi · Shift+Enter xuống dòng)'}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => updateInput(e.target.value)}
               onKeyDown={(e) => {
+                if (menu) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setMenu({ ...menu, sel: (menu.sel + 1) % menu.items.length }); return }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setMenu({ ...menu, sel: (menu.sel - 1 + menu.items.length) % menu.items.length }); return }
+                  if (e.key === 'Enter') { e.preventDefault(); applyMenu(menu.items[menu.sel]); return }
+                  if (e.key === 'Escape') { setMenu(null); return }
+                }
                 if ((e.key === 'Enter' && !e.shiftKey && (!parallel || chatMode === 'battle')) ||
                     (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
                   e.preventDefault(); send()
@@ -626,7 +710,7 @@ export default function App() {
             <span>Phiên: <code>{sid ?? '—'}</code></span>
             <span>Model: <code>{settings?.model ?? '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
-            {ctx && <span title={`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}`}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
+            {ctx && <span className={`ctx-chip ${ctx.percent !== null && ctx.percent >= 90 ? 'ctx-danger' : ctx.percent !== null && ctx.percent >= 70 ? 'ctx-warn' : ''}`} title={`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}${ctx.percent !== null && ctx.percent >= 70 ? ' · nên /compact (nút 🧹)' : ''}`}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
             <span className="foot-actions">
               <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
               <button className="foot-btn" disabled={busyTool !== null} title="Nén hội thoại bằng LLM để giải phóng context" onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} Nén</button>

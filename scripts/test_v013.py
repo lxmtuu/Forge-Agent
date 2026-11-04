@@ -253,9 +253,50 @@ async def t6():
         assert '"done"' in r.text, r.text[-200:]
 
 
+@check("T7 fallback giữa stream (đã yield delta) → KHÔNG retry nhân đôi, lỗi nổi lên")
+async def t7():
+    from engine.llm import LLMError
+    from engine.agent import Agent
+    from engine.session import SessionStore
+    import engine.llm as llm
+    store = SessionStore()
+    sid = store.create().id
+    agent = Agent(store, sid, model="test/primary-model")
+    state = {"n": 0}
+
+    async def fake(messages, tools=None, model=None, api_key=None, temperature=0.3):
+        state["n"] += 1
+        yield {"type": "delta", "text": "một nửa"}
+        raise LLMError("OpenRouter HTTP 502 bad gateway")
+
+    orig = llm.stream_chat
+    llm.stream_chat = fake
+    try:
+        evs = [e async for e in agent.send("xin chào")]  # agent chuyển LLMError → event error
+    finally:
+        llm.stream_chat = orig
+    assert state["n"] == 1, f"KHÔNG được retry, đã gọi {state['n']} lần"
+    assert not any(e["type"] == "model_fallback" for e in evs), "giữa stream không được fallback"
+    errs = [e for e in evs if e["type"] == "error"]
+    assert errs and "502" in errs[0]["message"], evs[-3:]
+    deltas = [e for e in evs if e["type"] == "assistant_delta"]
+    assert len(deltas) == 1 and deltas[0]["text"] == "một nửa", "không được nhân đôi delta"
+
+
+class pytest_err:
+    """with pytest_err(Exc): — nuốt exception, bảo đảm nó xảy ra."""
+    def __init__(self, exc):
+        self.exc = exc
+    def __enter__(self):
+        return self
+    def __exit__(self, et, ev, tb):
+        assert et is not None and issubclass(et, self.exc), "phải raise lỗi mong đợi"
+        return True
+
+
 async def main():
     print(f"=== SMOKE v0.13 — data tạm: {TMP} ===")
-    for fn in [t1, t2, t3, t4, t5, t6]:
+    for fn in [t1, t2, t3, t4, t5, t6, t7]:
         await fn()
     print(f"\nKẾT QUẢ: {len(PASS)} PASS / {len(FAIL)} FAIL")
     if FAIL:

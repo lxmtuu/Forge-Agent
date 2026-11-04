@@ -119,7 +119,7 @@ export type AgentEvent =
   | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string; diff?: string; path?: string }
   | { type: 'compacting'; chars: number }
   | { type: 'compacted'; ok: boolean; before?: number; after?: number }
-  | { type: 'subagent_started'; id: string; session_id: string; task: string }
+  | { type: 'subagent_started'; id: string; session_id: string; task: string; model?: string }
   | { type: 'subagent_progress'; id: string; tools: number; last_tool?: string }
   | { type: 'subagent_done'; id: string; session_id: string; tools: number; summary: string }
   | { type: 'subagent_output'; id: string; output: string }

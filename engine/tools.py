@@ -1,7 +1,6 @@
 """Built-in agent tools: file operations + shell, confined to a session workspace."""
 import asyncio
 import os
-import re
 from pathlib import Path
 
 MAX_READ = 60_000          # chars returned to the model
