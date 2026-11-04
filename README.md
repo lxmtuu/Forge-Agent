@@ -55,7 +55,7 @@ timeout 30s (tối đa 120s) và output bị cắt ở 12k ký tự.
 Kết nối MCP server chuẩn (stdio JSON-RPC) — agent tự nhận thêm tool:
 1. ⚙ Settings → MCP servers → thêm, VD server filesystem:
    `npx` + args `-y, @modelcontextprotocol/server-filesystem, /tmp/du-lieu`
-2. Lưu lại → từ lượt chat kế tiếp, model thấy tool `mcp_fs_*` và dùng như tool内置.
+2. Lưu lại → từ lượt chat kế tiếp, model thấy tool `mcp_fs_*` và dùng như tool thường.
 3. Test nhanh có sẵn: `python3 scripts/demo_mcp_server.py` (echo/add/now_time),
    cấu hình mẫu trong `mcp.example.json`.
 4. Trong CLI: `/mcp` xem trạng thái, `/mcp refresh` khởi động lại.
