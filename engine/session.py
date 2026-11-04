@@ -60,7 +60,7 @@ class SessionStore:
         if not p.exists():
             return None
         try:
-            return Session.from_dict(json.loads(p.read_text()))
+            return Session.from_dict(json.loads(p.read_text(encoding="utf-8")))
         except Exception:
             return None
 
@@ -68,7 +68,7 @@ class SessionStore:
         out = []
         for p in sorted(config.SESSIONS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
-                d = json.loads(p.read_text())
+                d = json.loads(p.read_text(encoding="utf-8"))
                 out.append({
                     "id": d["id"], "title": d.get("title", "New session"),
                     "model": d.get("model", ""), "updated_at": d.get("updated_at", 0),
@@ -83,7 +83,9 @@ class SessionStore:
         config.ensure_dirs()
         s.updated_at = time.time()
         tmp = self._path(s.id).with_suffix(".tmp")
-        tmp.write_text(json.dumps(s.to_dict(), ensure_ascii=False, indent=1))
+        # encoding="utf-8" là BẮT BUỘC: mặc định theo locale Windows (charmap)
+        # sẽ làm sập khi lưu tin nhắn tiếng Việt
+        tmp.write_text(json.dumps(s.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self._path(s.id))
 
     def delete(self, sid: str) -> bool:

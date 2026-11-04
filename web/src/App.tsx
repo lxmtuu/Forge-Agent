@@ -120,8 +120,8 @@ export default function App() {
   const loadSession = useCallback(async (id: string) => {
     try {
       const s = await api.getSession(id)
-      setItems(buildTimeline(s.session.messages))
-      setSessionUsage(s.session.usage ?? null)
+      setItems(buildTimeline(s.session?.messages ?? []))
+      setSessionUsage(s.session?.usage ?? null)
       setBatch(null)
     } catch (e) { setErrorBanner(String(e)) }
   }, [])

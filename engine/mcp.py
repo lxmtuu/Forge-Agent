@@ -31,14 +31,15 @@ def _config_path() -> Path:
 
 def load_servers() -> list[dict]:
     try:
-        return json.loads(_config_path().read_text()).get("servers", [])
+        return json.loads(_config_path().read_text(encoding="utf-8")).get("servers", [])
     except Exception:
         return []
 
 
 def save_servers(servers: list[dict]) -> None:
     config.ensure_dirs()
-    _config_path().write_text(json.dumps({"servers": servers}, indent=2, ensure_ascii=False))
+    _config_path().write_text(
+        json.dumps({"servers": servers}, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _sanitize_name(s: str) -> str:

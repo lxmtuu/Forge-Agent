@@ -274,7 +274,8 @@ async def send_demo(agent: Agent, user_text: str):
     s.messages.append({"role": "tool", "tool_call_id": tc1["id"], "content": result["output"]})
     await _aio.sleep(0.3)
 
-    args2 = {"command": "python3 hello_forge.py"}
+    import sys as _sys
+    args2 = {"command": f'"{_sys.executable}" hello_forge.py'}
     tc2 = {"id": "demo-2", "type": "function",
            "function": {"name": "run_command",
                         "arguments": _json.dumps({"command": args2["command"]})}}

@@ -1,5 +1,9 @@
 # ⚡ QUICKSTART — chạy Forge Agent lần đầu (5 phút)
 
+> 🪟 **Windows**: mọi lỗi encode (`charmap codec`, ký tự tiếng Việt) đã được vá từ
+> v0.3.1 — bạn chỉ cần dùng bản zip này trở đi. Nếu lệnh `python` không có sẵn,
+> thử `py -m uvicorn ...` thay thế.
+
 ## 1. Cài Python dependencies (không cần Node — web đã build sẵn)
 ```bash
 pip install -r requirements.txt

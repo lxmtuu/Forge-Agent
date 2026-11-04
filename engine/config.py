@@ -29,7 +29,7 @@ def ensure_dirs() -> None:
 
 def load_config() -> dict:
     try:
-        return json.loads(CONFIG_FILE.read_text())
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
@@ -38,7 +38,7 @@ def save_config(patch: dict) -> dict:
     ensure_dirs()
     cfg = load_config()
     cfg.update(patch)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     try:
         CONFIG_FILE.chmod(0o600)
     except Exception:
