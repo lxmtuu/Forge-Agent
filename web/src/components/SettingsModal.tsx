@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import type { DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
 
@@ -12,11 +12,20 @@ const STATUS_STYLE: Record<string, string> = {
   ready: 'st-ok', starting: 'st-warn', stopped: 'st-dim', error: 'st-bad',
 }
 
+const TABS = [
+  { id: 'conn', label: '📡 Kết nối' },
+  { id: 'safe', label: '🛡 An toàn' },
+  { id: 'mcp', label: '🔌 MCP' },
+  { id: 'sys', label: '🩺 Hệ thống' },
+] as const
+type TabId = typeof TABS[number]['id']
+
 export function SettingsModal(props: {
   settings: Settings
   onClose: () => void
   onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[] }) => Promise<void>
 }) {
+  const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
   const [maxTokens, setMaxTokens] = useState(String(props.settings.max_tokens ?? 16384))
@@ -26,10 +35,12 @@ export function SettingsModal(props: {
   const [allowCmds, setAllowCmds] = useState((props.settings.allow_commands ?? []).join('\n'))
   const [denyCmds, setDenyCmds] = useState((props.settings.deny_commands ?? []).join('\n'))
   const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState<string | null>(null)
   const [mcp, setMcp] = useState<McpServerStatus[]>([])
   const [mcpName, setMcpName] = useState('')
   const [mcpCmd, setMcpCmd] = useState('')
   const [mcpArgs, setMcpArgs] = useState('')
+  const [mcpErr, setMcpErr] = useState<string | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [modelFilter, setModelFilter] = useState('')
   const [totals, setTotals] = useState<UsageTotals | null>(null)
@@ -37,6 +48,29 @@ export function SettingsModal(props: {
   const [checking, setChecking] = useState(false)
   const [theme, setTheme] = useState(localStorage.getItem('forge-theme') || 'dark')
   const [doctorRep, setDoctorRep] = useState<DoctorReport | null>(null)
+  const [doctoring, setDoctoring] = useState(false)
+
+  // nền ban đầu — để phát hiện "có thay đổi chưa lưu"
+  const initial = useMemo(() => ({
+    model: props.settings.model,
+    maxTokens: String(props.settings.max_tokens ?? 16384),
+    approval: props.settings.approval_mode ?? 'guarded',
+    docker: props.settings.docker_sandbox,
+    webSearch: props.settings.web_search ?? false,
+    allowCmds: (props.settings.allow_commands ?? []).join('\n'),
+    denyCmds: (props.settings.deny_commands ?? []).join('\n'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [])
+
+  const dirty =
+    key.trim() !== '' ||
+    model !== initial.model ||
+    maxTokens !== initial.maxTokens ||
+    approval !== initial.approval ||
+    docker !== initial.docker ||
+    webSearch !== initial.webSearch ||
+    allowCmds !== initial.allowCmds ||
+    denyCmds !== initial.denyCmds
 
   const applyTheme = (t: string) => {
     setTheme(t)
@@ -57,6 +91,36 @@ export function SettingsModal(props: {
     api.usage().then(setTotals).catch(() => {})
   }, [])
 
+  const tryClose = () => {
+    if (dirty && !confirm('Có thay đổi CHƯA LƯU — vẫn đóng?')) return
+    props.onClose()
+  }
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') tryClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty])
+
+  async function doSave() {
+    setSaving(true); setSaveErr(null)
+    try {
+      const mt = parseInt(maxTokens, 10)
+      await props.onSave(key || undefined, model || undefined, {
+        approval_mode: approval,
+        docker_sandbox: docker,
+        web_search: webSearch,
+        allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
+        deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
+        ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
+      })
+      props.onClose()
+    } catch (e) {
+      setSaveErr(`Không lưu được: ${(e as Error).message ?? e}`)
+    } finally { setSaving(false) }
+  }
+
   const filteredModels = modelFilter
     ? (modelFilter.trim().toLowerCase() === 'free'
         ? models.filter((m) => m.free)
@@ -65,11 +129,11 @@ export function SettingsModal(props: {
     : models.slice(0, 40)
 
   return (
-    <div className="modal-backdrop" onClick={props.onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={tryClose}>
+      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label="Cài đặt" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>⚙ Cài đặt</h3>
-          <button className="btn-ghost btn-sm" onClick={props.onClose}>✕</button>
+          <h3>⚙ Cài đặt{dirty && <span className="dirty-dot" title="Có thay đổi chưa lưu" />}</h3>
+          <button className="btn-ghost btn-sm" title="Đóng (Esc)" onClick={tryClose}>✕</button>
         </div>
 
         {totals && (
@@ -81,205 +145,238 @@ export function SettingsModal(props: {
           </div>
         )}
 
-        <label className="field">
-          <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
-          <div className="key-row">
-            <input type="password" placeholder="sk-or-v1-..." value={key} onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
-            <button className="btn-ghost btn-sm" disabled={checking} onClick={() => doKeyCheck(key || undefined)}>
-              {checking ? 'Đang kiểm tra…' : '🔍 Kiểm tra'}
-            </button>
-          </div>
-          <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy trên trang đó, để trống nếu không đổi.</small>
-          {keyCheck && (keyCheck.valid ? (
-            <div className="key-result ok">
-              ✅ Key hợp lệ — «{keyCheck.label}» · đã dùng ${keyCheck.usage ?? 0}
-              {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ' · không giới hạn'}
-              {keyCheck.is_free_tier && ' · free tier'}
-            </div>
-          ) : (
-            <div className="key-result bad">
-              ❌ {keyCheck.error}
-              {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
-            </div>
+        <div className="settings-tabs" role="tablist">
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id}
+              className={`settings-tab ${tab === t.id ? 'on' : ''}`}
+              onClick={() => setTab(t.id)}>{t.label}</button>
           ))}
-        </label>
-
-        <div className="field">
-          <span>Model <em>({models.length > 0 ? `${models.length} model đồng bộ từ OpenRouter` : 'đang đồng bộ…'})</em></span>
-          <input list="models" value={model} onChange={(e) => setModel(e.target.value)} />
-          <datalist id="models">
-            {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          <div className="filter-presets">
-            <button className={`preset ${modelFilter === 'free' ? 'on' : ''}`} onClick={() => setModelFilter(modelFilter === 'free' ? '' : 'free')}>🆓 Miễn phí</button>
-            <button className={`preset ${modelFilter === 'claude' ? 'on' : ''}`} onClick={() => setModelFilter('claude')}>Claude</button>
-            <button className={`preset ${modelFilter === 'gpt' ? 'on' : ''}`} onClick={() => setModelFilter('gpt')}>GPT</button>
-            <button className={`preset ${modelFilter === 'coder' ? 'on' : ''}`} onClick={() => setModelFilter('coder')}>Coder</button>
-          </div>
-          <input
-            className="model-filter"
-            placeholder="Lọc danh sách model… (gõ 'free' để xem model miễn phí)"
-            value={modelFilter}
-            onChange={(e) => setModelFilter(e.target.value)}
-          />
-          <div className="model-suggest">
-            {filteredModels.map((m) => (
-              <button key={m.id} className={`model-chip ${m.free ? 'free-chip' : ''}`} title={`${m.name} · context ${m.context ?? '?'} · ${m.free ? 'MIỄN PHÍ' : `$${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}`}
-                onClick={() => { setModel(m.id); setModelFilter('') }}>
-                {m.free ? '🆓 ' : ''}{m.id}
-              </button>
-            ))}
-          </div>
-          <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
         </div>
 
-        <label className="field">
-          <span>Max tokens mỗi lượt phản hồi <em>(thấp hơn = tốn ít credit đặt cọc hơn)</em></span>
-          <input
-            type="number"
-            min={256}
-            max={65536}
-            step={256}
-            value={maxTokens}
-            onChange={(e) => setMaxTokens(e.target.value)}
-          />
-          <small>Mặc định 16384. Nếu bị lỗi 402 với model trả phí, thử giảm xuống 4096.</small>
-        </label>
-
-        <div className="field">
-          <span>Chế độ duyệt lệnh shell</span>
-          <div className="seg seg-3">
-            <button className={`seg-btn ${approval === 'guarded' ? 'on' : ''}`}
-              onClick={() => setApproval('guarded')}>
-              🛡 Guarded<span className="seg-desc">chặn lệnh nguy hiểm</span>
-            </button>
-            <button className={`seg-btn ${approval === 'ask' ? 'on' : ''}`}
-              onClick={() => setApproval('ask')}>
-              🔔 Hỏi từng lệnh<span className="seg-desc">popup phê duyệt warn/danger</span>
-            </button>
-            <button className={`seg-btn ${approval === 'auto' ? 'on' : ''}`}
-              onClick={() => setApproval('auto')}>
-              ⚡ Auto (YOLO)<span className="seg-desc">chạy mọi lệnh — rủi ro tự chịu</span>
-            </button>
-          </div>
-        </div>
-
-        {props.settings.docker_available && (
-          <label className="field check">
-            <input type="checkbox" checked={docker} onChange={(e) => setDocker(e.target.checked)} />
-            <span>🐳 Chạy lệnh trong Docker sandbox (không mạng, giới hạn CPU/RAM)</span>
-          </label>
-        )}
-
-        <label className="check-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
-          <span>🌐 Web search qua OpenRouter <code>:online</code> <em>— mọi lượt chat sẽ tìm web (tốn ~$0.005/lượt)</em></span>
-        </label>
-
-        <div className="field">
-          <span>Permission patterns <em>(glob, mỗi dòng 1 mẫu — vd <code>git *</code>, <code>npm run *</code>)</em></span>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <small style={{ color: 'var(--green)' }}>✓ Allow (nâng warn → được chạy)</small>
-              <textarea value={allowCmds} onChange={(e) => setAllowCmds(e.target.value)} rows={4}
-                placeholder={'git status\nnpm run *\npytest *'} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <small style={{ color: 'var(--red)' }}>✕ Deny (chặn tuyệt đối)</small>
-              <textarea value={denyCmds} onChange={(e) => setDenyCmds(e.target.value)} rows={4}
-                placeholder={'git push *\nrm -rf *\ncurl * | sh'} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} />
-            </div>
-          </div>
-        </div>
-
-        <div className="field">
-          <span>Giao diện <em>(theme lưu trên máy bạn)</em></span>
-          <select value={theme} onChange={(e) => applyTheme(e.target.value)} style={{ width: '100%', padding: 8, background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8 }}>
-            {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-          </select>
-        </div>
-
-        <div className="field">
-          <span>Chẩn đoán hệ thống <em>(/doctor)</em></span>
-          <button className="btn-primary" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--dim)' }}
-            onClick={async () => { try { setDoctorRep(await api.doctor()) } catch { /* ignore */ } }}>
-            🩺 Chạy chẩn đoán
-          </button>
-          {doctorRep && (
-            <div className="doctor-list" style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontSize: 12 }}>
-              {doctorRep.checks.map((c, i) => (
-                <div key={i} style={{ padding: '3px 0', color: c.ok ? 'var(--text)' : 'var(--red)' }}>
-                  {c.ok ? '✓' : '✗'} <b>{c.name}</b> — <span style={{ color: 'var(--dim)' }}>{c.detail}</span>
+        <div className="settings-body">
+        {tab === 'conn' && (
+          <>
+            <label className="field">
+              <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
+              <div className="key-row">
+                <input type="password" placeholder="sk-or-v1-..." value={key}
+                  onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
+                <button className="btn-ghost btn-sm" disabled={checking}
+                  onClick={() => doKeyCheck(key || undefined)}>
+                  {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
+                </button>
+              </div>
+              <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy trên trang đó, để trống nếu không đổi.</small>
+              {keyCheck && (keyCheck.valid ? (
+                <div className="key-result ok">
+                  ✅ Key hợp lệ — «{keyCheck.label}» · đã dùng ${keyCheck.usage ?? 0}
+                  {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ' · không giới hạn'}
+                  {keyCheck.is_free_tier && ' · free tier'}
+                </div>
+              ) : (
+                <div className="key-result bad">
+                  ❌ {keyCheck.error}
+                  {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
                 </div>
               ))}
-              <div style={{ padding: '4px 0', fontWeight: 700 }}>{doctorRep.summary}</div>
-            </div>
-          )}
-        </div>
+            </label>
 
-        <div className="field">
-          <span>MCP servers <em>(Model Context Protocol — nối tool bên ngoài vào agent)</em></span>
-          <div className="mcp-list">
-            {mcp.length === 0 && <div className="empty" style={{ padding: 10 }}>Chưa có server nào.</div>}
-            {mcp.map((s) => (
-              <div key={s.name} className="mcp-item">
-                <span className={`st ${STATUS_STYLE[s.status] ?? 'st-dim'}`}>{s.status}</span>
-                <div className="mcp-info">
-                  <b>{s.name}</b> <code>{s.command} {s.args.join(' ')}</code>
-                  <div className="mcp-tools">{s.tools.length ? s.tools.join(', ') : (s.error ?? '—')}</div>
+            <div className="field">
+              <span>Model <em>({models.length > 0 ? `${models.length} model đồng bộ từ OpenRouter` : 'đang đồng bộ…'})</em></span>
+              <input list="models" value={model} onChange={(e) => setModel(e.target.value)} />
+              <datalist id="models">
+                {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+              <div className="filter-presets">
+                <button className={`preset ${modelFilter === 'free' ? 'on' : ''}`} onClick={() => setModelFilter(modelFilter === 'free' ? '' : 'free')}>🆓 Miễn phí</button>
+                <button className={`preset ${modelFilter === 'claude' ? 'on' : ''}`} onClick={() => setModelFilter('claude')}>Claude</button>
+                <button className={`preset ${modelFilter === 'gpt' ? 'on' : ''}`} onClick={() => setModelFilter('gpt')}>GPT</button>
+                <button className={`preset ${modelFilter === 'coder' ? 'on' : ''}`} onClick={() => setModelFilter('coder')}>Coder</button>
+              </div>
+              <input
+                className="model-filter"
+                placeholder="Lọc danh sách model… (gõ 'free' để xem model miễn phí)"
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+              />
+              <div className="model-suggest">
+                {filteredModels.map((m) => (
+                  <button key={m.id} className={`model-chip ${m.free ? 'free-chip' : ''}`}
+                    title={`${m.name} · context ${m.context ?? '?'} · ${m.free ? 'MIỄN PHÍ' : `$${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}`}
+                    onClick={() => { setModel(m.id); setModelFilter('') }}>
+                    {m.free ? '🆓 ' : ''}{m.id}
+                  </button>
+                ))}
+              </div>
+              <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
+            </div>
+
+            <label className="field">
+              <span>Max tokens mỗi lượt phản hồi <em>(thấp hơn = tốn ít credit đặt cọc hơn)</em></span>
+              <input
+                type="number"
+                min={256}
+                max={65536}
+                step={256}
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(e.target.value)}
+              />
+              <small>Mặc định 16384. Nếu bị lỗi 402 với model trả phí, thử giảm xuống 4096.</small>
+            </label>
+          </>
+        )}
+
+        {tab === 'safe' && (
+          <>
+            <div className="field">
+              <span>Chế độ duyệt lệnh shell</span>
+              <div className="seg seg-3">
+                <button className={`seg-btn ${approval === 'guarded' ? 'on' : ''}`}
+                  onClick={() => setApproval('guarded')}>
+                  🛡 Guarded<span className="seg-desc">chặn lệnh nguy hiểm</span>
+                </button>
+                <button className={`seg-btn ${approval === 'ask' ? 'on' : ''}`}
+                  onClick={() => setApproval('ask')}>
+                  🔔 Hỏi từng lệnh<span className="seg-desc">popup phê duyệt warn/danger</span>
+                </button>
+                <button className={`seg-btn ${approval === 'auto' ? 'on' : ''}`}
+                  onClick={() => setApproval('auto')}>
+                  ⚡ Auto (YOLO)<span className="seg-desc">chạy mọi lệnh — rủi ro tự chịu</span>
+                </button>
+              </div>
+            </div>
+
+            {props.settings.docker_available && (
+              <label className="field check">
+                <input type="checkbox" checked={docker} onChange={(e) => setDocker(e.target.checked)} />
+                <span>🐳 Chạy lệnh trong Docker sandbox (không mạng, giới hạn CPU/RAM)</span>
+              </label>
+            )}
+
+            <label className="field check">
+              <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
+              <span>🌐 Web search qua OpenRouter <code>:online</code> <em>— mọi lượt chat sẽ tìm web (tốn ~$0.005/lượt)</em></span>
+            </label>
+
+            <div className="field">
+              <span>Permission patterns <em>(glob, mỗi dòng 1 mẫu — vd <code>git *</code>, <code>npm run *</code>)</em></span>
+              <div className="perm-grid">
+                <div className="perm-col">
+                  <small className="perm-label" style={{ color: 'var(--green)' }}>✓ Allow (nâng warn → được chạy)</small>
+                  <textarea className="perm-area" value={allowCmds} onChange={(e) => setAllowCmds(e.target.value)} rows={4}
+                    placeholder={'git status\nnpm run *\npytest *'} />
                 </div>
-                <div className="mcp-actions">
-                  <button title="Khởi động lại" onClick={() => api.mcpRefresh(s.name).then(setMcp)}>⟳</button>
-                  <button title="Gỡ" onClick={() => confirm(`Gỡ ${s.name}?`) && api.mcpRemove(s.name).then(setMcp)}>🗑</button>
+                <div className="perm-col">
+                  <small className="perm-label" style={{ color: 'var(--red)' }}>✕ Deny (chặn tuyệt đối)</small>
+                  <textarea className="perm-area" value={denyCmds} onChange={(e) => setDenyCmds(e.target.value)} rows={4}
+                    placeholder={'git push *\nrm -rf *\ncurl * | sh'} />
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="mcp-add">
-            <input placeholder="tên (vd: fs)" value={mcpName} onChange={(e) => setMcpName(e.target.value)} />
-            <input placeholder="lệnh (vd: npx)" value={mcpCmd} onChange={(e) => setMcpCmd(e.target.value)} />
-            <input placeholder="tham số, cách nhau bởi dấu phẩy" value={mcpArgs} onChange={(e) => setMcpArgs(e.target.value)} />
-            <button
-              className="btn-primary btn-sm"
-              disabled={!mcpName.trim() || !mcpCmd.trim()}
-              onClick={async () => {
-                const args = mcpArgs.split(',').map((x) => x.trim()).filter(Boolean)
-                const list = await api.mcpAdd(mcpName.trim(), mcpCmd.trim(), args)
-                setMcp(list); setMcpName(''); setMcpCmd(''); setMcpArgs('')
-              }}
-            >＋ Thêm</button>
-          </div>
-          <small>VD: filesystem server — <code>npx</code> + <code>-y, @modelcontextprotocol/server-filesystem, /tmp/du-lieu</code>. Agent sẽ nhận thêm tool <code>mcp_fs_*</code> tự động.</small>
+            </div>
+          </>
+        )}
+
+        {tab === 'mcp' && (
+          <>
+            <div className="field">
+              <span>MCP servers <em>(Model Context Protocol — nối tool bên ngoài vào agent)</em></span>
+              <div className="mcp-list">
+                {mcp.length === 0 && <div className="empty" style={{ padding: 10 }}>Chưa có server nào.</div>}
+                {mcp.map((s) => (
+                  <div key={s.name} className="mcp-item">
+                    <span className={`st ${STATUS_STYLE[s.status] ?? 'st-dim'}`}>{s.status}</span>
+                    <div className="mcp-info">
+                      <b>{s.name}</b> <code>{s.command} {s.args.join(' ')}</code>
+                      <div className="mcp-tools">{s.tools.length ? s.tools.join(', ') : (s.error ?? '—')}</div>
+                    </div>
+                    <div className="mcp-actions">
+                      <button title="Khởi động lại" onClick={() => api.mcpRefresh(s.name).then(setMcp)}>⟳</button>
+                      <button title="Gỡ" onClick={() => confirm(`Gỡ ${s.name}?`) && api.mcpRemove(s.name).then(setMcp)}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mcp-add">
+                <input placeholder="tên (vd: fs)" value={mcpName} onChange={(e) => setMcpName(e.target.value)} />
+                <input placeholder="lệnh (vd: npx)" value={mcpCmd} onChange={(e) => setMcpCmd(e.target.value)} />
+                <input placeholder="tham số, cách nhau bởi dấu phẩy" value={mcpArgs} onChange={(e) => setMcpArgs(e.target.value)} />
+                <button
+                  className="btn-primary btn-sm"
+                  disabled={!mcpName.trim() || !mcpCmd.trim()}
+                  onClick={async () => {
+                    setMcpErr(null)
+                    try {
+                      const args = mcpArgs.split(',').map((x) => x.trim()).filter(Boolean)
+                      const list = await api.mcpAdd(mcpName.trim(), mcpCmd.trim(), args)
+                      setMcp(list); setMcpName(''); setMcpCmd(''); setMcpArgs('')
+                    } catch (e) {
+                      setMcpErr(`Không thêm được server: ${(e as Error).message ?? e}`)
+                    }
+                  }}
+                >＋ Thêm</button>
+              </div>
+              {mcpErr && <div className="save-error">{mcpErr}</div>}
+              <small>VD: filesystem server — <code>npx</code> + <code>-y, @modelcontextprotocol/server-filesystem, /tmp/du-lieu</code>. Agent sẽ nhận thêm tool <code>mcp_fs_*</code> tự động.</small>
+            </div>
+          </>
+        )}
+
+        {tab === 'sys' && (
+          <>
+            <div className="field">
+              <span>Giao diện <em>(theme lưu trên máy bạn, áp dụng ngay)</em></span>
+              <select className="sel" value={theme} onChange={(e) => applyTheme(e.target.value)}>
+                {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            </div>
+
+            <div className="field">
+              <span>Chẩn đoán hệ thống <em>(kiểm tra Python, git, key, model, LSP, MCP…)</em></span>
+              <button className="btn-ghost" disabled={doctoring}
+                onClick={async () => {
+                  setDoctoring(true)
+                  try { setDoctorRep(await api.doctor()) } catch { /* ignore */ }
+                  finally { setDoctoring(false) }
+                }}>
+                {doctoring ? 'Đang chẩn đoán…' : '🩺 Chạy chẩn đoán'}
+              </button>
+              {doctorRep && (
+                <div className="doctor-list">
+                  {doctorRep.checks.map((c, i) => (
+                    <div key={i} className={`doctor-row ${c.ok ? '' : 'bad'}`}>
+                      {c.ok ? '✓' : '✗'} <b>{c.name}</b> — <span className="doctor-detail">{c.detail}</span>
+                    </div>
+                  ))}
+                  <div className="doctor-summary">{doctorRep.summary}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="field">
+              <span>Bảo mật & dữ liệu</span>
+              <small style={{ lineHeight: 1.7 }}>
+                🔐 Key lưu trong <code>data/config.json</code> trên server của bạn (chmod 600), chỉ gọi thẳng OpenRouter — không qua trung gian.<br />
+                🛡 Guarded mode chặn lệnh nguy hiểm (<code>sudo</code>, <code>rm -rf /</code>, pipe-từ-mạng…).<br />
+                💾 Checkpoint: mọi thay đổi file của agent đều có bản git nội bộ — nút ↩ Undo hoàn tác được.
+              </small>
+            </div>
+          </>
+        )}
         </div>
 
-        <div className="modal-actions">
+        {saveErr && <div className="save-error">{saveErr}</div>}
+
+        <div className="modal-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button className="btn-ghost btn-sm" onClick={tryClose}>Đóng</button>
           <button
             className="btn-primary"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true)
-              try {
-                const mt = parseInt(maxTokens, 10)
-                await props.onSave(key || undefined, model || undefined, {
-                  approval_mode: approval,
-                  docker_sandbox: docker,
-                  web_search: webSearch,
-                  allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
-                  deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
-                  ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
-                })
-                props.onClose()
-              } finally { setSaving(false) }
-            }}
-          >{saving ? 'Đang lưu…' : 'Lưu cài đặt'}</button>
+            disabled={saving || !dirty}
+            title={dirty ? 'Áp dụng các thay đổi' : 'Chưa có thay đổi nào'}
+            onClick={doSave}
+          >{saving ? 'Đang lưu…' : dirty ? '💾 Lưu thay đổi' : 'Lưu cài đặt'}</button>
         </div>
-
-        <p className="modal-note">
-          🔐 Key lưu trong <code>data/config.json</code> trên server của bạn (chmod 600), chỉ gọi thẳng OpenRouter.
-          Guarded mode chặn lệnh nguy hiểm (<code>sudo</code>, <code>rm -rf /</code>, pipe-from-net…).
-        </p>
       </div>
     </div>
   )
