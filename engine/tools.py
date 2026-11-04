@@ -21,13 +21,22 @@ TOOL_SPECS: list[dict] = [
             "description": "Giao việc cho MỘT sub-agent có ngữ cảnh hoàn toàn riêng "
                            "(workspace vẫn dùng chung với bạn) rồi nhận báo cáo tóm tắt. "
                            "Dùng cho: tìm kiếm/đọc hiểu diện rộng, review một vùng code, "
-                           "làm nhiệm vụ phụ để giữ context chính gọn. Chỉ chạy MỘT lượt "
-                           "nhiệm vụ tự chứa, mô tả rõ mục tiêu + tiêu chí xong.",
+                           "làm nhiệm vụ phụ để giữ context chính gọn. Nhiệm vụ phải tự chứa "
+                           "(mục tiêu + tiêu chí xong + format kết quả). Chọn model theo việc: "
+                           "ĐỌC/TÌM KIẾM/TÓM TẮT → model 'cheap' · CODE THÔNG THƯỜNG → bỏ trống "
+                           "(inherit) · KIẾN TRÚC/AUDIT RỦI RO CAO → 'strong'. Nhiều việc ĐỘC "
+                           "LẬP → gọi nhiều spawn_subagent trong cùng một lượt để chạy song song "
+                           "(tối đa 6 sub-agent/lượt).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task": {"type": "string", "description": "Nhiệm vụ tự chứa cho sub-agent"},
-                    "model": {"type": "string", "description": "(tuỳ chọn) model khác cho sub-agent"},
+                    "model": {"type": "string",
+                              "description": "Model cho sub-agent. Alias: 'inherit' (mặc định, "
+                                             "dùng model hiện tại) · 'cheap' (model rẻ/miễn phí — "
+                                             "đọc/tìm kiếm/tóm tắt) · 'strong' (model mạnh nhất — "
+                                             "kiến trúc, audit rủi ro cao) · hoặc ID đầy đủ kiểu "
+                                             "'vendor/model-name'."},
                 },
                 "required": ["task"],
             },

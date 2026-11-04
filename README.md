@@ -149,6 +149,22 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 @docs/test-policy.md"
 ```
 
+### 🔀 Multi-Model Orchestrator (v0.13)
+
+| Tính năng | Dùng thế nào |
+|---|---|
+| **Sub-agent nhiều model** | Agent tự chọn: `spawn_subagent(task, model:'cheap')` cho việc đọc/tìm kiếm, `'strong'` cho kiến trúc/audit — alias cấu hình được |
+| **Fan-out song song** | Giao nhiều việc độc lập trong 1 lượt → sub-agent chạy đồng thời (tối đa 3 cùng lúc, 6/lượt) |
+| **Fallback tự động** | Model lỗi 402/429/5xx → tự thử model dự phòng, UI hiện dòng 🔁 |
+
+```json
+// data/config.json — vai trò model (tuỳ chọn)
+{
+  "model_roles": { "cheap": "openrouter/free", "strong": "anthropic/claude-sonnet-5.5" },
+  "model_fallbacks": ["openrouter/free"]
+}
+```
+
 Ví dụ `profiles` trong `data/config.json`:
 ```json
 {

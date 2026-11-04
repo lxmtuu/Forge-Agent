@@ -58,7 +58,11 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
       }]
     case 'subagent_started':
       return [...prev, { kind: 'subagent', id: uid(), saId: ev.id, task: ev.task,
-                         sessionId: ev.session_id, tools: 0, status: 'running' as const }]
+                         sessionId: ev.session_id, tools: 0, status: 'running' as const,
+                         model: ev.model }]
+    case 'model_fallback':
+      return [...prev, { kind: 'notice', id: uid(),
+                         text: `🔁 Model lỗi — chuyển từ ${ev.from} → ${ev.to}` }]
     case 'subagent_progress':
       return prev.map((it) => it.kind === 'subagent' && it.saId === ev.id
         ? { ...it, tools: ev.tools } : it)
@@ -459,7 +463,7 @@ export default function App() {
           <div className={`tool-card ${it.status === 'running' ? 'running' : 'ok'}`}>
             <div className="tool-head">
               <span className="tool-icon">{it.status === 'running' ? <span className="spinner" /> : '🧩'}</span>
-              <span className="tool-label">Sub-agent</span>
+              <span className="tool-label">Sub-agent{it.model && it.model !== 'inherit' ? ` · ${it.model}` : ''}</span>
               <code className="tool-arg">{it.task.slice(0, 60)}</code>
               <span className="tool-status">{it.status === 'running' ? `${it.tools} tools…` : 'xong'}</span>
             </div>
@@ -497,6 +501,7 @@ export default function App() {
       )
     }
     return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
+    if (it.kind === 'notice') return <div key={it.id} className="msg sys-msg">{it.text}</div>
   }
 
   return (

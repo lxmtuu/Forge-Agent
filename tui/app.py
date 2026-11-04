@@ -602,6 +602,9 @@ class ForgeTUI(App):
                 elif t == "approval_request":
                     self.app.push_screen(ApprovalModal(ev["id"], ev["command"],
                                                        ev["level"], ev["reasons"]))
+                elif t == "model_fallback":
+                    self.add_line(f"🔁 Model lỗi — chuyển từ {ev['from']} → {ev['to']}",
+                                  cls="sys-line")
                 elif t == "subagent_started":
                     self.add_line(f"🧩 Sub-agent bắt đầu: {ev['task'][:80]}", cls="tool-line")
                 elif t == "subagent_progress":

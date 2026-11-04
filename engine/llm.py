@@ -41,6 +41,50 @@ def _headers(api_key: str) -> dict:
     }
 
 
+def resolve_sub_model(model_str: str | None, parent_model: str | None = None) -> str | None:
+    """Alias model cho sub-agent (chuẩn Claude Code — MULTI_MODEL.md §2.1).
+
+    '' / inherit / same → None (thừa kế model phiên cha)
+    cheap / free / fast → config.model_roles.cheap  (mặc định: openrouter/free)
+    strong / best       → config.model_roles.strong (mặc định: model cha hoặc config)
+    còn lại             → ID đầy đủ, giữ nguyên
+    """
+    raw = (model_str or "inherit").strip()
+    low = raw.lower()
+    if low in ("", "inherit", "same", "parent"):
+        return None
+    cfg = config.load_config()
+    roles = cfg.get("model_roles") or {}
+    if low in ("cheap", "free", "fast", "low"):
+        return ((roles.get("cheap") or "").strip() or "openrouter/free")
+    if low in ("strong", "best", "powerful", "high"):
+        return ((roles.get("strong") or "").strip()
+                or (parent_model or "").strip()
+                or config.get_model())
+    return raw
+
+
+_FALLBACK_MARKS = ("402", "429", "HTTP 500", "HTTP 502", "HTTP 503")
+
+
+def pick_fallback(model: str | None, err: Exception) -> str | None:
+    """Availability fallback (tách bạch khỏi quality routing): model lỗi 402/429/5xx
+    → model dự phòng đầu tiên trong config.model_fallbacks khác model hiện tại."""
+    msg = str(err)
+    if not any(mk in msg for mk in _FALLBACK_MARKS):
+        return None
+    cfg = config.load_config()
+    fallbacks = cfg.get("model_fallbacks")
+    if fallbacks is None:
+        fallbacks = ["openrouter/free"]
+    cur = (model or "").split(":")[0].strip().lower()
+    for fb in fallbacks:
+        fb = str(fb).strip()
+        if fb and fb.split(":")[0].strip().lower() != cur:
+            return fb
+    return None
+
+
 async def stream_chat(
     messages: list[dict],
     tools: list[dict] | None = None,

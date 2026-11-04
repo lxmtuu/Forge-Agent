@@ -589,3 +589,6 @@ a.foot-btn { text-decoration: none; display: inline-block; }
   --cyan: #e8a34d;
 }
 [data-theme='amber'] ::-webkit-scrollbar-thumb { background: #33270f; border-color: var(--bg); }
+---
+/* v0.13 — notice dòng hệ thống (model fallback) */
+.sys-msg { color: var(--text-dim, #8b8b9e); font-size: 13px; padding: 6px 0; }

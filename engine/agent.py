@@ -15,6 +15,8 @@ from .mcp import manager as mcp_manager
 from .session import SessionStore
 
 MAX_ITERATIONS = 30
+MAX_SUBAGENTS_PER_TURN = 6   # chống phình (Anthropic: lead từng spawn 50 subagent vô ích)
+MAX_PARALLEL_SUBAGENTS = 3   # fan-out song song tối đa cùng lúc
 
 SYSTEM_PROMPT = """You are Forge, an expert AI coding agent running inside the user's \
 workspace (similar to Claude Code / Codex CLI). Today is {date}. Platform: {platform}.
@@ -107,6 +109,24 @@ class Agent:
         self.model = self.session.model or config.get_model()
         self.workspace: Path = store.workspace(session_id)
 
+    async def _llm_with_fallback(self, messages, tools, model):
+        """stream_chat + availability fallback: 402/429/5xx → model dự phòng 1 lần."""
+        cur = llm.resolve_model(model)
+        fb = None
+        reason = ""
+        try:
+            async for ev in llm.stream_chat(messages, tools=tools, model=model):
+                yield ev
+            return
+        except llm.LLMError as e:
+            fb = llm.pick_fallback(cur, e)
+            if not fb:
+                raise
+            reason = str(e)[:200]
+        yield {"type": "model_fallback", "from": cur, "to": fb, "reason": reason}
+        async for ev in llm.stream_chat(messages, tools=tools, model=fb):
+            yield ev
+
     async def _run_subagent(self, tc_id: str, task: str, sub_model: str | None):
         """Chạy sub-agent: phiên mới + workspace dùng chung cha, context hoàn toàn riêng."""
         sub_sid = self.store.create(model=sub_model or "", title=f"\U0001F9E9 {task[:46]}").id
@@ -115,7 +135,8 @@ class Agent:
             ptr.write_text(str(self.workspace), encoding="utf-8")
         except OSError:
             pass
-        yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid, "task": task[:200]}
+        yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid,
+               "task": task[:200], "model": sub_model or "inherit"}
         sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
         texts: list[str] = []
         n_tools = 0
@@ -140,6 +161,102 @@ class Agent:
                "tools": n_tools, "summary": summary[:300]}
         out = f"KẾT QUẢ SUB-AGENT (phiên {sub_sid}, {n_tools} tool calls):\n\n{summary}"
         yield {"type": "subagent_output", "id": tc_id, "output": out}
+
+    async def _handle_parallel_spawns(self, s, messages, spawn_tcs, turn_state):
+        """Chạy đồng thời (tối đa MAX_PARALLEL_SUBAGENTS) các spawn_subagent trong cùng
+        một lượt tool_calls — pattern Fan-Out. Tự yield tool_start/progress/tool_result
+        và ghi tool messages theo thứ tự gốc."""
+        import asyncio as _aio
+        import json as _json
+
+        batch = []  # (tc, args, task, resolved_model)
+        for tc in spawn_tcs:
+            try:
+                args = _json.loads(tc["function"].get("arguments") or "{}")
+            except _json.JSONDecodeError:
+                args = {}
+            yield {"type": "tool_start", "id": tc["id"], "name": "spawn_subagent", "args": args}
+            task = str(args.get("task", "")).strip()
+            if turn_state["spawns"] >= MAX_SUBAGENTS_PER_TURN:
+                yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
+                       "args": args, "ok": False,
+                       "output": f"Đã đạt giới hạn {MAX_SUBAGENTS_PER_TURN} sub-agent "
+                                 "trong một lượt — hãy tự hoàn thiện phần còn lại."}
+                s.messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                   "content": "Đã đạt giới hạn sub-agent trong lượt này."})
+                messages.append(s.messages[-1])
+            elif not task:
+                yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
+                       "args": args, "ok": False, "output": "Error: thiếu task cho sub-agent"}
+                s.messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                   "content": "Error: thiếu task cho sub-agent"})
+                messages.append(s.messages[-1])
+            else:
+                blocked = False
+                try:
+                    from . import hooks as _hooks
+                    pre = await _hooks.pre_tool_use(self.workspace, s.id, "spawn_subagent", args)
+                    if pre and pre.get("blocked"):
+                        blocked = True
+                        reason = pre.get("reason")
+                except Exception:
+                    pass
+                if blocked:
+                    yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
+                           "args": args, "ok": False,
+                           "output": f"BLOCKED by hook pre_tool_use: {reason}"}
+                    s.messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                       "content": f"BLOCKED by hook pre_tool_use: {reason}"})
+                    messages.append(s.messages[-1])
+                    continue
+                turn_state["spawns"] += 1
+                resolved = llm.resolve_sub_model(str(args.get("model") or ""), self.model)
+                batch.append((tc, args, task, resolved))
+        self.store.save(s)
+
+        async def _pump(tc_id: str, task_: str, model_: str | None, q):
+            try:
+                async for ev in self._run_subagent(tc_id, task_, model_):
+                    await q.put(ev)
+            except Exception as e:  # noqa: BLE001
+                await q.put({"type": "subagent_output", "id": tc_id,
+                             "output": f"(subagent lỗi: {e})"})
+            finally:
+                await q.put(None)
+
+        outputs: dict[str, str] = {}
+        for i in range(0, len(batch), MAX_PARALLEL_SUBAGENTS):
+            chunk = batch[i:i + MAX_PARALLEL_SUBAGENTS]
+            queues: dict[str, _aio.Queue] = {}
+            pumps = {}
+            for tc, _args, task_, model_ in chunk:
+                tc_id_ = tc["id"]
+                queues[tc_id_] = _aio.Queue()
+                pumps[_aio.create_task(_pump(tc_id_, task_, model_, queues[tc_id_]))] = tc_id_
+            pending = set(pumps)
+            while pending:
+                done, pending = await _aio.wait(pending, return_when=_aio.FIRST_COMPLETED)
+                for pmp in done:
+                    tcid = pumps[pmp]
+                    out = None
+                    while True:
+                        ev = await queues[tcid].get()
+                        if ev is None:
+                            break
+                        if ev["type"] == "subagent_output":
+                            out = ev["output"]
+                        else:
+                            yield ev
+                    outputs[tcid] = out or "(sub-agent không trả kết quả)"
+        # tool_result + messages theo thứ tự gốc của batch
+        for tc, args, _task, _model in batch:
+            out = outputs.get(tc["id"], "(sub-agent không trả kết quả)")
+            yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
+                   "args": args, "ok": bool(out and "subagent lỗi" not in out[:20]),
+                   "output": out}
+            s.messages.append({"role": "tool", "tool_call_id": tc["id"], "content": out})
+            messages.append(s.messages[-1])
+        self.store.save(s)
 
     def _memory_block(self) -> str:
         """MEMORY.md (workspace + global) — kiến thức các phiên trước, auto-memory."""
@@ -250,13 +367,14 @@ class Agent:
         else:
             active_specs = all_specs
 
+        turn_state = {"spawns": 0}  # số sub-agent đã dùng trong LƯỢT này (mọi vòng lặp)
         try:
             for _ in range(MAX_ITERATIONS):
                 content_parts: list[str] = []
                 tool_calls: list[dict] | None = None
                 usage = None
 
-                async for ev in llm.stream_chat(messages, tools=active_specs, model=self.model):
+                async for ev in self._llm_with_fallback(messages, active_specs, self.model):
                     et = ev["type"]
                     if et == "delta":
                         content_parts.append(ev["text"])
@@ -267,6 +385,8 @@ class Agent:
                         tool_calls = ev["tool_calls"]
                     elif et == "usage":
                         usage = ev["usage"]
+                    elif et == "model_fallback":
+                        yield ev
 
                 content = "".join(content_parts)
                 assistant_msg = llm.build_assistant_message(content, tool_calls)
@@ -280,7 +400,21 @@ class Agent:
                 if not tool_calls:
                     break
 
+                # ---- fan-out: nhiều spawn_subagent trong CÙNG lượt → chạy song song ----
+                handled_ids: set[str] = set()
+                spawn_tcs = [tc for tc in tool_calls
+                             if tc.get("function", {}).get("name") == "spawn_subagent"] \
+                    if chat_mode == "agent" else []
+                if len(spawn_tcs) >= 2:
+                    handled_ids = {tc["id"] for tc in spawn_tcs}
+                    async for _pev in self._handle_parallel_spawns(
+                            s, messages, spawn_tcs, turn_state):
+                        yield _pev
+
                 for tc in tool_calls:
+                    if tc["id"] in handled_ids:
+                        continue
+                    name = tc["function"]["name"]
                     name = tc["function"]["name"]
                     raw_args = tc["function"].get("arguments") or "{}"
                     import json as _json
@@ -310,12 +444,19 @@ class Agent:
                     # ---- sub-agent delegation (context riêng, workspace chung) ----
                     if name == "spawn_subagent" and chat_mode == "agent":
                         sub_task = str(args.get("task", "")).strip()
-                        if not sub_task:
+                        if turn_state["spawns"] >= MAX_SUBAGENTS_PER_TURN:
+                            result = {"ok": False,
+                                      "output": f"Đã đạt giới hạn {MAX_SUBAGENTS_PER_TURN} "
+                                                "sub-agent trong một lượt — hãy tự hoàn thiện "
+                                                "phần còn lại thay vì giao tiếp."}
+                        elif not sub_task:
                             result = {"ok": False, "output": "Error: thiếu task cho sub-agent"}
                         else:
+                            turn_state["spawns"] += 1
+                            resolved = llm.resolve_sub_model(str(args.get("model") or ""),
+                                                             self.model)
                             result = {"ok": False, "output": "sub-agent không trả kết quả"}
-                            async for _sev in self._run_subagent(tc["id"], sub_task,
-                                                                 args.get("model") or None):
+                            async for _sev in self._run_subagent(tc["id"], sub_task, resolved):
                                 if _sev["type"] == "subagent_output":
                                     result = {"ok": True, "output": _sev["output"]}
                                 else:

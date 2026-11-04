@@ -160,6 +160,12 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
                     reasoning_open = False
                 live.stop()
                 console.print(Panel(str(ev["message"]), title="Lỗi", border_style="red"))
+            elif t == "model_fallback":
+                if reasoning_open:
+                    console.print()
+                    reasoning_open = False
+                live.stop()
+                console.print(f"  [yellow]🔁 Model lỗi — chuyển từ {ev['from']} → {ev['to']}[/yellow]")
             elif t == "approval_request":
                 if reasoning_open:
                     console.print()

@@ -147,6 +147,19 @@ Kết quả test: **5/5 smoke v0.11 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v
 
 Kết quả test: **5/5 smoke v0.12 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v0.9 + 9/9 v0.10 + 5/5 v0.11 + TUI + e2e server** (tổng 55 test).
 
+## 🔀 v0.13 "Multi-Model Orchestrator" — đa model đúng chuẩn ngành
+
+Research đầy đủ trong `MULTI_MODEL.md` (Claude Code subagent model routing · Anthropic
+multi-agent research system · RouteLLM/FrugalGPT/OpenRouter). 5 mục đã làm:
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **Alias model** | `spawn_subagent(model: 'cheap'\|'strong'\|'inherit'\|ID)` — cấu hình qua `model_roles` trong config; mặc định cheap = `openrouter/free`, strong = model phiên |
+| 2 | **Routing guidance** | Spec tool nhúng bảng "việc đọc/tìm kiếm → cheap · code → inherit · kiến trúc/audit → strong" + nhắc fan-out khi có nhiều việc độc lập |
+| 3 | **Fan-out song song** | Nhiều `spawn_subagent` trong cùng lượt chạy `asyncio.gather`-style (queue + `asyncio.wait`), tối đa 3 cùng lúc — events 🧩 về UI realtime |
+| 4 | **Cap chống phình** | Tối đa **6 sub-agent/lượt** (thừa → báo giới hạn cho LLM tự hoàn thiện); vẫn cấm đệ quy |
+| 5 | **Availability fallback** | Lỗi 402/429/5xx → thử model dự phòng (`model_fallbacks`, mặc định `openrouter/free`) đúng 1 lần + event `🔁` trên cả 3 UI — tách bạch khỏi quality routing |
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**
