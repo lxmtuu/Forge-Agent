@@ -139,7 +139,7 @@ Kết quả test: **5/5 smoke v0.11 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v
 
 | # | Tính năng | Cách dùng |
 |---|---|---|
-| 1 | **@imports** | Trong `AGENTS.md`/`MEMORY.md` ghi `@docs/standard.md` → nội dung được nạp đệ quy (≤5 tầng, chống vòng lặp), bỏ qua bên trong code fence và \`inline code\`, cap 8KB/import — tách bộ nhớ lớn thành nhiều module |
+| 1 | **@imports** | Trong `AGENTS.md`/`MEMORY.md` ghi `@docs/standard.md` → nội dung được nạp đệ quy (≤5 tầng, chống vòng lặp), bỏ qua bên trong code fence và inline code, cap 8KB/import — tách bộ nhớ lớn thành nhiều module |
 | 2 | **`#` quick-memory** | Gõ `# luôn dùng pytest -q` → ghi vào MEMORY.md ngay lập tức, không gọi LLM, không tốn token (web + TUI + CLI, kể cả demo mode) |
 | 3 | **/memory** | Xem đúng những gì đang nạp: quy tắc global/dự án (+số @import), MEMORY.md kèm số ghi nhớ + entry gần nhất; `/memory clear` xoá (còn .bak) |
 | 4 | **/review** | Review diff thật (git repo: `HEAD`/file/`A...B`; không repo: checkpoint của phiên) theo prompt chuẩn Codex: 6 tiêu chí bug, P0–P3, Verdict APPROVE/COMMENT/REQUEST_CHANGES, loại bug pre-existing — chạy plan mode (không sửa code) |
