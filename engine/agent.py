@@ -66,17 +66,30 @@ CHAT_MODES = ("direct", "agent", "plan")
 
 
 def _agents_md_block(workspace: Path) -> str:
-    """Đọc quy tắc dự án từ AGENTS.md (chuẩn Claude Code/Codex/OpenCode)."""
-    for name in ("AGENTS.md", "AGENTS.txt"):
+    """Đọc quy tắc dự án: AGENTS.md > AGENTS.txt > CLAUDE.md (chuẩn Codex/OpenCode/Claude Code)."""
+    blocks = []
+    for name in ("AGENTS.md", "AGENTS.txt", "CLAUDE.md"):
         p = workspace / name
         if p.is_file():
             try:
                 text = p.read_text(encoding="utf-8", errors="replace")[:4000]
                 if text.strip():
-                    return f"\n=== PROJECT INSTRUCTIONS ({name}) — follow strictly ===\n{text}\n"
+                    blocks.append(f"=== PROJECT INSTRUCTIONS ({name}) — follow strictly ===\n{text}")
+                    break  # chỉ 1 file quy tắc cấp dự án (ưu tiên cao nhất)
             except Exception:
                 pass
-    return ""
+    # quy tắc toàn cục của người dùng (nếu có)
+    try:
+        g = config.DATA_DIR / "AGENTS.md"
+        if g.is_file():
+            text = g.read_text(encoding="utf-8", errors="replace")[:2000]
+            if text.strip():
+                blocks.append(f"=== GLOBAL USER RULES (data/AGENTS.md) ===\n{text}")
+    except Exception:
+        pass
+    if not blocks:
+        return ""
+    return "\n" + "\n\n".join(blocks) + "\n"
 
 
 class Agent:
@@ -114,6 +127,13 @@ class Agent:
 
         if chat_mode not in CHAT_MODES:
             chat_mode = "agent"
+        # --- auto-compact: chống tràn context ở phiên dài ---
+        acc = config.get_auto_compact_chars()
+        if acc and len(s.messages) > 8 and _conversation_chars(s.messages) > acc:
+            yield {"type": "compacting", "chars": _conversation_chars(s.messages)}
+            cres = await compact_session(self)
+            yield {"type": "compacted", "ok": cres.get("ok"),
+                   "before": cres.get("before"), "after": cres.get("after")}
         sys_msg = self._system_message()
         if chat_mode == "plan":
             sys_msg["content"] += PLAN_ADDENDUM
@@ -211,8 +231,13 @@ class Agent:
                         result = await mcp_manager.call_namespaced(mcp_routing, name, args)
                     else:
                         result = await tools.execute_tool(name, args, self.workspace, override=override)
-                    yield {"type": "tool_result", "id": tc["id"], "name": name,
-                           "args": args, "ok": result["ok"], "output": result["output"]}
+                    ev = {"type": "tool_result", "id": tc["id"], "name": name,
+                          "args": args, "ok": result["ok"], "output": result["output"]}
+                    if result.get("diff"):
+                        ev["diff"] = result["diff"]
+                    if result.get("path"):
+                        ev["path"] = result["path"]
+                    yield ev
                     s.messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
@@ -244,6 +269,130 @@ def _accumulate(session_usage: dict, turn_usage: dict | None) -> dict:
     session_usage["cost"] = round(
         session_usage.get("cost", 0.0) + (turn_usage.get("cost") or 0.0), 6)
     return session_usage
+
+
+# ---------------------------------------------------------------------------
+# Context compaction (/compact + auto)
+# ---------------------------------------------------------------------------
+COMPACT_SYSTEM = (
+    "You are a conversation compactor for an AI coding agent. Summarize the "
+    "conversation transcript faithfully. Keep: task goals, key decisions, files "
+    "created/modified (paths), important code/commands, current state and next "
+    "steps. Be factual, no opinions. Write in the SAME LANGUAGE as the "
+    "conversation. Max ~400 words. Output ONLY the summary."
+)
+
+KEEP_RECENT_MESSAGES = 4
+
+
+def _conversation_chars(messages: list[dict]) -> int:
+    return sum(len(str(m.get("content") or "")) + len(str(m.get("tool_calls") or "")) for m in messages)
+
+
+def _transcript(messages: list[dict], per_msg_cap: int = 1200) -> str:
+    lines = []
+    for m in messages:
+        role = m.get("role", "?").upper()
+        c = str(m.get("content") or "")
+        if m.get("tool_calls"):
+            calls = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])
+            c = (c or "") + f" [tool_calls: {calls}]"
+        if not c.strip():
+            continue
+        if len(c) > per_msg_cap:
+            c = c[:per_msg_cap] + " …"
+        lines.append(f"{role}: {c}")
+    return "\n".join(lines)
+
+
+async def compact_session(agent: "Agent", instructions: str = "") -> dict:
+    """Tóm tắt hội thoại bằng LLM, thay messages bằng summary + vài tin nhắn cuối."""
+    from . import llm
+    s = agent.session
+    if not s.messages:
+        return {"ok": False, "message": "Phiên trống — không có gì để nén"}
+    before = len(s.messages)
+    transcript = _transcript(s.messages)
+    prompt = ("Summarize the following agent conversation transcript.\n\n"
+              + (f"User focus instructions: {instructions}\n" if instructions else "")
+              + f"\n=== TRANSCRIPT ===\n{transcript}")
+    parts: list[str] = []
+    try:
+        async for ev in llm.stream_chat(
+                [{"role": "system", "content": COMPACT_SYSTEM},
+                 {"role": "user", "content": prompt}],
+                tools=None, model=agent.model, temperature=0.2):
+            if ev["type"] == "delta":
+                parts.append(ev["text"])
+    except llm.LLMError as e:
+        return {"ok": False, "message": f"Không nén được: {e}"}
+    summary = "".join(parts).strip()
+    if not summary:
+        return {"ok": False, "message": "LLM không trả về tóm tắt — thử lại"}
+    header = f"[TÓM TẮT HỘI THOẠI TRƯỚC ĐÓ — {before} tin nhắn được nén]"
+    if instructions:
+        header += f"\n[Trọng tâm theo yêu cầu: {instructions}]"
+    keep = s.messages[-KEEP_RECENT_MESSAGES:]
+    s.messages = [{"role": "user", "content": f"{header}\n\n{summary}"}] + keep
+    agent.store.save(s)
+    return {"ok": True, "summary": summary, "before": before, "after": len(s.messages)}
+
+
+async def init_agents_md(agent: "Agent") -> dict:
+    """Phân tích workspace → sinh AGENTS.md (kiểu /init của Claude Code/OpenCode)."""
+    from . import llm, tools as _tools
+
+    ws = agent.workspace
+    overview_parts = [await _tools.execute_tool("list_dir", {"path": "."}, ws)]
+    sample = []
+    code_exts = (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md",
+                 ".json", ".toml", ".yaml", ".yml", ".html", ".css")
+    try:
+        for f in _tools._iter_files(ws):
+            if f.suffix.lower() in code_exts and f.stat().st_size < 60_000:
+                try:
+                    text = f.read_text(encoding="utf-8", errors="replace")
+                    head = "\n".join(text.splitlines()[:50])
+                    sample.append(f"--- {f.relative_to(ws)} ---\n{head}")
+                except Exception:
+                    pass
+            if len(sample) >= 8:
+                break
+    except Exception:
+        pass
+    overview = overview_parts[0]["output"][:2500] + "\n\n" + "\n\n".join(sample)[:8000]
+
+    demo = config.get_api_key() is None
+    if demo:
+        content = (f"# AGENTS.md — quy tắc dự án\n\n"
+                   f"(Sinh ở DEMO MODE — chưa có API key. Nhập key rồi chạy /init lại "
+                   f"để có bản phân tích thật.)\n\n"
+                   f"## Cấu trúc\n- Workspace: {ws.name}\n\n"
+                   f"## Quy tắc\n- Viết code rõ ràng, có chú thích\n")
+    else:
+        prompt = (
+            "Analyze this project workspace and write its AGENTS.md — the rule file "
+            "an AI coding agent reads every session (same convention as Codex/OpenCode). "
+            "Include: 1) project overview (2-3 sentences), 2) structure notes, "
+            "3) setup/run/test commands, 4) code conventions and rules the agent must "
+            "follow. Max 60 lines. Output ONLY the markdown file content, no commentary."
+            f"\n\n=== WORKSPACE OVERVIEW ===\n{overview}")
+        parts = []
+        try:
+            async for ev in llm.stream_chat(
+                    [{"role": "system", "content": "You write concise, high-signal AGENTS.md files."},
+                     {"role": "user", "content": prompt}],
+                    tools=None, model=agent.model, temperature=0.3):
+                if ev["type"] == "delta":
+                    parts.append(ev["text"])
+        except llm.LLMError as e:
+            return {"ok": False, "message": f"Không sinh được AGENTS.md: {e}"}
+        content = "".join(parts).strip()
+        if not content:
+            return {"ok": False, "message": "LLM không trả về nội dung — thử lại"}
+    target = ws / "AGENTS.md"
+    target.write_text(content, encoding="utf-8")
+    return {"ok": True, "path": str(target), "content": content}
 
 
 async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):

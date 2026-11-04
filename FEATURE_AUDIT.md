@@ -4,6 +4,13 @@
 > đối chiếu với toàn bộ code Forge (đã chạy 15/15 test engine + TUI pilot + web health).
 > Chú thích: ✅ có · 🟡 một phần · ❌ chưa có · ⛔ cố tình không làm · ⭐ độc quyền của Forge
 
+> **✅ CẬP NHẬT v0.7 — 5/5 P0 ĐÃ XỬ LÝ:** (1) Diff view xanh/đỏ trong tool card ·
+> (2) `/compact` + auto-compact (env `FORGE_AUTO_COMPACT`, mặc định 150k ký tự) ·
+> (3) Checkpoints/undo qua git-inner repo riêng · (4) `/init` sinh AGENTS.md (demo fallback) ·
+> (5) TUI `Ctrl+M` đổi mode + `/undo` `/compact` `/init` `/perm` · kèm CLAUDE.md fallback +
+> global `data/AGENTS.md`. Verify: 16/16 test `scripts/test_v07.py` + e2e server.
+> Điểm "bộ nhớ/ngữ cảnh" nâng ~35% → ~70%; "giao diện" ~75% → ~85%.
+
 ## 1. Bảng ma trận tổng (34 hạng mục)
 
 ### A. Lõi agent

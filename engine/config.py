@@ -41,6 +41,21 @@ def get_max_tokens() -> int:
     return v if 256 <= v <= 65536 else 16384
 
 
+def get_auto_compact_chars() -> int:
+    """Tổng ký tự hội thoại tối đa trước khi auto-compact (~4 chars ≈ 1 token).
+    0 = tắt. Mặc định 150.000 (~37k tokens)."""
+    try:
+        v = int(load_config().get("auto_compact_chars", 0) or 0)
+    except Exception:
+        v = 0
+    if not v:
+        try:
+            v = int(os.environ.get("FORGE_AUTO_COMPACT", "150000"))
+        except ValueError:
+            v = 150000
+    return max(0, v)
+
+
 def ensure_dirs() -> None:
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)

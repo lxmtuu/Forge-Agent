@@ -11,7 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, ListView, ListItem, Markdown, Static, Tree
 
 from engine import approvals, config, tools
-from engine.agent import Agent, send_demo
+from engine.agent import Agent, compact_session, init_agents_md, send_demo
 from engine.session import SessionStore
 
 store = SessionStore()
@@ -94,6 +94,7 @@ class ForgeTUI(App):
         ("ctrl+q", "quit", "Thoát"),
         ("ctrl+n", "new_session", "Phiên mới"),
         ("ctrl+r", "refresh_files", "Refresh files"),
+        ("ctrl+m", "switch_mode", "Đổi mode"),
     ]
     AUTO_FOCUS = "#prompt"
 
@@ -108,6 +109,7 @@ class ForgeTUI(App):
         self._reasoning_text = ""
         self._tool_widgets: dict[str, Static] = {}
         self.busy = False
+        self.chat_mode = "agent"
 
     # ---------------------------------------------------------------- UI
     def compose(self) -> ComposeResult:
@@ -222,8 +224,10 @@ class ForgeTUI(App):
         toks = (s.usage or {}).get("total_tokens", 0) if s else 0
         mode = config.load_config().get("approval_mode", "guarded")
         state = "DEMO" if not key else f"key ✓ {config.mask_key(key)}"
+        mode_ico = {"direct": "💬", "agent": "🤖", "plan": "📋"}.get(self.chat_mode, "")
         self.query_one("#status", Static).update(
-            f"{model} · {state} · mode {mode} · tokens {toks}" + (" · đang chạy…" if self.busy else ""))
+            f"{mode_ico} {self.chat_mode} · {model} · {state} · duyệt {mode} · tokens {toks}"
+            + (" · đang chạy…" if self.busy else ""))
 
     # ------------------------------------------------------------- input
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -244,7 +248,8 @@ class ForgeTUI(App):
         arg = arg.strip()
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /mode guarded|ask|auto "
-                          "/usage /files /quit", cls="sys-line")
+                          "/plan /agent /direct /undo /compact [gợi ý] /init /perm /usage /files /quit",
+                          cls="sys-line")
         elif cmd == "/new":
             self.new_session()
         elif cmd == "/key":
@@ -253,12 +258,25 @@ class ForgeTUI(App):
         elif cmd == "/model":
             config.save_config({"model": arg})
             self.add_line(f"✅ Model → {arg}", cls="tool-ok")
-        elif cmd == "/mode":
+        elif cmd == "/mode" or cmd == "/perm":
             if arg in ("guarded", "ask", "auto"):
                 config.save_config({"approval_mode": arg})
                 self.add_line(f"✅ Chế độ duyệt → {arg}", cls="tool-ok")
             else:
-                self.add_line("Dùng: /mode guarded|ask|auto", cls="sys-line")
+                self.add_line("Dùng: /perm guarded|ask|auto", cls="sys-line")
+        elif cmd in ("/plan", "/agent", "/direct"):
+            if self.busy:
+                self.add_line("⏳ Đang chạy — không đổi mode bây giờ.", cls="sys-line")
+            else:
+                self.chat_mode = cmd[1:]
+                icons = {"direct": "💬", "agent": "🤖", "plan": "📋"}
+                self.add_line(icons[self.chat_mode] + f" Chế độ chat → {self.chat_mode}", cls="tool-ok")
+        elif cmd == "/undo":
+            await self._cmd_undo()
+        elif cmd == "/compact":
+            await self._cmd_compact(arg)
+        elif cmd == "/init":
+            await self._cmd_init()
         elif cmd == "/usage":
             s = store.get(self.sid) if self.sid else None
             u = (s.usage if s else {}) or {}
@@ -272,6 +290,49 @@ class ForgeTUI(App):
             self.add_line(f"Lệnh không rõ: {cmd} — /help", cls="sys-line")
         self.update_status()
 
+    # ------------------------------------------------------- comfort cmds
+    def _require_idle(self) -> bool:
+        if self.busy or not self.sid:
+            self.add_line("⏳ Chờ lượt chạy hiện tại xong đã.", cls="sys-line")
+            return False
+        return True
+
+    async def _cmd_undo(self) -> None:
+        if not self._require_idle() or not self.agent:
+            return
+        from engine import checkpoints as _ck
+        res = await _ck.undo(_ck.key_for(self.agent.workspace), self.agent.workspace)
+        ok, msg = bool(res.get("ok")), str(res.get("message", ""))
+        self.add_line(("↩ " if ok else "⚠ ") + msg, cls="tool-ok" if ok else "tool-bad")
+        if ok:
+            self.render_history()
+            self.refresh_files()
+
+    async def _cmd_compact(self, instructions: str = "") -> None:
+        if not self._require_idle() or not self.agent:
+            return
+        s = store.get(self.sid)
+        n = len(s.messages) if s else 0
+        self.add_line(f"🧹 Đang nén {n} tin nhắn…", cls="sys-line")
+        res = await compact_session(self.agent, instructions)
+        if res.get("ok"):
+            self.add_line(f"✅ Đã nén {res.get('before')} → {res.get('after')} tin nhắn "
+                          f"(context nhẹ hơn hẳn)", cls="tool-ok")
+            self.render_history()
+        else:
+            self.add_line("⚠ " + (res.get("message") or "Không nén được."), cls="tool-bad")
+
+    async def _cmd_init(self) -> None:
+        if not self._require_idle() or not self.agent:
+            return
+        self.add_line("🚀 Đang phân tích workspace để sinh AGENTS.md…", cls="sys-line")
+        res = await init_agents_md(self.agent)
+        if res.get("ok"):
+            self.add_line(f"✅ Đã tạo {res.get('path')}", cls="tool-ok")
+            self.refresh_files()
+        else:
+            self.add_line("⚠ " + (res.get("message") or "Không tạo được AGENTS.md."), cls="tool-bad")
+
     # ------------------------------------------------------- agent loop
     @work(exclusive=True)
     async def run_turn(self, text: str) -> None:
@@ -282,7 +343,7 @@ class ForgeTUI(App):
         self.add_user(text)
         self.agent = Agent(store, self.sid)
         demo = config.get_api_key() is None
-        source = send_demo(self.agent, text) if demo else self.agent.send(text)
+        source = send_demo(self.agent, text) if demo else self.agent.send(text, chat_mode=self.chat_mode)
         self._md_widget = None
         self._reasoning_widget = None
         self._tool_widgets = {}
@@ -346,6 +407,16 @@ class ForgeTUI(App):
 
     def action_refresh_files(self) -> None:
         self.refresh_files()
+
+    def action_switch_mode(self) -> None:
+        if self.busy:
+            return
+        order = ["agent", "plan", "direct"]
+        self.chat_mode = order[(order.index(self.chat_mode) + 1) % len(order)]
+        icons = {"direct": "💬", "agent": "🤖", "plan": "📋"}
+        self.add_line(icons[self.chat_mode] + f" Chế độ chat → {self.chat_mode} (Ctrl+M để đổi tiếp)",
+                      cls="tool-ok")
+        self.update_status()
 
 
 def run() -> None:

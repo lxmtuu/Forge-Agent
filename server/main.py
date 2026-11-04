@@ -273,6 +273,45 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- comfort: undo/compact/init
+@app.post("/api/sessions/{sid}/undo")
+async def undo_session(sid: str):
+    """↩ Hoàn tác thay đổi gần nhất của agent trong workspace (checkpoint git nội bộ)."""
+    s = store.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    from engine import checkpoints
+    if not checkpoints.available():
+        raise HTTPException(409, "git không có mặt trên máy — checkpoint không khả dụng")
+    ws = store.workspace(sid)
+    res = await checkpoints.undo(checkpoints.key_for(ws), ws)
+    return {"ok": bool(res.get("ok")), "message": str(res.get("message", ""))}
+
+
+@app.post("/api/sessions/{sid}/compact")
+async def compact_session_ep(sid: str, body: dict | None = None):
+    """🧹 Nén hội thoại: LLM tóm tắt các tin nhắn cũ, giữ vài tin cuối."""
+    s = store.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    from engine.agent import compact_session
+    agent = Agent(store, sid)
+    res = await compact_session(agent, (body or {}).get("instructions") or "")
+    return res
+
+
+@app.post("/api/sessions/{sid}/init")
+async def init_agents_ep(sid: str):
+    """🚀 /init — phân tích workspace, sinh AGENTS.md (demo-mode khi chưa có key)."""
+    s = store.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    from engine.agent import init_agents_md
+    agent = Agent(store, sid)
+    res = await init_agents_md(agent)
+    return res
+
+
 # ---------------------------------------------------------------------------
 # Chat streaming (SSE)
 # ---------------------------------------------------------------------------

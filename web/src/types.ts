@@ -101,7 +101,9 @@ export type AgentEvent =
   | { type: 'assistant_delta'; text: string }
   | { type: 'assistant_message'; content: string | null; tool_calls: ToolCall[] | null }
   | { type: 'tool_start'; id: string; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string }
+  | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string; diff?: string; path?: string }
+  | { type: 'compacting'; chars: number }
+  | { type: 'compacted'; ok: boolean; before?: number; after?: number }
   | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
   | { type: 'approval_decision'; id: string; decision: string }
   | { type: 'turn_end'; usage: unknown; session_usage?: Usage; message_count: number }
@@ -140,6 +142,7 @@ export type Item =
       args: Record<string, unknown>
       output: string | null
       ok: boolean | null
+      diff?: string
     }
   | {
       kind: 'approval'

@@ -156,6 +156,21 @@ export const api = {
       body: JSON.stringify({ path }),
     }).then((r) => j<{ ok: boolean; workspace: string }>(r)),
 
+  undo: (sid: string) =>
+    fetch(`/api/sessions/${sid}/undo`, { method: 'POST' })
+      .then((r) => j<{ ok: boolean; message: string }>(r)),
+
+  compact: (sid: string, instructions?: string) =>
+    fetch(`/api/sessions/${sid}/compact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructions }),
+    }).then((r) => j<{ ok: boolean; summary?: string; before?: number; after?: number; message?: string }>(r)),
+
+  initAgents: (sid: string) =>
+    fetch(`/api/sessions/${sid}/init`, { method: 'POST' })
+      .then((r) => j<{ ok: boolean; path?: string; message?: string }>(r)),
+
   resolveApproval: (aid: string, decision: 'approve' | 'approve_always' | 'deny') =>
     fetch(`/api/approvals/${encodeURIComponent(aid)}`, {
       method: 'POST',

@@ -49,6 +49,8 @@ HELP = """[bold]Lệnh[/bold]
   /read <path>        đọc file               /clear           xóa màn hình
   /mcp [refresh]      xem MCP servers        /mode [g|a]      guarded / auto (YOLO)
   /usage              tokens đã dùng         /keytest         kiểm tra API key
+  /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
+  /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /quit               thoát
 
 [bold]Mẹo[/bold]: gõ nhiệm vụ tự nhiên, ví dụ:
@@ -297,6 +299,35 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             console.print(f"  Phiên này: [bold]{tot}[/bold] tokens "
                           f"(prompt {u.get('prompt_tokens', 0)} · completion {u.get('completion_tokens', 0)}"
                           + (f" · ~${u.get('cost', 0)}" if u.get("cost") else "") + ")")
+            continue
+        if text == "/undo":
+            from engine import checkpoints
+            ws = store.workspace(session_id)
+            res = await checkpoints.undo(checkpoints.key_for(ws), ws)
+            style = "green" if res.get("ok") else "red"
+            mark = "↩" if res.get("ok") else "⚠"
+            console.print(f"  [{style}]{mark} {res.get('message')}[/{style}]")
+            continue
+        if text.startswith("/compact"):
+            from engine.agent import compact_session
+            ins = text[8:].strip()
+            agent = Agent(store, session_id, model=model)
+            console.print("  [dim]🧹 Đang tóm tắt hội thoại…[/dim]")
+            res = await compact_session(agent, ins)
+            if res.get("ok"):
+                console.print(f"  [green]✅ Đã nén {res['before']} → {res['after']} tin nhắn[/green]")
+            else:
+                console.print(f"  [red]⚠ {res.get('message')}[/red]")
+            continue
+        if text == "/init":
+            from engine.agent import init_agents_md
+            agent = Agent(store, session_id, model=model)
+            console.print("  [dim]🚀 Đang phân tích workspace…[/dim]")
+            res = await init_agents_md(agent)
+            if res.get("ok"):
+                console.print(f"  [green]✅ Đã tạo {res.get('path')}[/green]")
+            else:
+                console.print(f"  [red]⚠ {res.get('message')}[/red]")
             continue
         if text == "/files":
             agent = Agent(store, session_id)

@@ -58,6 +58,23 @@ workspace, vẫn qua guard), **AGENTS.md** (quy tắc dự án chuẩn Codex/Ope
 file này vào workspace là agent tuân theo), và **mở dự án thật** làm workspace qua
 `POST /api/workspace/open` (bật bằng env `FORGE_ALLOW_OPEN=1`).
 
+### 🛋 Comfort (v0.7) — 5 lỗ hổng P0 trong FEATURE_AUDIT.md đã bị xóa sổ
+
+| Tính năng | Web | TUI | CLI |
+|---|---|---|---|
+| **Diff view** — mỗi lần agent sửa file hiện diff xanh/đỏ + đếm ±dòng (kiểu PR) | ✅ tool card | — | — |
+| **Checkpoints + Undo** — mọi write/edit/command tự chụp mốc git nội bộ; `↩ Undo` lùi workspace về mốc trước | ✅ nút | ✅ `/undo` | ✅ `/undo` |
+| **/compact** — LLM tóm tắt hội thoại, giải phóng context | ✅ nút 🧹 | ✅ `/compact` | ✅ `/compact` |
+| **Auto-compact** — phiên dài tự nén khi vượt ngưỡng (env `FORGE_AUTO_COMPACT`, mặc định 150000 ký tự, 0 = tắt) | ✅ | ✅ | ✅ |
+| **/init** — phân tích workspace, sinh `AGENTS.md` (demo-mode khi chưa có key) | ✅ nút 🚀 | ✅ `/init` | ✅ `/init` |
+| **TUI đổi chế độ chat** — `Ctrl+M` xoay vòng 🤖 agent / 📋 plan / 💬 direct | — | ✅ | ✅ `--mode` |
+| Quy tắc dự án: `AGENTS.md` > `AGENTS.txt` > `CLAUDE.md` (fallback Claude Code) + global `data/AGENTS.md` | ✅ | ✅ | ✅ |
+
+*Ghi chú Undo:* checkpoint nằm trong git-inner repo riêng `data/workspaces/.ckpt-*.git`
+— không bao giờ đụng `.git` của dự án thật. Undo lùi đúng **1 hành động của agent**
+(mỗi write/edit/command là 1 mốc); file sinh ra sau mốc sẽ bị xóa khi lùi qua mốc đó
+(đúng ngữ nghĩa undo). Tắt bằng `checkpoints_enabled: false` trong `data/config.json`.
+
 CLI/TUI: `forge --battle "prompt" --models m1 m2 m3` · `forge --once "..." --mode plan`.
 
 Định hướng sản phẩm chi tiết: **PRODUCT_DIRECTION.md**.

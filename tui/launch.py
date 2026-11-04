@@ -24,6 +24,8 @@ def main() -> int:
     ap.add_argument("--mode", default="agent", choices=["direct", "agent", "plan"],
                     help="chế độ làm việc cho --once")
     ap.add_argument("--battle", metavar="PROMPT", help="⚔ cùng 1 prompt chạy nhiều model song song")
+    ap.add_argument("--parallel", nargs="+", metavar="TASK",
+                    help="🧩 chạy nhiều task song song (mỗi task 1 phiên)")
     ap.add_argument("--models", nargs="+", metavar="MODEL", help="danh sách model cho --battle")
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL")

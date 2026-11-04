@@ -173,14 +173,33 @@ def _read_file(workspace: Path, args: dict) -> str:
     return text if text else "(empty file)"
 
 
-def _write_file(workspace: Path, args: dict) -> str:
+def _make_diff(path: str, old: str, new: str) -> str | None:
+    import difflib
+    if old == new:
+        return None
+    d = list(difflib.unified_diff(
+        old.splitlines(keepends=True), new.splitlines(keepends=True),
+        fromfile=f"a/{path}", tofile=f"b/{path}"))
+    text = "".join(d)
+    if len(text) > 8000:
+        text = text[:8000] + "\n… (diff quá dài, đã cắt bớt)"
+    return text
+
+
+def _write_file(workspace: Path, args: dict):
     p = _resolve(workspace, args["path"])
     p.parent.mkdir(parents=True, exist_ok=True)
+    existed = p.exists()
+    old = p.read_text(encoding="utf-8", errors="replace") if existed else ""
     p.write_text(args.get("content", ""), encoding="utf-8")
-    return f"Wrote {len(args.get('content', ''))} chars to {args['path']}"
+    diff = _make_diff(args["path"], old, args.get("content", "")) if existed else None
+    note = f"Wrote {len(args.get('content', ''))} chars to {args['path']}"
+    if not existed:
+        note += " (file mới)"
+    return {"output": note, "diff": diff, "path": args["path"]}
 
 
-def _edit_file(workspace: Path, args: dict) -> str:
+def _edit_file(workspace: Path, args: dict):
     p = _resolve(workspace, args["path"])
     if not p.exists() or not p.is_file():
         return f"Error: file not found: {args['path']}"
@@ -191,12 +210,15 @@ def _edit_file(workspace: Path, args: dict) -> str:
         return ("Error: old_text not found in file. Make sure it matches exactly "
                 "(whitespace/newlines). Read the file again first.")
     if args.get("replace_all"):
-        text = text.replace(old, new)
-        p.write_text(text, encoding="utf-8")
-        return f"Replaced {n} occurrence(s) in {args['path']}"
-    text = text.replace(old, new, 1)
-    p.write_text(text, encoding="utf-8")
-    return f"Edited {args['path']} (1 occurrence replaced)"
+        text2 = text.replace(old, new)
+        count = n
+    else:
+        text2 = text.replace(old, new, 1)
+        count = 1
+    p.write_text(text2, encoding="utf-8")
+    diff = _make_diff(args["path"], text, text2)
+    return {"output": f"Edited {args['path']} ({count} occurrence replaced)",
+            "diff": diff, "path": args["path"]}
 
 
 def _search_files(workspace: Path, args: dict) -> str:
@@ -277,19 +299,38 @@ _IMPL = {
 
 
 async def execute_tool(name: str, args: dict, workspace: Path, override: bool = False) -> dict:
-    """Run one tool. Returns {"ok": bool, "output": str}.
+    """Run one tool. Returns {"ok": bool, "output": str, "diff"?: str, "path"?: str}.
 
     override=True: user explicitly approved this exact command interactively.
     """
+    from . import checkpoints
+
+    diff = None
+    changed_path = None
     try:
+        if name in ("write_file", "edit_file", "run_command"):
+            await checkpoints.snapshot(
+                checkpoints.key_for(workspace), workspace,
+                f"{name}: {args.get('path', args.get('command', ''))[:60]}")
         if name == "run_command":
             output = await _run_command(workspace, args, override=override)
             ok = not output.startswith(("Error", "BLOCKED"))
         elif name in _IMPL:
-            output = _IMPL[name](workspace, args)
+            res = _IMPL[name](workspace, args)
+            if isinstance(res, dict):
+                output = res["output"]
+                diff = res.get("diff")
+                changed_path = res.get("path")
+            else:
+                output = res
             ok = not output.startswith(("Error", "BLOCKED"))
         else:
             output, ok = f"Error: unknown tool '{name}'", False
     except Exception as e:
         output, ok = f"Error: {e}", False
-    return {"ok": ok, "output": output}
+    result = {"ok": ok, "output": output}
+    if diff:
+        result["diff"] = diff
+    if changed_path:
+        result["path"] = changed_path
+    return result

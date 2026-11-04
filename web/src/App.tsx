@@ -45,7 +45,9 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
     }
     case 'tool_result':
       return prev.map((it) =>
-        it.kind === 'tool' && it.callId === ev.id ? { ...it, output: ev.output, ok: ev.ok } : it,
+        it.kind === 'tool' && it.callId === ev.id
+          ? { ...it, output: ev.output, ok: ev.ok, diff: ev.diff }
+          : it,
       )
     case 'approval_request':
       return [...prev, {
@@ -111,6 +113,8 @@ export default function App() {
   const [sessionUsage, setSessionUsage] = useState<Usage | null>(null)
   const [chatMode, setChatMode] = useState<ChatMode>('agent')
   const [battleModels, setBattleModels] = useState('openrouter/free, google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash')
+  const [info, setInfo] = useState<string | null>(null)
+  const [busyTool, setBusyTool] = useState<string | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -320,6 +324,40 @@ export default function App() {
     if (sid) window.open(api.exportUrl(sid), '_blank')
   }
 
+  // ---------------------------------------------------- comfort tools
+  async function doUndo() {
+    if (!sid || streaming || busyTool) return
+    setBusyTool('undo')
+    try {
+      const r = await api.undo(sid)
+      if (r.ok) { await loadSession(sid); refreshTree(sid); setInfo('↩ ' + r.message) }
+      else setErrorBanner(r.message)
+    } catch (e) { setErrorBanner(String(e)) }
+    finally { setBusyTool(null) }
+  }
+
+  async function doCompact() {
+    if (!sid || streaming || busyTool) return
+    setBusyTool('compact')
+    try {
+      const r = await api.compact(sid)
+      if (r.ok) { await loadSession(sid); setInfo(`🧹 Đã nén ${r.before} → ${r.after} tin nhắn`) }
+      else setErrorBanner(r.message ?? 'Không nén được')
+    } catch (e) { setErrorBanner(String(e)) }
+    finally { setBusyTool(null) }
+  }
+
+  async function doInit() {
+    if (!sid || busyTool) return
+    setBusyTool('init')
+    try {
+      const r = await api.initAgents(sid)
+      if (r.ok) { refreshTree(sid); setInfo('🚀 Đã tạo AGENTS.md') }
+      else setErrorBanner(r.message ?? 'Không tạo được AGENTS.md')
+    } catch (e) { setErrorBanner(String(e)) }
+    finally { setBusyTool(null) }
+  }
+
   // ------------------------------------------------------------- settings
   async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number }) {
     const s = await api.saveSettings(apiKey, model, patch)
@@ -418,6 +456,12 @@ export default function App() {
               <button className="error-dismiss" title="Đóng" onClick={() => setErrorBanner(null)}>✕</button>
             </div>
           )}
+          {info && (
+            <div className="msg info-msg">
+              <span className="error-text">{info}</span>
+              <button className="error-dismiss" title="Đóng" onClick={() => setInfo(null)}>✕</button>
+            </div>
+          )}
         </div>
 
         {showJump && (
@@ -479,6 +523,11 @@ export default function App() {
             <span>Phiên: <code>{sid ?? '—'}</code></span>
             <span>Model: <code>{settings?.model ?? '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
+            <span className="foot-actions">
+              <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
+              <button className="foot-btn" disabled={busyTool !== null} title="Nén hội thoại bằng LLM để giải phóng context" onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} Nén</button>
+              <button className="foot-btn" disabled={busyTool !== null} title="Phân tích workspace và sinh AGENTS.md" onClick={doInit}>{busyTool === 'init' ? '…' : '🚀'} Init</button>
+            </span>
           </div>
         </div>
       </main>
