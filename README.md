@@ -75,6 +75,18 @@ file này vào workspace là agent tuân theo), và **mở dự án thật** là
 (mỗi write/edit/command là 1 mốc); file sinh ra sau mốc sẽ bị xóa khi lùi qua mốc đó
 (đúng ngữ nghĩa undo). Tắt bằng `checkpoints_enabled: false` trong `data/config.json`.
 
+### 🧩 Extensibility (v0.8)
+
+| Tính năng | Cách dùng |
+|---|---|
+| **@file references** | Gõ `@src/main.py` trong prompt (Web/TUI/CLI) — nội dung file được đính vào message (≤5 file × 40KB, tự bỏ file binary/path-traversal) |
+| **Custom slash commands** | Tạo `.forge/commands/<tên>.md` trong dự án (hoặc `data/forge/commands/` toàn cục) → gõ `/<tên> [args]`; `$ARGUMENTS` được thay bằng args; frontmatter được bỏ qua |
+| **🍴 Fork phiên** | Nút 🍴 (web) · `/fork` (TUI/CLI) — copy messages + workspace thành bản mới để thử hướng khác; phiên đang mở dự án thật → fork dùng chung dự án |
+| **⤓ /export chat** | Nút ⤓ (web, tải .md) · `/export [file]` (TUI/CLI) — hội thoại ra Markdown (roles, tool calls, placeholder ảnh) |
+| **🖼 Ảnh (vision)** | Nút 📎 (web) đính ≤4 ảnh png/jpeg/webp/gif — gửi OpenRouter dạng content-parts; demo mode bỏ qua có báo |
+| **🌐 Web search** | Toggle trong ⚙ Settings — mọi lượt chat thêm suffix `:online` của OpenRouter (tìm web qua Exa, ~$4/1000 kết quả) |
+| **Permission patterns** | ⚙ Settings: `allow_commands` (nâng warn→safe) & `deny_commands` (chặn tuyệt đối, ưu tiên cao nhất) — glob mỗi dòng 1 mẫu |
+
 CLI/TUI: `forge --battle "prompt" --models m1 m2 m3` · `forge --once "..." --mode plan`.
 
 Định hướng sản phẩm chi tiết: **PRODUCT_DIRECTION.md**.

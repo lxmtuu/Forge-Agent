@@ -51,10 +51,13 @@ HELP = """[bold]Lệnh[/bold]
   /usage              tokens đã dùng         /keytest         kiểm tra API key
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
+  /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
   /quit               thoát
 
 [bold]Mẹo[/bold]: gõ nhiệm vụ tự nhiên, ví dụ:
   "viết script python đếm số từ trong file txt rồi test luôn"
+Gõ @ten_file.py trong prompt để đính kèm file.
+Custom lệnh: tạo .forge/commands/<tên>.md rồi gõ /<tên> [args].
 Chạy song song nhiều tác vụ:  python cli/main.py --parallel "task A" "task B" """
 
 
@@ -70,6 +73,10 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
                    chat_mode: str = "agent") -> int:
     """Run one user turn, stream to terminal. Returns 0 on success."""
     agent = Agent(store, session_id, model=model)
+    from engine import atfiles
+    user_text, attached = atfiles.expand_at_refs(user_text, agent.workspace)
+    if attached:
+        console.print(f"[dim]📎 Đã đính kèm: {', '.join('@' + a for a in attached)}[/dim]")
     demo = config.get_api_key() is None
     if demo and not user_text.startswith("/"):
         console.print("[dim yellow]⚡ DEMO MODE — chưa có API key. Lưu key bằng /key <api>[/dim yellow]")
@@ -338,6 +345,36 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             continue
         if text == "/clear":
             console.clear()
+            continue
+        if text == "/fork":
+            ns = store.fork(session_id)
+            if ns:
+                session_id = ns.id
+                console.print(f"[green]🍴 Đã fork → phiên mới:[/green] {session_id}")
+            continue
+        if text.startswith("/export"):
+            from engine.export import to_markdown
+            s = store.get(session_id)
+            arg = text[7:].strip() or f"forge-{session_id}.md"
+            from pathlib import Path as _P
+            path = _P(arg)
+            if not path.is_absolute():
+                path = _P.cwd() / path
+            try:
+                path.write_text(to_markdown(s), encoding="utf-8")
+                console.print(f"[green]⤓ Đã xuất hội thoại → {path}[/green]")
+            except OSError as e:
+                console.print(f"[red]⚠ Không ghi được file: {e}[/red]")
+            continue
+        if text.startswith("/"):
+            from engine import commands as fcmd
+            agent0 = Agent(store, session_id, model=model)
+            expanded = fcmd.expand(text, agent0.workspace)
+            if expanded is not None:
+                await run_turn(session_id, expanded, model=model)
+                continue
+            console.print(f"[red]Lệnh không rõ:[/red] {text.split()[0]} — /help "
+                          f"(custom: .forge/commands/<tên>.md)")
             continue
 
         await run_turn(session_id, text, model=model)

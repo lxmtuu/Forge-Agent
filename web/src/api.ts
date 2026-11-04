@@ -57,7 +57,7 @@ async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => voi
 export const api = {
   health: () => fetch('/api/health').then((r) => j<Settings>(r)),
 
-  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean }) =>
+  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[] }) =>
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -128,9 +128,12 @@ export const api = {
       method: 'DELETE',
     }).then((r) => j<{ ok: boolean }>(r)),
 
-  /** POST chat and stream SSE events (proxy-safe, abortable). */
-  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal) =>
-    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode }, onEvent, signal),
+  /** POST chat and stream SSE events (proxy-safe, abortable). images = data URIs. */
+  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[]) =>
+    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, images: images ?? [] }, onEvent, signal),
+
+  fork: (sid: string) =>
+    fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),
 
   /** Parallel sub-agents: one prompt per line/task. */
   batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>

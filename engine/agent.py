@@ -114,13 +114,16 @@ class Agent:
             ),
         }
 
-    async def send(self, user_text: str, chat_mode: str = "agent"):
+    async def send(self, user_text: str, chat_mode: str = "agent", content=None):
         """Run one full user turn; async-generator of events.
 
         chat_mode: "agent" (full loop) | "direct" (no tools) | "plan" (read-only).
+        content: payload lưu vào session — mặc định là user_text; truyền list
+        content-parts (multimodal: text + image_url) khi có ảnh đính kèm.
         """
         s = self.session
-        s.messages.append({"role": "user", "content": user_text})
+        s.messages.append({"role": "user",
+                           "content": content if content is not None else user_text})
         if s.title == "New session":
             s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
         self.store.save(s)
@@ -285,15 +288,22 @@ COMPACT_SYSTEM = (
 KEEP_RECENT_MESSAGES = 4
 
 
+def _msg_text(content) -> str:
+    """Content có thể là str hoặc list content-parts (multimodal)."""
+    if isinstance(content, list):
+        return " ".join(str(p.get("text", "")) for p in content if isinstance(p, dict))
+    return str(content or "")
+
+
 def _conversation_chars(messages: list[dict]) -> int:
-    return sum(len(str(m.get("content") or "")) + len(str(m.get("tool_calls") or "")) for m in messages)
+    return sum(len(_msg_text(m.get("content"))) + len(str(m.get("tool_calls") or "")) for m in messages)
 
 
 def _transcript(messages: list[dict], per_msg_cap: int = 1200) -> str:
     lines = []
     for m in messages:
         role = m.get("role", "?").upper()
-        c = str(m.get("content") or "")
+        c = _msg_text(m.get("content"))
         if m.get("tool_calls"):
             calls = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])
             c = (c or "") + f" [tool_calls: {calls}]"

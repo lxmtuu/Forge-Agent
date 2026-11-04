@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,6 +41,7 @@ class ChatBody(BaseModel):
     text: str
     model: str | None = None
     mode: str = "agent"  # direct | agent | plan
+    images: list[str] = []  # data URI image/png|jpeg|webp|gif (tối đa 4)
 
 
 class BattleBody(BaseModel):
@@ -62,6 +63,9 @@ class SettingsBody(BaseModel):
     approval_mode: str | None = None
     docker_sandbox: bool | None = None
     max_tokens: int | None = None
+    web_search: bool | None = None
+    allow_commands: list[str] | None = None
+    deny_commands: list[str] | None = None
 
 
 class FileSaveBody(BaseModel):
@@ -108,6 +112,9 @@ async def health():
         "docker_sandbox": bool(cfg.get("docker_sandbox")),
         "docker_available": guard.DOCKER_AVAILABLE,
         "max_tokens": config.get_max_tokens(),
+        "web_search": bool(cfg.get("web_search")),
+        "allow_commands": cfg.get("allow_commands") or [],
+        "deny_commands": cfg.get("deny_commands") or [],
     }
 
 
@@ -140,6 +147,12 @@ async def set_settings(body: SettingsBody):
         patch["docker_sandbox"] = body.docker_sandbox
     if body.max_tokens is not None and 256 <= int(body.max_tokens) <= 65536:
         patch["max_tokens"] = int(body.max_tokens)
+    if body.web_search is not None:
+        patch["web_search"] = bool(body.web_search)
+    if body.allow_commands is not None:
+        patch["allow_commands"] = [x.strip() for x in body.allow_commands if x.strip()][:50]
+    if body.deny_commands is not None:
+        patch["deny_commands"] = [x.strip() for x in body.deny_commands if x.strip()][:50]
     config.save_config(patch)
     return await health()
 
@@ -312,6 +325,34 @@ async def init_agents_ep(sid: str):
     return res
 
 
+@app.post("/api/sessions/{sid}/fork")
+async def fork_session(sid: str):
+    """🍴 Fork — nhân bản phiên: copy messages + workspace thành bản mới."""
+    ns = store.fork(sid)
+    if ns is None:
+        raise HTTPException(404, "Session not found")
+    return {"session": {"id": ns.id, "title": ns.title, "model": ns.model,
+                        "message_count": len(ns.messages),
+                        "updated_at": ns.updated_at}}
+
+
+@app.get("/api/sessions/{sid}/export")
+async def export_session(sid: str):
+    """⤓ /export — tải hội thoại dạng Markdown."""
+    s = store.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    from engine.export import to_markdown
+    from urllib.parse import quote
+    md = to_markdown(s)
+    fname = f"forge-{s.id}.md"
+    return Response(
+        content=md,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Chat streaming (SSE)
 # ---------------------------------------------------------------------------
@@ -327,11 +368,35 @@ async def chat(sid: str, body: ChatBody, request: Request):
     demo = config.get_api_key() is None
     model = body.model or None
     chat_mode = body.mode if body.mode in ("direct", "agent", "plan") else "agent"
+    ws = store.workspace(sid)
+
+    # /ten-lenh từ .forge/commands/<name>.md (custom slash commands)
+    from engine import commands as fcmd
+    expanded = fcmd.expand(text, ws)
+    if expanded is not None:
+        text = expanded
+    # @file references → đính kèm nội dung file vào message
+    from engine import atfiles
+    text, attached = atfiles.expand_at_refs(text, ws)
+
+    # ảnh đính kèm (multimodal) — content parts kiểu OpenAI/OpenRouter
+    content = None
+    images = [u for u in (body.images or []) if isinstance(u, str) and u.startswith("data:image/")][:4]
+    if images and not demo:
+        content = [{"type": "text", "text": text}] + [
+            {"type": "image_url", "image_url": {"url": u}} for u in images]
 
     async def gen():
         try:
             agent = Agent(store, sid, model=model)
-            source = send_demo(agent, text) if demo else agent.send(text, chat_mode=chat_mode)
+            if demo:
+                demo_text = text
+                if images:
+                    demo_text += (f"\n\n(demo mode: bỏ qua {len(images)} ảnh đính kèm — "
+                                  "nhập API key để dùng vision)")
+                source = send_demo(agent, demo_text)
+            else:
+                source = agent.send(text, chat_mode=chat_mode, content=content)
             async for ev in source:
                 if await request.is_disconnected():
                     return

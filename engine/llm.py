@@ -9,6 +9,24 @@ from . import config
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
+def resolve_model(model: str | None = None) -> str:
+    """Model cuối cùng sẽ gọi: config/env + hậu tố :online khi bật web_search.
+
+    Web search của OpenRouter (~$4/1000 kết quả, mặc định 5 kết quả/lượt):
+    suffix ":online" = shorthand của plugins:[{id:"web"}].
+    """
+    from fnmatch import fnmatch
+    m = (model or config.get_model() or "").strip()
+    if not m:
+        m = config.FALLBACK_MODEL
+    cfg = config.load_config()
+    if cfg.get("web_search") and not m.endswith(":online"):
+        bypass = cfg.get("web_search_skip") or []
+        if not any(fnmatch(m.lower(), str(p).lower()) for p in bypass):
+            m = m + ":online"
+    return m
+
+
 class LLMError(Exception):
     pass
 
@@ -45,7 +63,7 @@ async def stream_chat(
             "hoặc nhập key trong phần Settings."
         )
     payload: dict = {
-        "model": model or config.get_model(),
+        "model": resolve_model(model or config.get_model()),
         "messages": messages,
         "stream": True,
         "temperature": temperature,

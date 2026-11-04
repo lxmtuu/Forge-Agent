@@ -41,8 +41,24 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
 DOCKER_AVAILABLE = shutil.which("docker") is not None
 
 
+def _config_patterns() -> tuple[list[str], list[str]]:
+    """Đọc allow/deny glob từ config.json (vd "git push *", "rm -rf *")."""
+    from . import config
+    cfg = config.load_config()
+    deny = [str(x).lower() for x in (cfg.get("deny_commands") or []) if str(x).strip()]
+    allow = [str(x).lower() for x in (cfg.get("allow_commands") or []) if str(x).strip()]
+    return deny, allow
+
+
 def assess_command(cmd: str) -> dict:
-    """Return {"level": "safe"|"warn"|"danger", "reasons": [..]}."""
+    """Return {"level": "safe"|"warn"|"danger", "reasons": [..]}.
+
+    Config patterns (config.json): deny_commands chặn tuyệt đối (ưu tiên cao nhất,
+    kể cả khi allow match); allow_commands nâng warn → safe (danger vẫn danger).
+    """
+    from fnmatch import fnmatch
+    c = (cmd or "").strip().lower()
+    deny, allow = _config_patterns()
     reasons: dict[str, list[str]] = {"danger": [], "warn": []}
     for rx, level, reason in _PATTERNS:
         if rx.search(cmd or ""):
@@ -51,8 +67,16 @@ def assess_command(cmd: str) -> dict:
     if reasons["danger"]:
         return {"level": "danger", "reasons": reasons["danger"]}
     if reasons["warn"]:
+        if any(fnmatch(c, d) or fnmatch(d, c) for d in deny):
+            return {"level": "danger", "reasons": reasons["warn"] + ["khớp deny_commands trong config"]}
+        if any(fnmatch(c, a) or fnmatch(a, c) for a in allow):
+            return {"level": "safe", "reasons": []}
         return {"level": "warn", "reasons": reasons["warn"]}
+    # safe theo regex — nhưng deny vẫn phải chặn (ai định nghĩa deny là muốn chặn)
+    if any(fnmatch(c, d) or fnmatch(d, c) for d in deny):
+        return {"level": "danger", "reasons": ["khớp deny_commands trong config"]}
     return {"level": "safe", "reasons": []}
+
 
 
 def guard_message(cmd: str, verdict: dict) -> str:

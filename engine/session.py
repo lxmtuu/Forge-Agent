@@ -79,6 +79,42 @@ class SessionStore:
         self.save(s)
         return s
 
+    def fork(self, sid: str) -> "Session | None":
+        """🍴 Nhân bản phiên (Codex-style fork): copy messages, workspace riêng.
+
+        - Workspace mặc định → copytree (bỏ node_modules/.git/...).
+        - Phiên "mở" vào dự án thật (pointer) → fork dùng chung pointer đó.
+        """
+        import copy
+        import shutil
+        src = self.get(sid)
+        if src is None:
+            return None
+        ns = self.create(model=src.model, title=(src.title[:56] + " 🍴"))
+        ns.messages = copy.deepcopy(src.messages)
+        ns.allowed_commands = list(src.allowed_commands)
+        self.save(ns)
+        # workspace
+        ptr = config.WORKSPACES_DIR / f"{sid}.path"
+        if ptr.exists():  # phiên trỏ tới dự án thật → fork trỏ chung
+            try:
+                (config.WORKSPACES_DIR / f"{ns.id}.path").write_text(
+                    ptr.read_text(encoding="utf-8"), encoding="utf-8")
+                return ns
+            except OSError:
+                pass
+        src_ws = self.workspace(sid)
+        dst_ws = config.WORKSPACES_DIR / ns.id
+        if src_ws.exists():
+            shutil.copytree(
+                src_ws, dst_ws,
+                ignore=shutil.ignore_patterns(
+                    "node_modules", ".git", ".venv", "venv", "__pycache__",
+                    "dist", "build", "target", ".next", ".cache"),
+                dirs_exist_ok=True)
+        return ns
+
+
     def get(self, sid: str) -> Session | None:
         p = self._path(sid)
         if not p.exists():

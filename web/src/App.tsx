@@ -115,6 +115,7 @@ export default function App() {
   const [battleModels, setBattleModels] = useState('openrouter/free, google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash')
   const [info, setInfo] = useState<string | null>(null)
   const [busyTool, setBusyTool] = useState<string | null>(null)
+  const [pendingImages, setPendingImages] = useState<string[]>([])
 
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -221,14 +222,16 @@ export default function App() {
         if (isBattle) await api.battleStream(text, battleModels.split(',').map((s) => s.trim()).filter(Boolean), onBatch, ac.signal)
         else await api.batchStream(prompts, onBatch, ac.signal)
       } else {
-        setItems((prev) => [...prev, { kind: 'user', id: uid(), text }])
+        setItems((prev) => [...prev, { kind: 'user', id: uid(), text, images: pendingImages.length ? pendingImages : undefined }])
+        const imgs = pendingImages
+        setPendingImages([])
         await api.streamChat(sid, text, chatMode, (ev: AgentEvent) => {
           if (ev.type === 'turn_end') {
             if (ev.session_usage) setSessionUsage(ev.session_usage)
             return
           }
           setItems((prev) => applyEvent(prev, ev))
-        }, ac.signal)
+        }, ac.signal, imgs)
         await loadSession(sid)
       }
     } catch (e) {
@@ -325,6 +328,31 @@ export default function App() {
   }
 
   // ---------------------------------------------------- comfort tools
+  function pickImages(files: FileList | null) {
+    if (!files || !files.length) return
+    const picks = Array.from(files).slice(0, 4 - pendingImages.length)
+    for (const f of picks) {
+      if (!f.type.startsWith('image/')) continue
+      if (f.size > 4 * 1024 * 1024) { setErrorBanner(`Ảnh ${f.name} > 4MB — hãy thu nhỏ trước`); continue }
+      const rd = new FileReader()
+      rd.onload = () => { if (typeof rd.result === 'string') setPendingImages((p) => p.length >= 4 ? p : [...p, rd.result as string]) }
+      rd.readAsDataURL(f)
+    }
+  }
+
+  async function doFork() {
+    if (!sid || streaming || busyTool) return
+    setBusyTool('fork')
+    try {
+      const r = await api.fork(sid)
+      if (r.session?.id) {
+        setSid(r.session.id); await loadSession(r.session.id); refreshSessions(); refreshTree(r.session.id)
+        setInfo(`🍴 Đã fork → phiên mới ${r.session.id}`)
+      }
+    } catch (e) { setErrorBanner(String(e)) }
+    finally { setBusyTool(null) }
+  }
+
   async function doUndo() {
     if (!sid || streaming || busyTool) return
     setBusyTool('undo')
@@ -369,7 +397,14 @@ export default function App() {
     if (it.kind === 'user') {
       return (
         <div key={it.id} className="msg user">
-          <div className="bubble">{it.text}</div>
+          <div className="bubble">
+            {it.images && it.images.length > 0 && (
+              <div className="msg-images">
+                {it.images.map((src, i) => <img key={i} src={src} alt={`ảnh ${i + 1}`} />)}
+              </div>
+            )}
+            {it.text}
+          </div>
         </div>
       )
     }
@@ -495,6 +530,11 @@ export default function App() {
               placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
           )}
           <div className="composer-row">
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
+              style={{ display: 'none' }} id="img-picker"
+              onChange={(e) => { pickImages(e.target.files); e.target.value = '' }} />
+            <button className="btn-attach" title="Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)"
+              onClick={() => document.getElementById('img-picker')?.click()} disabled={streaming || pendingImages.length >= 4}>📎</button>
             <textarea
               value={input}
               placeholder={streaming
@@ -505,7 +545,7 @@ export default function App() {
                     ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
                     : chatMode === 'direct' ? 'Hỏi gì đó… (Enter gửi)'
                       : chatMode === 'plan' ? 'Mô tả tính năng cần lập kế hoạch…'
-                        : 'Nhập nhiệm vụ… (Enter gửi · Shift+Enter xuống dòng)'}
+                        : 'Nhập nhiệm vụ… (@file.py đính kèm file · Enter gửi · Shift+Enter xuống dòng)'}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.key === 'Enter' && !e.shiftKey && (!parallel || chatMode === 'battle')) ||
@@ -527,8 +567,20 @@ export default function App() {
               <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
               <button className="foot-btn" disabled={busyTool !== null} title="Nén hội thoại bằng LLM để giải phóng context" onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} Nén</button>
               <button className="foot-btn" disabled={busyTool !== null} title="Phân tích workspace và sinh AGENTS.md" onClick={doInit}>{busyTool === 'init' ? '…' : '🚀'} Init</button>
+              <button className="foot-btn" disabled={busyTool !== null || !sid} title="Fork phiên: copy messages + workspace thành bản mới để thử hướng khác" onClick={doFork}>{busyTool === 'fork' ? '…' : '🍴'} Fork</button>
+              <a className="foot-btn" href={sid ? `/api/sessions/${sid}/export` : '#'} download title="Tải hội thoại dạng Markdown" onClick={(e) => { if (!sid) e.preventDefault() }}>⤓ Export</a>
             </span>
           </div>
+          {pendingImages.length > 0 && (
+            <div className="pending-images">
+              {pendingImages.map((src, i) => (
+                <span key={i} className="pending-img">
+                  <img src={src} alt={`ảnh ${i + 1}`} />
+                  <button className="pending-x" title="Bỏ ảnh" onClick={() => setPendingImages((p) => p.filter((_, j) => j !== i))}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 

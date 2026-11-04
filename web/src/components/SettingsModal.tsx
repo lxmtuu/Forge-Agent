@@ -9,13 +9,16 @@ const STATUS_STYLE: Record<string, string> = {
 export function SettingsModal(props: {
   settings: Settings
   onClose: () => void
-  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number }) => Promise<void>
+  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[] }) => Promise<void>
 }) {
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
   const [maxTokens, setMaxTokens] = useState(String(props.settings.max_tokens ?? 16384))
   const [approval, setApproval] = useState<string>(props.settings.approval_mode ?? 'guarded')
   const [docker, setDocker] = useState(props.settings.docker_sandbox)
+  const [webSearch, setWebSearch] = useState(props.settings.web_search ?? false)
+  const [allowCmds, setAllowCmds] = useState((props.settings.allow_commands ?? []).join('\n'))
+  const [denyCmds, setDenyCmds] = useState((props.settings.deny_commands ?? []).join('\n'))
   const [saving, setSaving] = useState(false)
   const [mcp, setMcp] = useState<McpServerStatus[]>([])
   const [mcpName, setMcpName] = useState('')
@@ -156,6 +159,27 @@ export function SettingsModal(props: {
           </label>
         )}
 
+        <label className="check-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
+          <span>🌐 Web search qua OpenRouter <code>:online</code> <em>— mọi lượt chat sẽ tìm web (tốn ~$0.005/lượt)</em></span>
+        </label>
+
+        <div className="field">
+          <span>Permission patterns <em>(glob, mỗi dòng 1 mẫu — vd <code>git *</code>, <code>npm run *</code>)</em></span>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <small style={{ color: 'var(--green)' }}>✓ Allow (nâng warn → được chạy)</small>
+              <textarea value={allowCmds} onChange={(e) => setAllowCmds(e.target.value)} rows={4}
+                placeholder={'git status\nnpm run *\npytest *'} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <small style={{ color: 'var(--red)' }}>✕ Deny (chặn tuyệt đối)</small>
+              <textarea value={denyCmds} onChange={(e) => setDenyCmds(e.target.value)} rows={4}
+                placeholder={'git push *\nrm -rf *\ncurl * | sh'} style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }} />
+            </div>
+          </div>
+        </div>
+
         <div className="field">
           <span>MCP servers <em>(Model Context Protocol — nối tool bên ngoài vào agent)</em></span>
           <div className="mcp-list">
@@ -202,6 +226,9 @@ export function SettingsModal(props: {
                 await props.onSave(key || undefined, model || undefined, {
                   approval_mode: approval,
                   docker_sandbox: docker,
+                  web_search: webSearch,
+                  allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
+                  deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
                   ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
                 })
                 props.onClose()

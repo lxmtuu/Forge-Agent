@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -247,8 +248,10 @@ class ForgeTUI(App):
         cmd, _, arg = text.partition(" ")
         arg = arg.strip()
         if cmd == "/help":
-            self.add_line("Lệnh: /new /key <api> /model <m> /mode guarded|ask|auto "
-                          "/plan /agent /direct /undo /compact [gợi ý] /init /perm /usage /files /quit",
+            self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
+                          "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
+                          "/usage /files /quit · Gõ @file.py để đính kèm file · "
+                          "Custom: .forge/commands/<tên>.md → gõ /<tên> [args]",
                           cls="sys-line")
         elif cmd == "/new":
             self.new_session()
@@ -286,8 +289,34 @@ class ForgeTUI(App):
             self.refresh_files()
         elif cmd in ("/quit", "/exit"):
             self.exit()
+        elif cmd == "/fork":
+            if self._require_idle():
+                ns = store.fork(self.sid)
+                if ns:
+                    self.refresh_sessions(select_latest=False)
+                    self.select_session(ns.id)
+                    self.add_line(f"🍴 Đã fork → phiên mới {ns.id}", cls="tool-ok")
+        elif cmd == "/export":
+            from engine.export import to_markdown
+            s = store.get(self.sid)
+            path = Path(arg or f"forge-{self.sid}.md")
+            if s and not path.is_absolute():
+                path = Path.cwd() / path
+            try:
+                path.write_text(to_markdown(s), encoding="utf-8")
+                self.add_line(f"⤓ Đã xuất hội thoại → {path}", cls="tool-ok")
+            except OSError as e:
+                self.add_line(f"⚠ Không ghi được file: {e}", cls="tool-bad")
         else:
-            self.add_line(f"Lệnh không rõ: {cmd} — /help", cls="sys-line")
+            from engine import commands as fcmd
+            ws = self.agent.workspace if self.agent else Path.cwd()
+            expanded = fcmd.expand(text, ws)
+            if expanded is not None:
+                self.add_line(f"⌨ Lệnh custom: {cmd} → chạy", cls="sys-line")
+                self.run_turn(expanded)
+            else:
+                self.add_line(f"Lệnh không rõ: {cmd} — /help (custom: .forge/commands/{cmd[1:]}.md)",
+                              cls="sys-line")
         self.update_status()
 
     # ------------------------------------------------------- comfort cmds
@@ -340,8 +369,13 @@ class ForgeTUI(App):
             self.new_session()
         self.busy = True
         self.update_status()
-        self.add_user(text)
         self.agent = Agent(store, self.sid)
+        # @file references → đính kèm nội dung file
+        from engine import atfiles
+        text, attached = atfiles.expand_at_refs(text, self.agent.workspace)
+        if attached:
+            self.add_line(f"📎 Đã đính kèm: {', '.join('@' + a for a in attached)}", cls="sys-line")
+        self.add_user(text.split("\n\n---\n")[0])
         demo = config.get_api_key() is None
         source = send_demo(self.agent, text) if demo else self.agent.send(text, chat_mode=self.chat_mode)
         self._md_widget = None

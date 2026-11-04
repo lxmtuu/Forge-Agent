@@ -66,6 +66,9 @@ export interface Settings {
   docker_sandbox: boolean
   docker_available: boolean
   max_tokens: number
+  web_search: boolean
+  allow_commands: string[]
+  deny_commands: string[]
 }
 
 export interface KeyCheckResult {
@@ -131,7 +134,7 @@ export interface TaskGroup {
 }
 
 export type Item =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; images?: string[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
   | {

@@ -511,3 +511,23 @@ a:hover { text-decoration: underline; }
 .diff-hunk { color: var(--cyan); background: rgba(92, 184, 201, .08); }
 .diff-meta { color: var(--faint); }
 .diff-ctx { color: var(--dim); }
+
+/* ═══ v0.8: images attach + fork/export/attach buttons ═══ */
+.btn-attach {
+  background: transparent; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--dim); font-size: 15px; padding: 0 10px; cursor: pointer; align-self: stretch;
+}
+.btn-attach:hover:not(:disabled) { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+.btn-attach:disabled { opacity: .4; cursor: not-allowed; }
+.msg-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.msg-images img { max-width: 180px; max-height: 140px; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.pending-images { display: flex; gap: 8px; padding: 6px 2px 0; flex-wrap: wrap; }
+.pending-img { position: relative; display: inline-block; }
+.pending-img img { max-width: 72px; max-height: 56px; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.pending-x {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: var(--panel3); color: var(--dim); font-size: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.pending-x:hover { color: var(--red); }
+a.foot-btn { text-decoration: none; display: inline-block; }

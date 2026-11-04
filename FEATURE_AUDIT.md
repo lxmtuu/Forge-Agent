@@ -11,6 +11,13 @@
 > global `data/AGENTS.md`. Verify: 16/16 test `scripts/test_v07.py` + e2e server.
 > Điểm "bộ nhớ/ngữ cảnh" nâng ~35% → ~70%; "giao diện" ~75% → ~85%.
 
+> **✅ CẬP NHẬT v0.8 — extensibility (theo lộ trình bên dưới):** @file references
+> (≤5 file×40KB, chống traversal) · custom slash commands `.forge/commands/*.md` +
+> global (chuẩn OpenCode) · fork phiên (messages + workspace copy) · /export Markdown ·
+> ảnh vision (📎 ≤4 ảnh, content-parts OpenRouter) · web search `:online` toggle ·
+> permission patterns allow/deny trong Settings. Verify: 12/12 test `scripts/test_v08.py`
+> + 16/16 regression v0.7 + e2e. Điểm "mở rộng" nâng ~40% → ~75%.
+
 ## 1. Bảng ma trận tổng (34 hạng mục)
 
 ### A. Lõi agent
