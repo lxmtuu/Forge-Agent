@@ -66,6 +66,12 @@ async def stream_chat(
             ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", "replace")[:2000]
+                    if resp.status_code == 401:
+                        raise LLMError(
+                            "OpenRouter 401 — API key KHÔNG HỢP LỆ (\"User not found\" = key sai, "
+                            "thiếu ký tự hoặc đã bị xóa). Hãy tạo key mới tại https://openrouter.ai/keys, "
+                            "copy ĐỦ toàn bộ chuỗi sk-or-v1-... rồi dán lại vào ⚙ Cài đặt. "
+                            f"Chi tiết từ OpenRouter: {body[:300]}")
                     raise LLMError(f"OpenRouter HTTP {resp.status_code}: {body}")
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):
@@ -131,3 +137,41 @@ def build_assistant_message(content: str | None, tool_calls: list[dict] | None) 
     if tool_calls:
         msg["tool_calls"] = tool_calls
     return msg
+
+
+async def check_key(api_key: str | None = None) -> dict:
+    """Verify an OpenRouter key via GET /api/v1/auth/key."""
+    key = api_key or config.get_api_key()
+    if not key:
+        return {"valid": False, "error": "Chưa có key nào được cấu hình",
+                "hint": "Tạo key tại https://openrouter.ai/keys rồi dán vào Cài đặt."}
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get("https://openrouter.ai/api/v1/auth/key",
+                            headers=_headers(key))
+    except httpx.HTTPError as e:
+        return {"valid": False, "error": f"Lỗi kết nối OpenRouter: {e}", "hint": ""}
+    if r.status_code == 200:
+        d = r.json().get("data", {}) or {}
+        return {
+            "valid": True,
+            "label": d.get("label") or "(không tên)",
+            "usage": d.get("usage"),       # USD đã dùng
+            "limit": d.get("limit"),       # None = không giới hạn / free tier
+            "is_free_tier": d.get("is_free_tier"),
+        }
+    try:
+        msg = (r.json().get("error") or {}).get("message") or f"HTTP {r.status_code}"
+    except Exception:
+        msg = f"HTTP {r.status_code}"
+    hint = ""
+    if "User not found" in msg:
+        hint = ("Key KHÔNG tồn tại trên OpenRouter. Thường do: (1) copy thiếu/thừa ký tự — "
+                "key dạng sk-or-v1- gồm 71 ký tự, phải copy ĐỦ toàn bộ; (2) key đã bị xóa; "
+                "(3) dán nhầm key của dịch vụ khác. Hãy tạo key mới tại openrouter.ai/keys, "
+                "dùng nút Copy trên trang đó và dán thẳng vào đây.")
+    elif r.status_code == 402:
+        hint = "Key hợp lệ nhưng tài khoản hết credit — nạp thêm tại openrouter.ai/credits."
+    elif r.status_code == 429:
+        hint = "Key hợp lệ nhưng đang bị giới hạn tốc độ — chờ chút rồi thử lại."
+    return {"valid": False, "error": msg, "hint": hint}

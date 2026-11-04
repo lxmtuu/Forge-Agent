@@ -66,6 +66,16 @@ export interface Settings {
   docker_available: boolean
 }
 
+export interface KeyCheckResult {
+  valid: boolean
+  label?: string
+  usage?: number | null
+  limit?: number | null
+  is_free_tier?: boolean
+  error?: string
+  hint?: string
+}
+
 export interface McpServerStatus {
   name: string
   command: string

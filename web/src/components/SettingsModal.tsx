@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import type { McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+import type { KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
 
 const STATUS_STYLE: Record<string, string> = {
   ready: 'st-ok', starting: 'st-warn', stopped: 'st-dim', error: 'st-bad',
@@ -23,6 +23,14 @@ export function SettingsModal(props: {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [modelFilter, setModelFilter] = useState('')
   const [totals, setTotals] = useState<UsageTotals | null>(null)
+  const [keyCheck, setKeyCheck] = useState<KeyCheckResult | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  const doKeyCheck = (k?: string) => {
+    setChecking(true)
+    api.keyCheck(k).then(setKeyCheck).catch((e) => setKeyCheck({ valid: false, error: String(e) }))
+      .finally(() => setChecking(false))
+  }
 
   const reloadMcp = () => api.mcpStatus().then(setMcp).catch(() => {})
   useEffect(() => {
@@ -54,8 +62,25 @@ export function SettingsModal(props: {
 
         <label className="field">
           <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
-          <input type="password" placeholder="sk-or-v1-..." value={key} onChange={(e) => setKey(e.target.value)} />
-          <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — để trống nếu không đổi.</small>
+          <div className="key-row">
+            <input type="password" placeholder="sk-or-v1-..." value={key} onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
+            <button className="btn-ghost btn-sm" disabled={checking} onClick={() => doKeyCheck(key || undefined)}>
+              {checking ? 'Đang kiểm tra…' : '🔍 Kiểm tra'}
+            </button>
+          </div>
+          <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy trên trang đó, để trống nếu không đổi.</small>
+          {keyCheck && (keyCheck.valid ? (
+            <div className="key-result ok">
+              ✅ Key hợp lệ — «{keyCheck.label}» · đã dùng ${keyCheck.usage ?? 0}
+              {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ' · không giới hạn'}
+              {keyCheck.is_free_tier && ' · free tier'}
+            </div>
+          ) : (
+            <div className="key-result bad">
+              ❌ {keyCheck.error}
+              {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
+            </div>
+          ))}
         </label>
 
         <div className="field">

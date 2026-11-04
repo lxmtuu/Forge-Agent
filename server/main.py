@@ -100,6 +100,17 @@ async def get_settings():
     return await health()
 
 
+class KeyCheckBody(BaseModel):
+    api_key: str | None = None
+
+
+@app.post("/api/keycheck")
+async def keycheck(body: KeyCheckBody | None = None):
+    """Verify the saved (or provided) OpenRouter key against /api/v1/auth/key."""
+    provided = body.api_key.strip() if (body and body.api_key) else None
+    return await llm.check_key(provided)
+
+
 @app.post("/api/settings")
 async def set_settings(body: SettingsBody):
     patch: dict = {}

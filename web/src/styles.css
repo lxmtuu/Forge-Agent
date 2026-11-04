@@ -209,6 +209,14 @@ a { color: var(--cyan); }
 .seg-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 @media (max-width: 700px) { .seg-3 { grid-template-columns: 1fr; } }
 
+/* ---------------- key check ---------------- */
+.key-row { display: flex; gap: 8px; align-items: center; }
+.key-row input { flex: 1; }
+.key-result { margin-top: 8px; border-radius: 8px; padding: 8px 11px; font-size: 12.5px; line-height: 1.5; }
+.key-result.ok { background: rgba(111, 191, 139, 0.12); border: 1px solid rgba(111, 191, 139, 0.4); color: var(--green); }
+.key-result.bad { background: rgba(229, 83, 75, 0.1); border: 1px solid rgba(229, 83, 75, 0.4); color: #f2a09b; }
+.key-hint { margin-top: 5px; color: var(--dim); }
+
 /* scrollbars */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: #33333c; border-radius: 5px; }

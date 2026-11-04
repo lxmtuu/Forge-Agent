@@ -48,7 +48,8 @@ HELP = """[bold]Lệnh[/bold]
   /key <apikey>       lưu API key OpenRouter /files           xem cây file
   /read <path>        đọc file               /clear           xóa màn hình
   /mcp [refresh]      xem MCP servers        /mode [g|a]      guarded / auto (YOLO)
-  /usage              tokens đã dùng         /quit            thoát
+  /usage              tokens đã dùng         /keytest         kiểm tra API key
+  /quit               thoát
 
 [bold]Mẹo[/bold]: gõ nhiệm vụ tự nhiên, ví dụ:
   "viết script python đếm số từ trong file txt rồi test luôn"
@@ -273,6 +274,20 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             else:
                 cur = config.load_config().get("approval_mode", "guarded")
                 console.print(f"Hiện tại: [bold]{cur}[/bold] — dùng /mode guarded|ask|auto")
+            continue
+        if text == "/keytest":
+            from engine.llm import check_key
+            console.print("  [dim]Đang kiểm tra key với OpenRouter…[/dim]")
+            r = await check_key()
+            if r.get("valid"):
+                lim = f" / hạn mức ${r['limit']}" if r.get("limit") is not None else " · không giới hạn"
+                free = " · free tier" if r.get("is_free_tier") else ""
+                console.print(f"  [green]✅ Key hợp lệ[/green] — «{r.get('label')}» · "
+                              f"đã dùng ${r.get('usage') or 0}{lim}{free}")
+            else:
+                console.print(f"  [red]❌ {r.get('error')}[/red]")
+                if r.get("hint"):
+                    console.print(f"  [yellow]💡 {r['hint']}[/yellow]")
             continue
         if text == "/usage":
             s = store.get(session_id)

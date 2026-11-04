@@ -64,6 +64,13 @@ export const api = {
       body: JSON.stringify({ api_key, model, ...patch }),
     }).then((r) => j<Settings>(r)),
 
+  keyCheck: (api_key?: string) =>
+    fetch('/api/keycheck', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key }),
+    }).then((r) => j<KeyCheckResult>(r)),
+
   models: () => fetch('/api/models').then((r) => j<{ models: ModelInfo[]; count: number }>(r)),
 
   usage: () => fetch('/api/usage').then((r) => j<UsageTotals>(r)),
