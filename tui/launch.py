@@ -29,8 +29,18 @@ def main() -> int:
     ap.add_argument("--models", nargs="+", metavar="MODEL", help="danh sách model cho --battle")
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL")
+    ap.add_argument("--profile", metavar="NAME", help="dùng profile trong data/config.json (vd: safe)")
     ap.add_argument("--list-sessions", action="store_true")
     args = ap.parse_args()
+
+    if getattr(args, "profile", None):
+        from engine import config as _cfg
+        if _cfg.set_profile(args.profile):
+            print(f"==> Profile: {args.profile}")
+        else:
+            profs = ", ".join(sorted(_cfg.list_profiles().keys())) or "(không có)"
+            print(f"⚠ Không có profile «{args.profile}» — các profile: {profs}")
+            return 1
 
     if args.list_sessions:
         from engine.session import SessionStore

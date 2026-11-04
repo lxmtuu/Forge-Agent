@@ -115,6 +115,18 @@ async def health():
         "web_search": bool(cfg.get("web_search")),
         "allow_commands": cfg.get("allow_commands") or [],
         "deny_commands": cfg.get("deny_commands") or [],
+        "active_profile": cfg.get("active_profile"),
+        "profiles": sorted(config.list_profiles().keys()),
+        "lsp_available": _lsp_available(),
+    }
+
+
+def _lsp_available() -> dict:
+    """Ngôn ngữ nào có language server trên PATH (để UI hiển thị trạng thái)."""
+    import shutil
+    return {
+        "python": shutil.which("pylsp") is not None or shutil.which("pyright-langserver") is not None,
+        "typescript": shutil.which("typescript-language-server") is not None,
     }
 
 
@@ -244,6 +256,28 @@ async def resolve_approval(aid: str, body: ApprovalBody):
     if not ok:
         raise HTTPException(404, "Yêu cầu phê duyệt không tồn tại hoặc đã xử lý")
     return {"ok": True, "decision": body.decision}
+
+
+class ElicitBody(BaseModel):
+    action: str = "cancel"          # accept | decline | cancel
+    content: dict | None = None
+
+
+@app.get("/api/elicitations")
+async def pending_elicitations():
+    """Danh sách elicitation MCP đang chờ người dùng (poll fallback cho UI)."""
+    from engine import elicitations
+    return {"pending": elicitations.snapshot()}
+
+
+@app.post("/api/elicitation/{eid}")
+async def resolve_elicitation(eid: str, body: ElicitBody):
+    """Trả lời elicitation MCP (spec: action = accept|decline|cancel + content)."""
+    from engine import elicitations
+    ok = elicitations.resolve(eid, body.action, body.content)
+    if not ok:
+        raise HTTPException(404, "Elicitation không tồn tại hoặc đã xử lý")
+    return {"ok": True, "action": body.action}
 
 
 @app.get("/api/models")

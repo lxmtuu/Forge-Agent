@@ -231,7 +231,26 @@ class Agent:
                                 self.session.allowed_commands.append(cmd)
 
                     if name in mcp_routing:
-                        result = await mcp_manager.call_namespaced(mcp_routing, name, args)
+                        # tool MCP có thể kích hoạt elicitation/create giữa chừng —
+                        # vừa chờ kết quả vừa đẩy event elicitation_request ra UI
+                        import asyncio as _aio2
+                        from . import elicitations as _el
+                        seen: set[str] = set()
+                        base = set(_el.PENDING.keys())
+                        task = _aio2.create_task(
+                            mcp_manager.call_namespaced(mcp_routing, name, args))
+                        while not task.done():
+                            fresh = [e for e in _el.PENDING if e not in base and e not in seen]
+                            for eid in fresh:
+                                seen.add(eid)
+                                ent = _el.PENDING.get(eid) or {}
+                                yield {"type": "elicitation_request", "id": eid,
+                                       "server": ent.get("server"), "message": ent.get("message"),
+                                       "schema": ent.get("schema"), "url": ent.get("url")}
+                            await _aio2.sleep(0.12)
+                        result = task.result()
+                        if seen:
+                            self.store.save(s)
                     else:
                         result = await tools.execute_tool(name, args, self.workspace, override=override)
                     ev = {"type": "tool_result", "id": tc["id"], "name": name,

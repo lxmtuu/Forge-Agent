@@ -63,9 +63,37 @@ def ensure_dirs() -> None:
 
 def load_config() -> dict:
     try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception:
         return {}
+    return apply_profile(cfg)
+
+
+def list_profiles() -> dict:
+    """Các profile định nghĩa trong config.json: {"profiles": {"safe": {...}}}."""
+    try:
+        raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    p = raw.get("profiles")
+    return p if isinstance(p, dict) else {}
+
+
+def apply_profile(cfg: dict) -> dict:
+    """Codex-style profiles: env FORGE_PROFILE chọn 1 preset trong
+    config.json["profiles"] → merge đè lên config gốc (không ghi đè file)."""
+    name = os.environ.get("FORGE_PROFILE", "").strip()
+    if not name:
+        return cfg
+    profiles = cfg.get("profiles")
+    if not isinstance(profiles, dict) or name not in profiles:
+        return cfg
+    overlay = profiles[name]
+    merged = {k: v for k, v in cfg.items() if k != "profiles"}
+    if isinstance(overlay, dict):
+        merged.update(overlay)
+    merged["active_profile"] = name
+    return merged
 
 
 def save_config(patch: dict) -> dict:
@@ -91,6 +119,18 @@ def get_api_key() -> str | None:
 def get_model() -> str:
     cfg_model = load_config().get("model", "").strip()
     return cfg_model or os.environ.get("FORGE_MODEL", "") or FALLBACK_MODEL
+
+
+def set_profile(name: str) -> bool:
+    """Chọn profile cho tiến trình hiện tại (CLI/TUI --profile, lệnh /profile)."""
+    name = (name or "").strip()
+    if not name:
+        os.environ.pop("FORGE_PROFILE", None)
+        return True
+    if name not in list_profiles():
+        return False
+    os.environ["FORGE_PROFILE"] = name
+    return True
 
 
 def mask_key(key: str | None) -> str | None:

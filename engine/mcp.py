@@ -60,13 +60,47 @@ class McpServer:
         self.error: str | None = None
         self._next_id = 10
         self._lock = asyncio.Lock()
+        self._wlock = asyncio.Lock()
         self.started_at = 0.0
 
     # -- low-level JSON-RPC over stdio ------------------------------------
     async def _send(self, obj: dict) -> None:
         assert self.proc and self.proc.stdin
-        self.proc.stdin.write((json.dumps(obj) + "\n").encode())
-        await self.proc.stdin.drain()
+        async with self._wlock:
+            self.proc.stdin.write((json.dumps(obj) + "\n").encode())
+            await self.proc.stdin.drain()
+
+    def _handle_server_request(self, msg: dict) -> bool:
+        """Server→client request (vd elicitation/create). Trả True nếu đã xử lý."""
+        method = msg.get("method", "")
+        if method != "elicitation/create":
+            return False
+        from . import elicitations
+
+        async def _responder() -> None:
+            params = msg.get("params") or {}
+            mode = params.get("mode", "form")
+            eid = elicitations.create(
+                self.name,
+                params.get("message", ""),
+                params.get("requestedSchema") if mode != "url" else None,
+                params.get("url") if mode == "url" else None,
+            )
+            print(f"[mcp] '{self.name}' elicitation #{eid} ({mode})")
+            res = await elicitations.wait(eid)
+            body: dict = {"action": res.get("action", "cancel")}
+            if res.get("content") is not None:
+                body["content"] = res["content"]
+            try:
+                await self._send({"jsonrpc": "2.0", "id": msg.get("id"), "result": body})
+            except Exception as e:
+                print(f"[mcp] elicitation reply lỗi: {e}")
+
+        try:
+            asyncio.get_event_loop().create_task(_responder())
+        except Exception as e:
+            print(f"[mcp] elicitation dispatch lỗi: {e}")
+        return True
 
     async def _recv(self, want_id: int, timeout: float) -> dict:
         assert self.proc and self.proc.stdout
@@ -81,6 +115,9 @@ class McpServer:
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            if msg.get("method") and msg.get("id") is not None:
+                self._handle_server_request(msg)
                 continue
             if msg.get("id") == want_id:
                 if "error" in msg:

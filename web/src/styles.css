@@ -531,3 +531,35 @@ a:hover { text-decoration: underline; }
 }
 .pending-x:hover { color: var(--red); }
 a.foot-btn { text-decoration: none; display: inline-block; }
+
+/* ═══ v0.9: MCP elicitation card ═══ */
+.elic-card {
+  border: 1px solid rgba(217, 167, 87, 0.5); background: var(--yellow-soft);
+  border-radius: 10px; padding: 12px 14px; font-size: 13px;
+}
+.elic-head { color: var(--yellow); margin-bottom: 6px; }
+.elic-msg { color: var(--text); margin-bottom: 8px; line-height: 1.5; }
+.elic-url { margin: 6px 0; color: var(--dim); }
+.elic-url code { color: var(--cyan); word-break: break-all; }
+.elic-form { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.elic-field { display: flex; flex-direction: column; gap: 3px; }
+.elic-field > span { font-size: 12px; color: var(--text); }
+.elic-type { color: var(--faint); margin-left: 6px; font-family: var(--mono); font-size: 10px; }
+.elic-req { color: var(--red); font-style: normal; }
+.elic-field input[type="text"], .elic-field input[type="number"] {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; font: inherit; font-size: 12.5px;
+}
+.elic-field input:focus { outline: none; border-color: var(--accent); }
+.elic-missing { color: var(--red); font-size: 12px; }
+.elic-actions { display: flex; gap: 8px; margin-top: 10px; }
+.elic-btn {
+  font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--dim);
+}
+.elic-btn.ok { color: var(--green); border-color: rgba(113, 194, 144, 0.5); }
+.elic-btn.ok:hover { background: var(--green-soft); }
+.elic-btn.bad { color: var(--red); border-color: rgba(229, 83, 75, 0.4); }
+.elic-btn.bad:hover { background: var(--red-soft); }
+.elic-btn.dim:hover { color: var(--text); }
+.elic-done { margin-top: 8px; color: var(--dim); }

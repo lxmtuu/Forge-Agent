@@ -18,6 +18,13 @@
 > permission patterns allow/deny trong Settings. Verify: 12/12 test `scripts/test_v08.py`
 > + 16/16 regression v0.7 + e2e. Điểm "mở rộng" nâng ~40% → ~75%.
 
+> **✅ CẬP NHẬT v0.9 — intelligence:** LSP diagnostics sau edit (pylsp/pyright/ts-server
+> auto-detect — Claude-Code-style self-correcting edits) · MCP elicitation đầy đủ
+> (form + URL mode, modal web/TUI, auto-decline form xin secret theo spec 2026-07-28,
+> client capabilities qua stdio JSON-RPC bidirectional) · profiles kiểu config.toml
+> (`forge --profile`, `/profile`, merge không phá config). Verify: 8/8 test
+> `scripts/test_v09.py` + regression 28/28 + e2e. Điểm "review" ~50% → ~70%.
+
 ## 1. Bảng ma trận tổng (34 hạng mục)
 
 ### A. Lõi agent

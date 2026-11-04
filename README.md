@@ -87,6 +87,25 @@ file này vào workspace là agent tuân theo), và **mở dự án thật** là
 | **🌐 Web search** | Toggle trong ⚙ Settings — mọi lượt chat thêm suffix `:online` của OpenRouter (tìm web qua Exa, ~$4/1000 kết quả) |
 | **Permission patterns** | ⚙ Settings: `allow_commands` (nâng warn→safe) & `deny_commands` (chặn tuyệt đối, ưu tiên cao nhất) — glob mỗi dòng 1 mẫu |
 
+### 🔬 Intelligence (v0.9)
+
+| Tính năng | Chi tiết |
+|---|---|
+| **LSP diagnostics** *(Claude-Code-style)* | Sau mỗi lần agent ghi/sửa file code, Forge hỏi language server và **đẩy lỗi vào cho LLM tự sửa ngay trong lượt** ("⛔ dòng 4: undefined name…"). Auto-detect: `pylsp`/`pyright-langserver` cho Python, `typescript-language-server` cho TS/JS — **không tự cài**. Bật: `py pip install "python-lsp-server[pyflakes,pycodestyle]"`. Tắt: `FORGE_LSP=0` hoặc `lsp_enabled: false`. Lỗi LSP không bao giờ làm hỏng tool call |
+| **MCP elicitation** *(spec 2026-07-28)* | MCP server có thể **hỏi người dùng giữa chừng tool call** (`elicitation/create`): web hiện form (string/number/boolean), TUI hiện modal; trả lời accept/decline/cancel. An toàn: hiện rõ server nào hỏi; **form xin secret (password/api-key/…) bị tự động từ chối theo spec**; URL-mode không tự mở trình duyệt |
+| **Profiles** *(Codex-style)* | `data/config.json` → `"profiles": {"safe": {"model": "...", "approval_mode": "guarded"}, "yolo": {...}}` → `forge --profile safe` hoặc lệnh `/profile safe` (TUI/CLI) — merge đè lên config gốc, không ghi đè file |
+
+Ví dụ `profiles` trong `data/config.json`:
+```json
+{
+  "profiles": {
+    "safe": { "model": "openrouter/free", "approval_mode": "guarded", "max_tokens": 8192 },
+    "yolo": { "model": "anthropic/claude-sonnet-5.5", "approval_mode": "auto", "web_search": false }
+  }
+}
+```
+
+
 CLI/TUI: `forge --battle "prompt" --models m1 m2 m3` · `forge --once "..." --mode plan`.
 
 Định hướng sản phẩm chi tiết: **PRODUCT_DIRECTION.md**.

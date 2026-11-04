@@ -107,6 +107,7 @@ export type AgentEvent =
   | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string; diff?: string; path?: string }
   | { type: 'compacting'; chars: number }
   | { type: 'compacted'; ok: boolean; before?: number; after?: number }
+  | { type: 'elicitation_request'; id: string; server?: string; message?: string; schema?: { type: string; properties?: Record<string, { type: string; description?: string }>; required?: string[] } | null; url?: string | null }
   | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
   | { type: 'approval_decision'; id: string; decision: string }
   | { type: 'turn_end'; usage: unknown; session_usage?: Usage; message_count: number }
@@ -155,6 +156,16 @@ export type Item =
       level: string
       reasons: string[]
       decision: string | null
+    }
+  | {
+      kind: 'elicitation'
+      id: string
+      eid: string
+      server: string
+      message: string
+      schema: { type: string; properties?: Record<string, { type: string; description?: string }>; required?: string[] } | null
+      url: string | null
+      action: string | null
     }
   | { kind: 'error'; id: string; message: string }
 

@@ -135,6 +135,13 @@ export const api = {
   fork: (sid: string) =>
     fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),
 
+  elicitation: (eid: string, action: string, content?: Record<string, unknown>) =>
+    fetch(`/api/elicitation/${eid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, content }),
+    }).then((r) => j<{ ok: boolean }>(r)),
+
   /** Parallel sub-agents: one prompt per line/task. */
   batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
     sseRequest<BatchEvent>('/api/batch', { prompts }, onEvent, signal),

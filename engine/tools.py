@@ -328,9 +328,25 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
             output, ok = f"Error: unknown tool '{name}'", False
     except Exception as e:
         output, ok = f"Error: {e}", False
+
+    # ---- LSP diagnostics sau khi ghi/sửa file code (Claude-Code-style) ----
+    diags: list[dict] = []
+    if ok and changed_path and name in ("write_file", "edit_file"):
+        try:
+            from . import lsp as _lsp
+            p = Path(changed_path) if str(changed_path).startswith("/") else workspace / changed_path
+            if p.is_file() and _lsp.available_for(p):
+                diags = await _lsp.diagnostics_for(workspace, p)
+                if diags:
+                    output = output + "\n\n" + _lsp.format_diags(diags)
+        except Exception as _e:  # LSP không bao giờ được làm hỏng tool call
+            print(f"[lsp] bỏ qua lỗi: {_e}")
+
     result = {"ok": ok, "output": output}
     if diff:
         result["diff"] = diff
     if changed_path:
         result["path"] = changed_path
+    if diags:
+        result["diagnostics"] = diags
     return result

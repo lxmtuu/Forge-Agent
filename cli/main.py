@@ -346,6 +346,20 @@ async def interactive(session_id: str | None, model: str | None) -> None:
         if text == "/clear":
             console.clear()
             continue
+        if text.startswith("/profile"):
+            from engine import config as _cfg
+            arg = text[8:].strip()
+            if not arg:
+                profs = ", ".join(sorted(_cfg.list_profiles().keys())) or "(chưa định nghĩa)"
+                cur = _cfg.load_config().get("active_profile") or "(mặc định)"
+                console.print(f"  Profile hiện tại: [bold]{cur}[/bold] · có sẵn: {profs}")
+            elif _cfg.set_profile(arg):
+                eff = _cfg.load_config()
+                console.print(f"  [green]✅ Profile → {arg}[/green] "
+                              f"(model {eff.get('model', '?')}, duyệt {eff.get('approval_mode', 'guarded')})")
+            else:
+                console.print(f"  [red]⚠ Không có profile «{arg}»[/red] — xem /profile")
+            continue
         if text == "/fork":
             ns = store.fork(session_id)
             if ns:
@@ -390,9 +404,18 @@ async def main_async() -> int:
     ap.add_argument("--parallel", nargs="+", metavar="TASK", help="chạy song song nhiều tác vụ (sub-agent)")
     ap.add_argument("--session", metavar="ID", help="dùng phiên có sẵn")
     ap.add_argument("--model", metavar="MODEL", help="model OpenRouter")
+    ap.add_argument("--profile", metavar="NAME", help="dùng profile trong data/config.json (vd: safe)")
     ap.add_argument("--list-sessions", action="store_true")
     ap.add_argument("--demo", action="store_true", help="ép chạy demo (bỏ qua API key)")
     args = ap.parse_args()
+
+    if args.profile:
+        from engine import config as _cfg
+        if not _cfg.set_profile(args.profile):
+            profs = ", ".join(sorted(_cfg.list_profiles().keys())) or "(không có)"
+            console.print(f"[red]⚠ Không có profile «{args.profile}»[/red] — các profile: {profs}")
+            return 1
+        console.print(f"[green]==> Profile: {args.profile}[/green]")
 
     if args.list_sessions:
         print_sessions()

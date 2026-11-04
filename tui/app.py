@@ -64,6 +64,73 @@ class ApprovalModal(ModalScreen[None]):
         self.app.pop_screen()
 
 
+class ElicitModal(ModalScreen[None]):
+    """Hộp thoại trả lời elicitation MCP: accept (form) / decline / cancel."""
+
+    BINDINGS = [("escape", "cancel_elicit", "Đóng (cancel)")]
+
+    def __init__(self, eid: str, server: str, message: str, schema: dict | None, url: str | None):
+        super().__init__()
+        self.eid = eid
+        self.server = server
+        self.message = message
+        self.schema = schema or {}
+        self.url = url
+        self.inputs: dict[str, Input] = {}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="elic-box"):
+            yield Static(f"🔔 [b]{self.server}[/b] cần thông tin (elicitation)", id="elic-title")
+            yield Static(self.message or "—", id="elic-msg")
+            if self.url:
+                yield Static(f"URL (không tự mở): {self.url}", id="elic-url")
+            for name, prop in (self.schema.get("properties") or {}).items():
+                lbl = f"{prop.get('description') or name} ({name})"
+                if name in (self.schema.get("required") or []):
+                    lbl += " *"
+                yield Static(lbl, classes="elic-lbl")
+                inp = Input(placeholder=str(prop.get("type", "string")), id=f"elic-{name}")
+                self.inputs[name] = inp
+                yield inp
+            with Horizontal(id="elic-actions"):
+                yield Button("✓ Gửi", id="elic-accept", variant="success")
+                yield Button("✕ Từ chối", id="elic-decline", variant="error")
+                yield Button("Đóng", id="elic-cancel")
+
+    def _content(self) -> dict:
+        from engine.elicitations import SECRET_HINTS  # noqa: F401  (chỉ để đối chiếu UI)
+        content = {}
+        for name, prop in (self.schema.get("properties") or {}).items():
+            raw = self.inputs[name].value.strip()
+            t = prop.get("type", "string")
+            if t == "number":
+                try:
+                    content[name] = float(raw) if raw else 0
+                except ValueError:
+                    content[name] = 0
+            elif t == "boolean":
+                content[name] = raw.lower() in ("y", "yes", "true", "1", "co", "có")
+            else:
+                content[name] = raw
+        return content
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        from engine import elicitations
+        bid = event.button.id or "elic-cancel"
+        if bid == "elic-accept":
+            elicitations.resolve(self.eid, "accept", self._content())
+        elif bid == "elic-decline":
+            elicitations.resolve(self.eid, "decline")
+        else:
+            elicitations.resolve(self.eid, "cancel")
+        self.app.pop_screen()
+
+    def action_cancel_elicit(self) -> None:
+        from engine import elicitations
+        elicitations.resolve(self.eid, "cancel")
+        self.app.pop_screen()
+
+
 class ForgeTUI(App):
     TITLE = "⚡ Forge Agent"
     SUB_TITLE = "AI coding agent · TUI"
@@ -89,6 +156,13 @@ class ForgeTUI(App):
     #appr-reasons { color: #9b99a3; margin-bottom: 1; }
     #appr-actions { height: 3; align: center middle; }
     #appr-actions Button { margin: 0 1; }
+    #elic-box { width: 76; margin: 1 2; padding: 1 2; border: heavy #d9a757; background: #212228; }
+    #elic-title { color: #d9a757; margin-bottom: 1; }
+    #elic-msg { color: #e9e7e2; margin-bottom: 1; }
+    #elic-url { color: #5cb8c9; margin-bottom: 1; }
+    .elic-lbl { color: #9b99a3; }
+    #elic-actions { height: 3; align: center middle; margin-top: 1; }
+    #elic-actions Button { margin: 0 1; }
     """
 
     BINDINGS = [
@@ -250,7 +324,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/usage /files /quit · Gõ @file.py để đính kèm file · "
+                          "/profile [tên] /usage /files /quit · Gõ @file.py để đính kèm file · "
                           "Custom: .forge/commands/<tên>.md → gõ /<tên> [args]",
                           cls="sys-line")
         elif cmd == "/new":
@@ -274,6 +348,19 @@ class ForgeTUI(App):
                 self.chat_mode = cmd[1:]
                 icons = {"direct": "💬", "agent": "🤖", "plan": "📋"}
                 self.add_line(icons[self.chat_mode] + f" Chế độ chat → {self.chat_mode}", cls="tool-ok")
+        elif cmd == "/profile":
+            from engine import config as _cfg
+            if not arg:
+                profs = ", ".join(sorted(_cfg.list_profiles().keys())) or "(chưa định nghĩa)"
+                cur = _cfg.load_config().get("active_profile") or "(mặc định)"
+                self.add_line(f"Profile hiện tại: {cur} · có sẵn: {profs} · "
+                              "định nghĩa trong data/config.json → \"profiles\"", cls="sys-line")
+            elif _cfg.set_profile(arg):
+                eff = _cfg.load_config()
+                self.add_line(f"✅ Profile → {arg} (model {eff.get('model', '?')}, "
+                              f"duyệt {eff.get('approval_mode', 'guarded')})", cls="tool-ok")
+            else:
+                self.add_line(f"⚠ Không có profile «{arg}» — xem /profile", cls="tool-bad")
         elif cmd == "/undo":
             await self._cmd_undo()
         elif cmd == "/compact":
@@ -418,6 +505,10 @@ class ForgeTUI(App):
                 elif t == "approval_request":
                     self.app.push_screen(ApprovalModal(ev["id"], ev["command"],
                                                        ev["level"], ev["reasons"]))
+                elif t == "elicitation_request":
+                    self.app.push_screen(ElicitModal(
+                        ev["id"], ev.get("server") or "?", ev.get("message") or "",
+                        ev.get("schema"), ev.get("url")))
                 elif t == "error":
                     self.add_line(f"⚠ {ev['message']}", cls="tool-bad")
                 elif t == "turn_end":

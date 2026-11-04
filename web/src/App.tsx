@@ -7,6 +7,7 @@ import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolCard } from './components/ToolCard'
 import { ApprovalCard } from './components/ApprovalCard'
+import { ElicitationCard } from './components/ElicitationCard'
 import { Markdown } from './md'
 
 /** Pure reducer: apply one agent event to an item timeline. */
@@ -53,6 +54,12 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
       return [...prev, {
         kind: 'approval', id: uid(), approvalId: ev.id, command: ev.command,
         level: ev.level, reasons: ev.reasons, decision: null,
+      }]
+    case 'elicitation_request':
+      return [...prev, {
+        kind: 'elicitation', id: uid(), eid: ev.id, server: ev.server ?? '?',
+        message: ev.message ?? '', schema: ev.schema ?? null, url: ev.url ?? null,
+        action: null,
       }]
     case 'approval_decision':
       return prev.map((it) =>
@@ -425,6 +432,19 @@ export default function App() {
       ) : null
     }
     if (it.kind === 'tool') return <div key={it.id} className="msg tool-wrap"><ToolCard item={it} /></div>
+    if (it.kind === 'elicitation') {
+      return (
+        <ElicitationCard
+          key={it.id}
+          item={it}
+          onResolve={(eid, action, content) => {
+            api.elicitation(eid, action, content).catch(() => {})
+            setItems((prev) => prev.map((x) =>
+              x.kind === 'elicitation' && x.eid === eid ? { ...x, action } : x))
+          }}
+        />
+      )
+    }
     if (it.kind === 'approval') {
       return (
         <div key={it.id} className="msg tool-wrap">
