@@ -24,10 +24,13 @@ Một engine duy nhất, hai giao diện:
 | Tính năng | CLI | Web |
 |---|:-:|:-:|
 | Streaming token-by-token | ✅ | ✅ |
-| Hiển thị "suy nghĩ" (reasoning) | — | ✅ (collapsible) |
+| Hiển thị "suy nghĩ" (reasoning) | ✅ (dim stream) | ✅ (collapsible) |
 | Tool cards: đọc/ghi/sửa file, search, chạy lệnh | ✅ | ✅ (collapsible) |
 | Nhiều phiên (sessions) + workspace riêng từng phiên | ✅ | ✅ |
-| File explorer + trình soạn thảo | ✅ (lệnh) | ✅ (GUI) |
+| **Sub-agent song song** (mỗi tác vụ 1 session + workspace) | ✅ `--parallel` | ✅ nút ⚡ Song song |
+| **Upload file** vào workspace / **xuất zip** | — | ✅ (⬆ / ⤓) |
+| **Đồng bộ 450+ model** từ OpenRouter (kèm giá/context) | ✅ `/model` | ✅ chip chọn model |
+| **Theo dõi tokens/cost** theo phiên + toàn hệ thống | ✅ `/usage` | ✅ footer + Settings |
 | Đổi model trực tiếp | ✅ `/model` | ✅ Settings |
 | Demo mode (không cần API key) | ✅ `--demo` | ✅ tự kích hoạt |
 
@@ -53,6 +56,21 @@ Kết nối MCP server chuẩn (stdio JSON-RPC) — agent tự nhận thêm tool
 2. Lưu lại → từ lượt chat kế tiếp, model thấy tool `mcp_fs_*` và dùng như tool内置.
 3. Test nhanh có sẵn: `python3 scripts/demo_mcp_server.py` (echo/add/now_time),
    cấu hình mẫu trong `mcp.example.json`.
+4. Trong CLI: `/mcp` xem trạng thái, `/mcp refresh` khởi động lại.
+
+### ⚡ Sub-agent song song (mới)
+Chạy nhiều tác vụ đồng thời, mỗi tác vụ một session + workspace riêng biệt:
+```bash
+# CLI
+python cli/main.py --parallel "viết fizzbuzz" "tạo README" "viết hàm sqrt + test"
+```
+Web: bấm nút **⚡ Song song** cạnh ô nhập → mỗi dòng trở thành 1 tác vụ → Gửi.
+Kết quả hiển thị theo nhóm Task 1/2/3… với trạng thái riêng từng task.
+
+### 🔢 Theo dõi usage + đồng bộ model (mới)
+- Tokens/cost tích luỹ theo phiên (CLI `/usage`, web footer) và toàn hệ thống (Settings).
+- Danh sách model **tự đồng bộ từ OpenRouter** mỗi giờ — chọn model bằng chip có
+  sẵn giá ($/M tokens) và context length.
 
 ## 🚀 Chạy
 
@@ -124,10 +142,11 @@ Sự kiện engine phát ra (CLI và web cùng tiêu thụ):
 - [x] Docker sandbox wrapper (tự kích hoạt khi có Docker)
 - [x] MCP client — nối tool server bên ngoài (hệ sinh thái MCP)
 - [x] Đóng gói deploy: Dockerfile + compose + DEPLOY.md (VPS/PaaS)
-- [ ] Tải file lên workspace, xuất zip
-- [ ] Sub-agent / chạy song song nhiều tác vụ
-- [ ] Đồng bộ model list tự động từ `openrouter.ai/api/v1/models`
+- [x] Tải file lên workspace, xuất zip
+- [x] Sub-agent / chạy song song nhiều tác vụ
+- [x] Đồng bộ model list tự động từ `openrouter.ai/api/v1/models` + theo dõi tokens
 - [ ] MCP transport HTTP/SSE (hiện hỗ trợ stdio)
+- [ ] Duyệt lệnh tương tác từng lệnh (approval prompt trước khi chạy)
 
 ---
 *Được xây kèm audit của repo `cporter202/API-mega-list` — xem `AUDIT.md` để hiểu

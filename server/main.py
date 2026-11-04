@@ -3,10 +3,14 @@
 Run:  uvicorn server.main:app --host 0.0.0.0 --port 8000
 """
 import asyncio
+import io
 import json
+import time
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import httpx
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine import config, llm, tools, guard    # noqa: E402
-from engine.agent import Agent, send_demo      # noqa: E402
+from engine.agent import Agent, send_demo, run_batch   # noqa: E402
 from engine.mcp import manager as mcp_manager, load_servers, save_servers  # noqa: E402
 from engine.session import SessionStore        # noqa: E402
 
@@ -56,8 +60,16 @@ class McpServerBody(BaseModel):
     args: list[str] = []
 
 
+class BatchBody(BaseModel):
+    prompts: list[str]
+    model: str | None = None
+
+
 def sse(ev: dict) -> str:
     return f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+
+_MODELS_CACHE = {"ts": 0.0, "data": []}
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +174,53 @@ async def get_session(sid: str):
     return {"session": s.to_dict()}
 
 
+@app.get("/api/usage")
+async def usage_totals():
+    tot = {"sessions": 0, "prompt_tokens": 0, "completion_tokens": 0,
+           "total_tokens": 0, "cost": 0.0}
+    for meta in store.list():
+        tot["sessions"] += 1
+        u = meta.get("usage") or {}
+        for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            tot[k] += u.get(k, 0) or 0
+        tot["cost"] += u.get("cost", 0.0) or 0.0
+    tot["cost"] = round(tot["cost"], 4)
+    return tot
+
+
+@app.get("/api/models")
+async def list_models():
+    """Auto-sync model catalog from OpenRouter (cached 1 hour)."""
+    if time.time() - _MODELS_CACHE["ts"] > 3600 or not _MODELS_CACHE["data"]:
+        try:
+            async with httpx.AsyncClient(timeout=25) as c:
+                r = await c.get("https://openrouter.ai/api/v1/models")
+                r.raise_for_status()
+                items = r.json().get("data", [])
+            data = []
+            for m in items:
+                pr = m.get("pricing") or {}
+                try:
+                    prompt_p = float(pr.get("prompt") or 0)
+                    comp_p = float(pr.get("completion") or 0)
+                except ValueError:
+                    prompt_p = comp_p = 0.0
+                data.append({
+                    "id": m.get("id", ""),
+                    "name": m.get("name", ""),
+                    "context": m.get("context_length"),
+                    "prompt_price": prompt_p,   # USD per token
+                    "completion_price": comp_p,
+                })
+            data.sort(key=lambda x: x["id"])
+            _MODELS_CACHE["data"] = data
+            _MODELS_CACHE["ts"] = time.time()
+        except Exception as e:
+            if not _MODELS_CACHE["data"]:
+                raise HTTPException(502, f"Không tải được danh sách model: {e}")
+    return {"models": _MODELS_CACHE["data"], "count": len(_MODELS_CACHE["data"])}
+
+
 @app.delete("/api/sessions/{sid}")
 async def delete_session(sid: str):
     ok = store.delete(sid)
@@ -203,6 +262,33 @@ async def chat(sid: str, body: ChatBody, request: Request):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Batch: parallel sub-agents
+# ---------------------------------------------------------------------------
+@app.post("/api/batch")
+async def batch(body: BatchBody, request: Request):
+    prompts = [p.strip() for p in body.prompts if p.strip()][:5]
+    if not prompts:
+        raise HTTPException(400, "Không có tác vụ nào")
+    demo = config.get_api_key() is None
+
+    async def gen():
+        try:
+            async for ev in run_batch(store, prompts, model=body.model, demo=demo):
+                if await request.is_disconnected():
+                    return
+                yield sse(ev)
+        except Exception as e:
+            yield sse({"type": "error", "message": f"Lỗi batch: {e}"})
+        yield sse({"type": "done"})
+
+    return StreamingResponse(
+        gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
+                 "X-Accel-Buffering": "no"},
     )
 
 
@@ -276,6 +362,43 @@ async def delete_workspace_file(sid: str, path: str):
         p.unlink()
         return {"ok": True}
     raise HTTPException(404, "File not found")
+
+
+@app.post("/api/workspace/upload")
+async def upload_files(sid: str, files: list[UploadFile] = File(...)):
+    ws = _ws(sid)
+    saved, skipped = [], []
+    MAX_SIZE = 20 * 1024 * 1024
+    for f in files[:20]:
+        name = Path(f.filename or "").name  # strip any path components
+        if not name or name.startswith("."):
+            skipped.append(f.filename or "?")
+            continue
+        data = await f.read()
+        if len(data) > MAX_SIZE:
+            skipped.append(f"{name} (>20MB)")
+            continue
+        p = _safe_path(ws, name)
+        p.write_bytes(data)
+        saved.append(name)
+    if saved:
+        # refresh tree cache implicitly (none) — return
+        pass
+    return {"saved": saved, "skipped": skipped}
+
+
+@app.get("/api/workspace/export")
+async def export_workspace(sid: str):
+    ws = _ws(sid)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in tools._iter_files(ws):
+            z.write(f, f.relative_to(ws))
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=forge-{sid}.zip"},
+    )
 
 
 # ---------------------------------------------------------------------------

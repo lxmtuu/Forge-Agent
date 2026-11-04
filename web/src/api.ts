@@ -1,4 +1,7 @@
-import type { AgentEvent, FileNode, McpServerStatus, SessionFull, SessionSummary, Settings } from './types'
+import type {
+  AgentEvent, BatchEvent, FileNode, McpServerStatus, ModelInfo,
+  SessionFull, SessionSummary, Settings, UsageTotals,
+} from './types'
 
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -12,6 +15,45 @@ async function j<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** Shared SSE reader: POST JSON, parse `data:` frames, dispatch to onEvent. */
+async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => void, signal: AbortSignal): Promise<void> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`
+    try {
+      const b = await res.json()
+      if (b?.detail) msg = b.detail
+    } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const raw = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      for (const line of raw.split('\n')) {
+        const t = line.trim()
+        if (t.startsWith('data:')) {
+          try {
+            onEvent(JSON.parse(t.slice(5)) as T)
+          } catch { /* skip malformed */ }
+        }
+      }
+    }
+  }
+}
+
 export const api = {
   health: () => fetch('/api/health').then((r) => j<Settings>(r)),
 
@@ -21,6 +63,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key, model, ...patch }),
     }).then((r) => j<Settings>(r)),
+
+  models: () => fetch('/api/models').then((r) => j<{ models: ModelInfo[]; count: number }>(r)),
+
+  usage: () => fetch('/api/usage').then((r) => j<UsageTotals>(r)),
 
   mcpStatus: () =>
     fetch('/api/mcp').then((r) => j<{ servers: McpServerStatus[] }>(r)).then((d) => d.servers),
@@ -75,47 +121,22 @@ export const api = {
       method: 'DELETE',
     }).then((r) => j<{ ok: boolean }>(r)),
 
-  /** POST chat and stream SSE events through a fetch reader (proxy-safe, abortable). */
-  streamChat: async function (
-    sid: string,
-    text: string,
-    onEvent: (ev: AgentEvent) => void,
-    signal: AbortSignal,
-  ): Promise<void> {
-    const res = await fetch(`/api/sessions/${sid}/chat`, {
+  /** POST chat and stream SSE events (proxy-safe, abortable). */
+  streamChat: (sid: string, text: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal) =>
+    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text }, onEvent, signal),
+
+  /** Parallel sub-agents: one prompt per line/task. */
+  batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
+    sseRequest<BatchEvent>('/api/batch', { prompts }, onEvent, signal),
+
+  uploadFiles: (sid: string, files: File[]) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files', f))
+    return fetch(`/api/workspace/upload?sid=${encodeURIComponent(sid)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      signal,
-    })
-    if (!res.ok || !res.body) {
-      let msg = `HTTP ${res.status}`
-      try {
-        const b = await res.json()
-        if (b?.detail) msg = b.detail
-      } catch { /* ignore */ }
-      throw new Error(msg)
-    }
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const raw = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        for (const line of raw.split('\n')) {
-          const t = line.trim()
-          if (t.startsWith('data:')) {
-            try {
-              onEvent(JSON.parse(t.slice(5)) as AgentEvent)
-            } catch { /* skip malformed */ }
-          }
-        }
-      }
-    }
+      body: fd,
+    }).then((r) => j<{ saved: string[]; skipped: string[] }>(r))
   },
+
+  exportUrl: (sid: string) => `/api/workspace/export?sid=${encodeURIComponent(sid)}`,
 }

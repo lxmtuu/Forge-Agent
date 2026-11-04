@@ -19,6 +19,14 @@ export interface SessionSummary {
   model: string
   updated_at: number
   message_count: number
+  usage?: Usage
+}
+
+export interface Usage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  cost?: number
 }
 
 export interface SessionFull {
@@ -28,6 +36,23 @@ export interface SessionFull {
   created_at: number
   updated_at: number
   messages: ChatMessage[]
+  usage?: Usage
+}
+
+export interface ModelInfo {
+  id: string
+  name: string
+  context: number | null
+  prompt_price: number
+  completion_price: number
+}
+
+export interface UsageTotals {
+  sessions: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cost: number
 }
 
 export interface Settings {
@@ -65,9 +90,27 @@ export type AgentEvent =
   | { type: 'assistant_message'; content: string | null; tool_calls: ToolCall[] | null }
   | { type: 'tool_start'; id: string; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; args: Record<string, unknown>; ok: boolean; output: string }
-  | { type: 'turn_end'; usage: unknown; message_count: number }
+  | { type: 'turn_end'; usage: unknown; session_usage?: Usage; message_count: number }
+  | { type: 'mcp_ready'; tools: string[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+export type TaskDoneEvent = { type: 'task_done'; index: number; session_id: string }
+
+export type BatchEvent =
+  | { type: 'task_created'; index: number; session_id: string; title: string }
+  | { type: 'task_event'; index: number; event: AgentEvent | TaskDoneEvent }
+  | { type: 'batch_done'; tasks: { index: number; session_id: string; title: string }[] }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+export interface TaskGroup {
+  index: number
+  sessionId: string
+  title: string
+  status: 'running' | 'done' | 'error'
+  items: Item[]
+}
 
 export type Item =
   | { kind: 'user'; id: string; text: string }

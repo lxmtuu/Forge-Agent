@@ -43,12 +43,20 @@ export function FilesPane(props: {
   onDelete: () => void
   onRefresh: () => void
   onNewFile: () => void
+  onUpload: (fs: FileList | null) => void
+  onExport: () => void
 }) {
   return (
     <div className="files-pane">
       <div className="files-head">
         <span>FILES</span>
         <div className="files-actions">
+          <label title="Tải file lên workspace" className="upload-label">
+            ⬆
+            <input type="file" multiple style={{ display: 'none' }}
+              onChange={(e) => { props.onUpload(e.target.files); e.currentTarget.value = '' }} />
+          </label>
+          <button title="Xuất workspace (.zip)" onClick={props.onExport}>⤓</button>
           <button title="File mới" onClick={props.onNewFile}>＋</button>
           <button title="Làm mới" onClick={props.onRefresh}>⟳</button>
           {props.selected && <button title="Xóa file" onClick={props.onDelete}>🗑</button>}

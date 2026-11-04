@@ -140,9 +140,61 @@ class Agent:
             yield {"type": "error", "message": f"Lỗi engine: {e}"}
             return
 
+        s.usage = _accumulate(s.usage, total_usage)
         self.store.save(s)
-        yield {"type": "turn_end", "usage": total_usage,
+        yield {"type": "turn_end", "usage": total_usage, "session_usage": s.usage,
                "message_count": len(s.messages)}
+
+
+def _accumulate(session_usage: dict, turn_usage: dict | None) -> dict:
+    if not turn_usage:
+        return session_usage
+    for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        session_usage[k] = session_usage.get(k, 0) + (turn_usage.get(k) or 0)
+    session_usage["cost"] = round(
+        session_usage.get("cost", 0.0) + (turn_usage.get("cost") or 0.0), 6)
+    return session_usage
+
+
+async def run_batch(store: SessionStore, prompts: list[str],
+                    model: str | None = None, demo: bool = False):
+    """Parallel sub-agents: each prompt becomes its own session+workspace.
+
+    Yields: task_created, task_event {index, event}, batch_done {tasks}.
+    """
+    import asyncio as _aio
+
+    prompts = [p.strip() for p in prompts if p.strip()][:5]
+    created = []
+    for i, p in enumerate(prompts):
+        s = store.create(model=model or "", title=f"Task {i + 1}: {p[:40]}")
+        created.append((i, s))
+        yield {"type": "task_created", "index": i, "session_id": s.id, "title": s.title}
+
+    queue: _aio.Queue = _aio.Queue()
+
+    async def pump(i: int, sid: str) -> None:
+        try:
+            ag = Agent(store, sid, model=model)
+            src = send_demo(ag, prompts[i]) if demo else ag.send(prompts[i])
+            async for ev in src:
+                await queue.put((i, ev))
+        except Exception as e:
+            await queue.put((i, {"type": "error", "message": str(e)}))
+        finally:
+            await queue.put((i, {"type": "task_done", "index": i, "session_id": sid}))
+
+    runners = [_aio.create_task(pump(i, s.id)) for i, s in created]
+    remaining = len(runners)
+    while remaining:
+        i, ev = await queue.get()
+        if ev["type"] == "task_done":
+            remaining -= 1
+        yield {"type": "task_event", "index": i, "event": ev}
+    for r in runners:
+        r.cancel()
+    yield {"type": "batch_done",
+           "tasks": [{"index": i, "session_id": s.id, "title": s.title} for i, s in created]}
 
 
 # ---------------------------------------------------------------------------

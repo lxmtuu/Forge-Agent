@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import type { McpServerStatus, Settings } from '../types'
+import type { McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
 
 const STATUS_STYLE: Record<string, string> = {
   ready: 'st-ok', starting: 'st-warn', stopped: 'st-dim', error: 'st-bad',
@@ -20,9 +20,20 @@ export function SettingsModal(props: {
   const [mcpName, setMcpName] = useState('')
   const [mcpCmd, setMcpCmd] = useState('')
   const [mcpArgs, setMcpArgs] = useState('')
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [modelFilter, setModelFilter] = useState('')
+  const [totals, setTotals] = useState<UsageTotals | null>(null)
 
   const reloadMcp = () => api.mcpStatus().then(setMcp).catch(() => {})
-  useEffect(() => { reloadMcp() }, [])
+  useEffect(() => {
+    reloadMcp()
+    api.models().then((d) => setModels(d.models)).catch(() => {})
+    api.usage().then(setTotals).catch(() => {})
+  }, [])
+
+  const filteredModels = modelFilter
+    ? models.filter((m) => m.id.toLowerCase().includes(modelFilter.toLowerCase())).slice(0, 40)
+    : models.slice(0, 40)
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
@@ -32,19 +43,44 @@ export function SettingsModal(props: {
           <button className="btn-ghost btn-sm" onClick={props.onClose}>✕</button>
         </div>
 
+        {totals && (
+          <div className="usage-line">
+            📊 Toàn bộ hệ thống: <b>{totals.sessions}</b> phiên ·{' '}
+            <b>{(totals.total_tokens ?? 0).toLocaleString('vi-VN')}</b> tokens
+            (↑{totals.prompt_tokens} ↓{totals.completion_tokens})
+            {totals.cost > 0 && <> · ~${totals.cost.toFixed(4)}</>}
+          </div>
+        )}
+
         <label className="field">
           <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
           <input type="password" placeholder="sk-or-v1-..." value={key} onChange={(e) => setKey(e.target.value)} />
           <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — để trống nếu không đổi.</small>
         </label>
 
-        <label className="field">
-          <span>Model</span>
+        <div className="field">
+          <span>Model <em>({models.length > 0 ? `${models.length} model đồng bộ từ OpenRouter` : 'đang đồng bộ…'})</em></span>
           <input list="models" value={model} onChange={(e) => setModel(e.target.value)} />
           <datalist id="models">
-            {props.settings.default_models.map((m) => <option key={m} value={m} />)}
+            {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => (
+              <option key={m} value={m} />
+            ))}
           </datalist>
-        </label>
+          <input
+            className="model-filter"
+            placeholder="Lọc danh sách model… (vd: claude, gpt, free)"
+            value={modelFilter}
+            onChange={(e) => setModelFilter(e.target.value)}
+          />
+          <div className="model-suggest">
+            {filteredModels.map((m) => (
+              <button key={m.id} className="model-chip" title={`${m.name} · context ${m.context ?? '?'} · $${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}
+                onClick={() => { setModel(m.id); setModelFilter('') }}>
+                {m.id}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="field">
           <span>Chế độ duyệt lệnh shell</span>

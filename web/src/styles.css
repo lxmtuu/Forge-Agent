@@ -176,6 +176,23 @@ a { color: var(--cyan); }
 .mcp-add input:focus { border-color: var(--accent); }
 @media (max-width: 700px) { .mcp-add { grid-template-columns: 1fr 1fr; } }
 
+/* ---------------- v3: parallel tasks, usage, model sync ---------------- */
+.btn-mode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 64px; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 12px; font-size: 15px; padding: 6px 8px; }
+.btn-mode span { font-size: 10px; font-weight: 700; }
+.btn-mode.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.batch-group { border: 1px solid var(--border); border-radius: 12px; background: rgba(28, 28, 33, 0.6); padding: 12px 14px; margin-bottom: 16px; }
+.batch-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+.batch-title { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.batch-sid { font-size: 10.5px; color: var(--dim); }
+.usage-line { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 14px; }
+.model-filter { width: 100%; margin-top: 8px; background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; }
+.model-filter:focus { border-color: var(--accent); }
+.model-suggest { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; max-height: 130px; overflow-y: auto; }
+.model-chip { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 14px; padding: 3px 10px; font-size: 11px; font-family: var(--mono); }
+.model-chip:hover { border-color: var(--accent); color: var(--accent); }
+.upload-label { cursor: pointer; color: var(--dim); font-size: 13px; margin-left: 6px; }
+.upload-label:hover { color: var(--accent); }
+
 /* scrollbars */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: #33333c; border-radius: 5px; }
