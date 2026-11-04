@@ -47,6 +47,7 @@ class SettingsBody(BaseModel):
     model: str | None = None
     approval_mode: str | None = None
     docker_sandbox: bool | None = None
+    max_tokens: int | None = None
 
 
 class FileSaveBody(BaseModel):
@@ -92,6 +93,7 @@ async def health():
         "approval_mode": cfg.get("approval_mode", "guarded"),
         "docker_sandbox": bool(cfg.get("docker_sandbox")),
         "docker_available": guard.DOCKER_AVAILABLE,
+        "max_tokens": config.get_max_tokens(),
     }
 
 
@@ -122,6 +124,8 @@ async def set_settings(body: SettingsBody):
         patch["approval_mode"] = body.approval_mode
     if body.docker_sandbox is not None:
         patch["docker_sandbox"] = body.docker_sandbox
+    if body.max_tokens is not None and 256 <= int(body.max_tokens) <= 65536:
+        patch["max_tokens"] = int(body.max_tokens)
     config.save_config(patch)
     return await health()
 
@@ -238,6 +242,7 @@ async def list_models():
                     "context": m.get("context_length"),
                     "prompt_price": prompt_p,   # USD per token
                     "completion_price": comp_p,
+                    "free": prompt_p == 0 and comp_p == 0,
                 })
             data.sort(key=lambda x: x["id"])
             _MODELS_CACHE["data"] = data

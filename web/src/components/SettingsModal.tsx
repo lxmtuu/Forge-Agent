@@ -9,10 +9,11 @@ const STATUS_STYLE: Record<string, string> = {
 export function SettingsModal(props: {
   settings: Settings
   onClose: () => void
-  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean }) => Promise<void>
+  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number }) => Promise<void>
 }) {
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
+  const [maxTokens, setMaxTokens] = useState(String(props.settings.max_tokens ?? 16384))
   const [approval, setApproval] = useState<string>(props.settings.approval_mode ?? 'guarded')
   const [docker, setDocker] = useState(props.settings.docker_sandbox)
   const [saving, setSaving] = useState(false)
@@ -40,7 +41,10 @@ export function SettingsModal(props: {
   }, [])
 
   const filteredModels = modelFilter
-    ? models.filter((m) => m.id.toLowerCase().includes(modelFilter.toLowerCase())).slice(0, 40)
+    ? (modelFilter.trim().toLowerCase() === 'free'
+        ? models.filter((m) => m.free)
+        : models.filter((m) => m.id.toLowerCase().includes(modelFilter.toLowerCase()))
+      ).slice(0, 40)
     : models.slice(0, 40)
 
   return (
@@ -91,21 +95,41 @@ export function SettingsModal(props: {
               <option key={m} value={m} />
             ))}
           </datalist>
+          <div className="filter-presets">
+            <button className={`preset ${modelFilter === 'free' ? 'on' : ''}`} onClick={() => setModelFilter(modelFilter === 'free' ? '' : 'free')}>🆓 Miễn phí</button>
+            <button className={`preset ${modelFilter === 'claude' ? 'on' : ''}`} onClick={() => setModelFilter('claude')}>Claude</button>
+            <button className={`preset ${modelFilter === 'gpt' ? 'on' : ''}`} onClick={() => setModelFilter('gpt')}>GPT</button>
+            <button className={`preset ${modelFilter === 'coder' ? 'on' : ''}`} onClick={() => setModelFilter('coder')}>Coder</button>
+          </div>
           <input
             className="model-filter"
-            placeholder="Lọc danh sách model… (vd: claude, gpt, free)"
+            placeholder="Lọc danh sách model… (gõ 'free' để xem model miễn phí)"
             value={modelFilter}
             onChange={(e) => setModelFilter(e.target.value)}
           />
           <div className="model-suggest">
             {filteredModels.map((m) => (
-              <button key={m.id} className="model-chip" title={`${m.name} · context ${m.context ?? '?'} · $${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}
+              <button key={m.id} className={`model-chip ${m.free ? 'free-chip' : ''}`} title={`${m.name} · context ${m.context ?? '?'} · ${m.free ? 'MIỄN PHÍ' : `$${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}`}
                 onClick={() => { setModel(m.id); setModelFilter('') }}>
-                {m.id}
+                {m.free ? '🆓 ' : ''}{m.id}
               </button>
             ))}
           </div>
+          <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
         </div>
+
+        <label className="field">
+          <span>Max tokens mỗi lượt phản hồi <em>(thấp hơn = tốn ít credit đặt cọc hơn)</em></span>
+          <input
+            type="number"
+            min={256}
+            max={65536}
+            step={256}
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(e.target.value)}
+          />
+          <small>Mặc định 16384. Nếu bị lỗi 402 với model trả phí, thử giảm xuống 4096.</small>
+        </label>
 
         <div className="field">
           <span>Chế độ duyệt lệnh shell</span>
@@ -174,8 +198,12 @@ export function SettingsModal(props: {
             onClick={async () => {
               setSaving(true)
               try {
-                await props.onSave(key || undefined, model || undefined,
-                  { approval_mode: approval, docker_sandbox: docker })
+                const mt = parseInt(maxTokens, 10)
+                await props.onSave(key || undefined, model || undefined, {
+                  approval_mode: approval,
+                  docker_sandbox: docker,
+                  ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
+                })
                 props.onClose()
               } finally { setSaving(false) }
             }}

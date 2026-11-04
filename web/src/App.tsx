@@ -293,7 +293,7 @@ export default function App() {
   }
 
   // ------------------------------------------------------------- settings
-  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean }) {
+  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number }) {
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
   }

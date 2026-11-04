@@ -49,6 +49,7 @@ async def stream_chat(
         "messages": messages,
         "stream": True,
         "temperature": temperature,
+        "max_tokens": config.get_max_tokens(),
     }
     if tools:
         payload["tools"] = tools
@@ -72,6 +73,14 @@ async def stream_chat(
                             "thiếu ký tự hoặc đã bị xóa). Hãy tạo key mới tại https://openrouter.ai/keys, "
                             "copy ĐỦ toàn bộ chuỗi sk-or-v1-... rồi dán lại vào ⚙ Cài đặt. "
                             f"Chi tiết từ OpenRouter: {body[:300]}")
+                    if resp.status_code == 402:
+                        raise LLMError(
+                            "OpenRouter 402 — Key hợp lệ nhưng tài khoản KHÔNG ĐỦ CREDIT cho model trả phí này. "
+                            "3 cách xử lý: (1) ⚙ Cài đặt → lọc model 'free' → chọn model miễn phí "
+                            "(vd: openrouter/free, cohere/north-mini-code:free); "
+                            "(2) nạp credit tại https://openrouter.ai/credits nếu muốn dùng Claude/GPT; "
+                            "(3) giảm 'Max tokens' trong ⚙ Cài đặt để giảm số credit cần đặt cọc. "
+                            f"Chi tiết: {body[:250]}")
                     raise LLMError(f"OpenRouter HTTP {resp.status_code}: {body}")
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):

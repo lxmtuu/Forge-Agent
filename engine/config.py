@@ -18,8 +18,27 @@ DEFAULT_MODELS = [
     "deepseek/deepseek-v4.1-flash",
     "moonshotai/kimi-k2.7-code",
     "qwen/qwen3-coder-next",
+    # free options (không cần credit)
+    "openrouter/free",
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
 ]
 FALLBACK_MODEL = "anthropic/claude-sonnet-5.5"
+
+
+def get_max_tokens() -> int:
+    """Max output tokens per LLM call. Lower = cheaper pre-auth on pay-as-you-go."""
+    try:
+        v = load_config().get("max_tokens")
+        v = int(v) if v is not None else 0
+    except Exception:
+        v = 0
+    if not v:
+        try:
+            v = int(os.environ.get("FORGE_MAX_TOKENS", "0"))
+        except ValueError:
+            v = 0
+    return v if 256 <= v <= 65536 else 16384
 
 
 def ensure_dirs() -> None:

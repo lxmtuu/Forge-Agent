@@ -45,6 +45,7 @@ export interface ModelInfo {
   context: number | null
   prompt_price: number
   completion_price: number
+  free?: boolean
 }
 
 export interface UsageTotals {
@@ -64,6 +65,7 @@ export interface Settings {
   approval_mode: 'guarded' | 'ask' | 'auto'
   docker_sandbox: boolean
   docker_available: boolean
+  max_tokens: number
 }
 
 export interface KeyCheckResult {

@@ -217,6 +217,13 @@ a { color: var(--cyan); }
 .key-result.bad { background: rgba(229, 83, 75, 0.1); border: 1px solid rgba(229, 83, 75, 0.4); color: #f2a09b; }
 .key-hint { margin-top: 5px; color: var(--dim); }
 
+/* ---------------- model filter presets ---------------- */
+.filter-presets { display: flex; gap: 6px; margin-top: 8px; }
+.filter-presets .preset { background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 14px; padding: 4px 12px; font-size: 11.5px; font-weight: 600; }
+.filter-presets .preset:hover { color: var(--text); border-color: var(--dim); }
+.filter-presets .preset.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.free-chip { border-color: rgba(111, 191, 139, 0.5) !important; color: var(--green) !important; }
+
 /* scrollbars */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: #33333c; border-radius: 5px; }
