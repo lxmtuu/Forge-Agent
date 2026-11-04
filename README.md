@@ -4,7 +4,14 @@ Forge là một coding agent **chạy trên máy bạn**: nó đọc/ghi/sửa f
 codebase, chạy lệnh shell, tự kiểm chứng kết quả rồi tổng kết — y như Claude Code hay
 Codex CLI, nhưng **bạn sở hữu toàn bộ** (engine + giao diện + dữ liệu).
 
-Một engine duy nhất, hai giao diện:
+Một engine duy nhất, **ba hình thái phần mềm** (chi tiết: BUILD_DESKTOP.md):
+
+```
+  forge            → TUI toàn màn hình trong terminal (kiểu OpenCode)
+  forge --web      → Web UI (kiểu Claude Code web)
+  forge --repl     → REPL dòng lệnh (kiểu Codex CLI)
+  forge.exe        → file exe độc lập (build bằng PyInstaller/GitHub Actions)
+```
 
 ```
                     ┌─────────────────────────┐
@@ -91,12 +98,15 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 Deploy VPS/PaaS chi tiết: **DEPLOY.md**.
 
-### CLI
+### CLI / TUI
 ```bash
-python cli/main.py                        # REPL tương tác
-python cli/main.py --once "viết fizzbuzz bằng python rồi chạy test"
-python cli/main.py --list-sessions
-python cli/main.py --session <id>         # quay lại phiên cũ
+pip install -e .              # cài 1 lần → có lệnh `forge` trong PATH
+forge                         # TUI toàn màn hình (khuyên dùng — kiểu OpenCode)
+forge --repl                  # REPL đơn giản
+forge --once "viết fizzbuzz rồi chạy test"
+forge --parallel "task A" "task B"
+forge --list-sessions
+# hoặc không cài: python cli/main.py / python -m tui.launch
 ```
 
 ### API key (OpenRouter)

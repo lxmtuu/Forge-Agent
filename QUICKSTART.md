@@ -4,6 +4,13 @@
 > v0.3.1 — bạn chỉ cần dùng bản zip này trở đi. Nếu lệnh `python` không có sẵn,
 > thử `py -m uvicorn ...` thay thế.
 
+## 0. Muốn có "phần mềm" như Claude Code/OpenCode?
+```bash
+pip install -e .
+forge        # ← TUI toàn màn hình trong terminal!
+```
+Chi tiết: **BUILD_DESKTOP.md** (gồm cả cách build file .exe độc lập).
+
 ## 1. Cài Python dependencies (không cần Node — web đã build sẵn)
 ```bash
 pip install -r requirements.txt

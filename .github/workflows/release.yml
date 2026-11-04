@@ -1,0 +1,60 @@
+name: Build forge executables
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: forge-windows.exe
+          - os: ubuntu-latest
+            artifact: forge-linux
+          - os: macos-latest
+            artifact: forge-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          pip install .
+          pip install pyinstaller
+
+      - name: Build web UI (if npm available)
+        shell: bash
+        run: |
+          if command -v npm >/dev/null 2>&1; then
+            cd web && npm ci && npm run build && cd ..
+          else
+            echo "npm không có — dùng static đã build sẵn trong repo"
+          fi
+
+      - name: PyInstaller
+        run: pyinstaller forge.spec --noconfirm
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          cd dist
+          if [ -e forge.exe ]; then mv forge.exe "${{ matrix.artifact }}";
+          else mv forge "${{ matrix.artifact }}"; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.artifact }}
