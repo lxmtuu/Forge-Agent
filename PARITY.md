@@ -310,6 +310,10 @@ Cộng OAuth 2.1 (Notion/Sentry/Linear) + hub Composio (500+ app). `$VAR` trong 
 
 7 gói mới: **Stripe** (remote chính thức, Restricted Key như Bearer) · **Atlassian** v2 · **Vercel** · **Supabase** remote read_only · **Memory** (knowledge-graph) · **Fetch** (uvx) · **Brave Search** (gói chính thức `@brave`). Loại có chủ đích các bản archived upstream (github/slack/brave stdio cũ, puppeteer, sqlite) — lý do đầy đủ trong **MCP_CATALOG.md**. Cộng OAuth 2.1 tự chạy (Notion/Sentry/Linear) + hub 500+ app.
 
+## 📘 v0.30 "Audit UI v2"
+
+Tab 📘 Audit (từ v0.18) nâng cấp chuẩn log-viewer: quick-filter **Tất cả/✅/❌**, cột **phiên** (sid), **click dòng** xem args JSON đầy đủ + ghi chú. Token trong log vẫn tự mask (test E2E). Bài học: claim backlog phải kiểm chứng bằng git — P3 audit UI thực ra đã đóng từ v0.18, đề mục stale đã được sửa.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

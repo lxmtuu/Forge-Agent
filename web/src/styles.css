@@ -759,3 +759,10 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .skill-meta { font-size: 12px; color: var(--dim, #8b8d96); }
 .skill-actions { display: flex; gap: 8px; margin-top: 4px; }
 .skill-path { font-size: 11px; color: var(--dim, #6f7178); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-row.click { cursor: pointer; }
+.audit-row.click:hover { background: rgba(255, 255, 255, 0.03); }
+.audit-chip { padding: 2px 8px; }
+.audit-chip.on { border-color: var(--acc, #7c5cff); color: var(--acc, #7c5cff); }
+.audit-sid { color: var(--dim, #8b8d96); font-variant-numeric: tabular-nums; min-width: 44px; }
+.audit-detail { padding: 8px 12px 10px 34px; border-bottom: 1px solid var(--border, #232428); background: rgba(0, 0, 0, 0.18); font-size: 12.5px; display: grid; gap: 4px; }
+.audit-detail pre { margin: 4px 0 0; padding: 8px; background: rgba(0, 0, 0, 0.25); border-radius: 6px; overflow-x: auto; font-size: 12px; }

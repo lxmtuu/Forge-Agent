@@ -192,12 +192,25 @@ Yêu cầu: "xem còn các MCP nào nữa" — research 3 hướng (PulseMCP/top
 
 **Kết quả vòng 13: 149/149 test (25 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
 
+## 3i. Vòng 14 (v0.30) — Audit UI v2 + sửa claim backlog stale
+
+Yêu cầu chọn "Audit-log UI bảng (P3)". **Điều tra bằng git làm lộ sự thật: P3 đã ĐÓNG từ v0.18.0** (f60e42a — tab 📘 Audit: lọc realtime, refresh, CSV, mask token, 200 mục). Claim "còn P3" trong backlog là **stale** — đã sửa PROJECT_AUDIT. Thay vì bỏ trắng vòng, nâng cấp UI lên chuẩn log-viewer:
+
+| Nâng cấp | Chi tiết |
+|---|---|
+| Quick-filter trạng thái | 3 chip **Tất cả / ✅ / ❌** — bắt lỗi nhanh mà không cần gõ |
+| Cột phiên | hiển thị 6 ký tự cuối sid, hover thấy đầy đủ; filter text giờ quét cả session |
+| Click dòng → chi tiết | expand: ts đầy đủ, phiên, nguồn, ghi chú, **args JSON pretty** (không cắt 90 ký tự như dòng chính) |
+| Test chống quên build | test_v030-T3 assert build artifact trong server/static chứa `audit-chip/audit-detail/audit-sid` — sửa TSX mà quên `npm run build` sẽ đỏ ngay |
+
+**Kết quả vòng 14: 153/153 test (26 suite) · mypy 0 · bandit Medium+ 0 · tsc/vite build ✓.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
 |---|---|---|
 | ~~P2~~ ✅ v0.17.2 | ~~TUI smoke~~ · ~~Audit log~~ · ~~Adversarial suite~~ | Đã làm — xem mục 3b |
-| P3 | Audit-log UI trong web (bảng lọc theo phiên/tool) | hiện /audit là text; bảng đẹp hơn |
+| ~~P3~~ ✅ v0.18 (UI bảng + lọc) · **v0.30 nâng cấp v2**: quick-filter ✅/❌, cột phiên, click dòng xem args đầy đủ | UI có từ f60e42a — claim "còn P3" là stale, đã sửa |
 | ~~P3~~ ✅ v0.27 | ~~mypy engine/~~ **0 lỗi / 32 file** (`python -m mypy engine/`) | gate thứ 3 xanh |
 | P3 | Audit-log xuất CSV/JSON từ web (một nút) | tiện phân tích ngoài |
 

@@ -119,7 +119,9 @@ export function SettingsModal(props: {
   // ── Audit log tab ──
   const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null)
   const [auditFilter, setAuditFilter] = useState('')
-  const loadAudit = () => api.audit(200).then((rows) => setAuditRows(rows)).catch(() => setAuditRows([]))
+  const [auditQf, setAuditQf] = useState<'all' | 'ok' | 'bad'>('all')
+  const [auditOpen, setAuditOpen] = useState<number | null>(null)
+  const loadAudit = () => { setAuditOpen(null); api.audit(200).then((rows) => setAuditRows(rows)).catch(() => setAuditRows([])) }
   useEffect(() => {
     if (tab === 'audit' && auditRows === null) loadAudit()
     if (tab === 'svc' && svcPresets === null) loadSvc()
@@ -513,10 +515,13 @@ export function SettingsModal(props: {
               <span>Audit log <em>(mọi tool call của agent — token tự mask, file data/audit/)</em></span>
               <div className="audit-bar">
                 <input
-                  placeholder="Lọc theo tool/nguồn/đối số…"
+                  placeholder="Lọc theo tool/nguồn/đối số/phiên…"
                   value={auditFilter}
                   onChange={(e) => setAuditFilter(e.target.value)}
                 />
+                <button className={`btn-ghost btn-sm audit-chip ${auditQf === 'all' ? 'on' : ''}`} onClick={() => setAuditQf('all')}>Tất cả</button>
+                <button className={`btn-ghost btn-sm audit-chip ${auditQf === 'ok' ? 'on' : ''}`} onClick={() => setAuditQf('ok')}>✅</button>
+                <button className={`btn-ghost btn-sm audit-chip ${auditQf === 'bad' ? 'on' : ''}`} onClick={() => setAuditQf('bad')}>❌</button>
                 <button className="btn-ghost btn-sm" onClick={() => { setAuditRows(null); loadAudit() }}>⟳ Nạp lại</button>
                 <a className="btn-ghost btn-sm" href="/api/audit/export" download title="Tải tối đa 2000 mục mới nhất (CSV)">⤓ Xuất CSV</a>
               </div>
@@ -527,21 +532,35 @@ export function SettingsModal(props: {
                 )}
                 {auditRows && auditRows
                   .filter((e) => {
+                    if (auditQf === 'ok' && !e.ok) return false
+                    if (auditQf === 'bad' && e.ok) return false
                     if (!auditFilter.trim()) return true
                     const q = auditFilter.toLowerCase()
-                    return (e.tool + ' ' + e.source + ' ' + JSON.stringify(e.args ?? {}) + ' ' + (e.note ?? '')).toLowerCase().includes(q)
+                    return (e.tool + ' ' + e.source + ' ' + (e.session ?? '') + ' ' + JSON.stringify(e.args ?? {}) + ' ' + (e.note ?? '')).toLowerCase().includes(q)
                   })
                   .map((e, i) => (
-                    <div key={i} className={`audit-row ${e.ok ? '' : 'bad'}`}>
-                      <span className="audit-ts">{String(e.ts).slice(11, 19)}</span>
-                      <span className="audit-ok">{e.ok ? '✅' : '❌'}</span>
-                      <b className="audit-tool">{e.tool}</b>
-                      <span className="audit-src">{e.source}</span>
-                      <span className="audit-ms">{e.ms != null ? `${e.ms}ms` : '—'}</span>
-                      <span className="audit-args" title={JSON.stringify(e.args ?? {})}>
-                        {Object.entries(e.args ?? {}).map(([k, v]) => `${k}=${v}`).join(' ').slice(0, 90)}
-                        {e.note ? ` · ${e.note}` : ''}
-                      </span>
+                    <div key={i} style={{ display: 'contents' }}>
+                      <div className={`audit-row ${e.ok ? '' : 'bad'} click`} onClick={() => setAuditOpen(auditOpen === i ? null : i)}
+                        title="Bấm để xem chi tiết đầy đủ">
+                        <span className="audit-ts">{String(e.ts).slice(11, 19)}</span>
+                        <span className="audit-ok">{e.ok ? '✅' : '❌'}</span>
+                        <b className="audit-tool">{e.tool}</b>
+                        <span className="audit-src">{e.source}</span>
+                        <span className="audit-sid" title={`Phiên: ${e.session ?? '—'}`}>{String(e.session ?? '').slice(-6) || '—'}</span>
+                        <span className="audit-ms">{e.ms != null ? `${e.ms}ms` : '—'}</span>
+                        <span className="audit-args">
+                          {Object.entries(e.args ?? {}).map(([k, v]) => `${k}=${v}`).join(' ').slice(0, 90)}
+                          {e.note ? ` · ${e.note}` : ''}
+                        </span>
+                      </div>
+                      {auditOpen === i && (
+                        <div className="audit-detail">
+                          <div><b>{e.tool}</b> · {String(e.ts)} · {e.ms != null ? `${e.ms}ms` : '—'}</div>
+                          <div>phiên: <code>{e.session || '—'}</code> · nguồn: {e.source}</div>
+                          {e.note && <div>ghi chú: {e.note}</div>}
+                          <pre>{JSON.stringify(e.args ?? {}, null, 2)}</pre>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
