@@ -6,6 +6,7 @@ bus unit (send/inbox/offset/peek) · agent tool-path send_message/check_inbox
 Chạy:  python scripts/test_v026.py
 """
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -205,9 +206,35 @@ async def t5():
     assert "tự-do" in listing2
 
 
+@check("T6 chat synthetic /msg + /inbox: chạy qua /chat không crash, đúng thông điệp (bài học v0.25: biến 'body' che tham số)")
+async def t6():
+    from fastapi.testclient import TestClient
+    from server.main import app
+    with TestClient(app) as c:
+        sa = c.post("/api/sessions", json={}).json()["session"]["id"]
+        sb = c.post("/api/sessions", json={}).json()["session"]["id"]
+
+        def last_msg(text, sid_x):
+            r = c.post(f"/api/sessions/{sid_x}/chat", json={"text": text, "mode": "direct"})
+            assert r.status_code == 200, (text, r.status_code, r.text[:200])
+            msgs = [json.loads(ln[5:]) for ln in r.text.splitlines()
+                    if ln.startswith("data:") and '"assistant_message"' in ln]
+            assert msgs, f"không có assistant_message cho {text!r}"
+            return msgs[-1]["content"]
+
+        out = last_msg(f"/msg {sb} chào từ A", sa)
+        assert "Đã gửi tới" in out, out
+        # peek=true — KHÔNG tiêu thụ hộp thư (GET mặc định sẽ mark-read làm /inbox rỗng)
+        assert c.get(f"/api/sessions/{sb}/messages", params={"peek": "true"}).json()["count"] == 1
+        out2 = last_msg("/inbox", sb)
+        assert "chào từ A" in out2, out2
+        out3 = last_msg("/msg khong-co x", sa)
+        assert "không có phiên" in out3.lower(), out3
+
+
 async def main():
     print(f"=== SUITE v0.25 Liên phiên & Ký năng rõ phép — data tạm: {TMP} ===")
-    for fn in [t1, t2, t3, t4, t5]:
+    for fn in [t1, t2, t3, t4, t5, t6]:
         await fn()
     print(f"\nKẾT QUẢ: {len(PASS)} PASS / {len(FAIL)} FAIL")
     if FAIL:

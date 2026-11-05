@@ -701,23 +701,23 @@ async def chat(sid: str, body: ChatBody, request: Request):
         if text == "/inbox":
             rows = fbus.inbox(sid)
             if rows:
-                body = "\n\n".join(f"📥 **{r['from']}** ({str(r['ts'])[11:16]}): {r['text'][:300]}"
-                                   for r in rows)
+                m_out = "\n\n".join(f"📥 **{r['from']}** ({str(r['ts'])[11:16]}): {r['text'][:300]}"
+                                    for r in rows)
             else:
-                body = "(hộp thư trống)"
-            msg_synthetic = [{"type": "assistant_message", "content": body}]
+                m_out = "(hộp thư trống)"
+            msg_synthetic = [{"type": "assistant_message", "content": m_out}]
         else:
             parts = text[5:].strip().split(None, 1)
             to_sid = parts[0].strip() if parts else ""
-            body = parts[1].strip() if len(parts) > 1 else ""
-            if not to_sid or not body:
+            m_text = parts[1].strip() if len(parts) > 1 else ""
+            if not to_sid or not m_text:
                 msg_synthetic = [{"type": "assistant_message",
                                   "content": "❌ Cú pháp: `/msg <id-phiên> <nội dung>`"}]
             elif store.get(to_sid) is None:
                 msg_synthetic = [{"type": "assistant_message",
                                   "content": f"❌ Không có phiên '{to_sid}'."}]
             else:
-                fbus.send(to_sid, sid, body)
+                fbus.send(to_sid, sid, m_text)
                 msg_synthetic = [{"type": "assistant_message",
                                   "content": f"📨 Đã gửi tới {to_sid} — phiên đích sẽ thấy ở lượt kế tiếp."}]
     # /worktree [list|merge <sub>|discard <sub>] — B2 quản lý worktree sub-agent
