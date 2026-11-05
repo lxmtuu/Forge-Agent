@@ -1,4 +1,4 @@
-"""v0.37.1 hotfix: visible provider errors + empty-completion fail-closed.
+"""v0.38.0 hotfix: visible provider errors + empty-completion fail-closed.
 
 No real provider credentials or network calls. Run: python scripts/test_v0371.py
 """
@@ -57,10 +57,10 @@ async def run_with_events(events):
     return output, store.get(session.id).messages
 
 
-@check("T1 Version 0.37.1 nhất quán + diagnostic script có sẵn")
+@check("T1 Version 0.38.0 nhất quán + diagnostic script có sẵn")
 async def t1():
     for name in ("pyproject.toml", "engine/__init__.py", "engine/mcp.py", "engine/lsp.py", "server/main.py"):
-        assert "0.37.1" in (ROOT / name).read_text(encoding="utf-8"), name
+        assert "0.38.0" in (ROOT / name).read_text(encoding="utf-8"), name
     diagnostic = (ROOT / "scripts/diagnose_llm.py").read_text(encoding="utf-8")
     assert "REDACTED RESPONSE" in diagnostic and "no session writes" in diagnostic
     assert "sk-or-v1-FAKE" not in diagnostic
@@ -102,7 +102,7 @@ async def t4():
 
 
 async def main():
-    print(f"=== SUITE v0.37.1 Visible provider errors + empty completion — data tạm: {TMP} ===")
+    print(f"=== SUITE v0.38.0 Visible provider errors + empty completion — data tạm: {TMP} ===")
     for test in (t1, t2, t3, t4):
         await test()
     print(f"\nKẾT QUẢ: {len(PASS)} PASS / {len(FAIL)} FAIL")

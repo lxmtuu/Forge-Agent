@@ -12,17 +12,18 @@ import type { ContextStats } from './types'
 import { ElicitationCard } from './components/ElicitationCard'
 import { Markdown } from './md'
 import { LoginScreen } from './components/LoginScreen'
+import { useI18n, type Translate } from './i18n'
 
-const MODES: { id: ChatMode; icon: string; label: string; desc: string }[] = [
-  { id: 'direct', icon: '💬', label: 'Trực tiếp', desc: 'Chat thuần — không dùng tool, nhanh và rẻ' },
-  { id: 'agent', icon: '🤖', label: 'Agent', desc: 'Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi' },
-  { id: 'plan', icon: '📋', label: 'Kế hoạch', desc: 'Chỉ đọc và xuất kế hoạch, không sửa file' },
-  { id: 'architect', icon: '🧭', label: 'Kiến trúc sư', desc: 'Model mạnh lập kế hoạch, model thực thi triển khai' },
-  { id: 'battle', icon: '⚔', label: 'Battle', desc: 'Chạy cùng prompt trên nhiều model và chọn kết quả' },
+const MODES: { id: ChatMode; icon: string; label: [string, string]; desc: [string, string] }[] = [
+  { id: 'direct', icon: '💬', label: ['Trực tiếp', 'Direct'], desc: ['Chat thuần — không dùng tool, nhanh và rẻ', 'Plain chat — no tools, fast and inexpensive'] },
+  { id: 'agent', icon: '🤖', label: ['Agent', 'Agent'], desc: ['Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi', 'Full loop: read and edit files, run commands, and fix errors'] },
+  { id: 'plan', icon: '📋', label: ['Kế hoạch', 'Plan'], desc: ['Chỉ đọc và xuất kế hoạch, không sửa file', 'Read-only exploration and planning without file changes'] },
+  { id: 'architect', icon: '🧭', label: ['Kiến trúc sư', 'Architect'], desc: ['Model mạnh lập kế hoạch, model thực thi triển khai', 'A strong model plans, then an execution model implements'] },
+  { id: 'battle', icon: '⚔', label: ['Battle', 'Battle'], desc: ['Chạy cùng prompt trên nhiều model và chọn kết quả', 'Run the same prompt across multiple models and compare results'] },
 ]
 
 /** Pure reducer: apply one agent event to an item timeline. */
-function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
+function applyEvent(prev: Item[], ev: AgentEvent, translate: Translate = (vi) => vi): Item[] {
   switch (ev.type) {
     case 'reasoning_delta': {
       const last = prev[prev.length - 1]
@@ -72,10 +73,10 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
                          model: ev.model }]
     case 'model_fallback':
       return [...prev, { kind: 'notice', id: uid(),
-                         text: `🔁 Model lỗi — chuyển từ ${ev.from} → ${ev.to}` }]
+                         text: translate(`🔁 Model lỗi — chuyển từ ${ev.from} → ${ev.to}`, `🔁 Model failed — falling back from ${ev.from} → ${ev.to}`) }]
     case 'auto_commit':
       return [...prev, { kind: 'notice', id: uid(),
-                         text: `📦 Đã tự commit (${ev.files} file): ${ev.subject}` }]
+                         text: translate(`📦 Đã tự commit (${ev.files} file): ${ev.subject}`, `📦 Auto-committed (${ev.files} files): ${ev.subject}`) }]
     case 'todo_update': {
       const idx = prev.findIndex((it) => it.kind === 'todo')
       const card: Item = { kind: 'todo', id: idx >= 0 ? (prev[idx] as { id: string }).id : uid(), items: ev.items }
@@ -140,6 +141,7 @@ function buildTimeline(messages: { role: string; content: string | null; tool_ca
 }
 
 export default function App() {
+  const { t, language } = useI18n()
   const [user, setUser] = useState<AuthUser | null>(null)
   const userRef = useRef<AuthUser | null>(null)
   userRef.current = user
@@ -181,7 +183,7 @@ export default function App() {
     try {
       await api.rerun(sid, index, text)
     } catch (e) {
-      setErrorBanner(`Không sửa được tin: ${(e as Error).message}`)
+      setErrorBanner(t(`Không sửa được tin: ${(e as Error).message}`, `Could not edit message: ${(e as Error).message}`))
       return
     }
     // cắt timeline từ tin đang sửa, rồi stream lại với rerun=true (không append tin user mới)
@@ -199,15 +201,15 @@ export default function App() {
     }
     try {
       await api.streamChat(sid as string, text, mode, (ev) => {
-        setItems((prev) => applyEvent(prev, ev))
-      }, ac.signal, imgs, rerunMode, activeModel || undefined)
+        setItems((prev) => applyEvent(prev, ev, t))
+      }, ac.signal, imgs, rerunMode, activeModel || undefined, language)
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setErrorBanner((e as Error).message)
     } finally {
       setStreaming(false)
       abortRef.current = null
       if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-        try { new Notification('Forge agent — đã xong', { body: text.slice(0, 90) }) } catch { /* ignore */ }
+        try { new Notification(t('Forge agent — đã xong', 'Forge agent — finished'), { body: text.slice(0, 90) }) } catch { /* ignore */ }
       }
       refreshSessions()
       if (sid) refreshTree(sid)
@@ -226,12 +228,12 @@ export default function App() {
   const taRef = useRef<HTMLTextAreaElement>(null)
 
   const WEB_COMMANDS: [string, string][] = [
-    ['/review', 'code review diff thật — P0–P3 + verdict, chỉ đọc'],
-    ['/diff', 'xem diff phiên (git repo hoặc checkpoint)'],
-    ['/memory', 'xem bộ nhớ đang nạp · “/memory clear” để xoá'],
-    ['/run', 'chạy custom agent từ .forge/agents/<tên>.md'],
-    ['/skills', 'quản lý skill chuẩn SKILL.md · /skills add <git|thư-mục> · new · remove'],
-    ['/connectors', 'kết nối GitHub/Linear/Gmail… qua MCP · /connectors add github · auth <tên> <token>'],
+    ['/review', t('code review diff thật — P0–P3 + verdict, chỉ đọc', 'review the real diff — P0–P3 findings and a verdict, read-only')],
+    ['/diff', t('xem diff phiên (git repo hoặc checkpoint)', 'view the session diff (git repository or checkpoint)')],
+    ['/memory', t('xem bộ nhớ đang nạp · “/memory clear” để xoá', 'view loaded memory · use “/memory clear” to clear it')],
+    ['/run', t('chạy custom agent từ .forge/agents/<tên>.md', 'run a custom agent from .forge/agents/<name>.md')],
+    ['/skills', t('quản lý skill chuẩn SKILL.md · /skills add <git|thư-mục> · new · remove', 'manage SKILL.md skills · /skills add <git|directory> · new · remove')],
+    ['/connectors', t('kết nối GitHub/Linear/Gmail… qua MCP · /connectors add github · auth <tên> <token>', 'connect GitHub/Linear/Gmail… through MCP · /connectors add github · auth <name> <token>')],
   ]
   const queuedRef = useRef<string[]>([])
   const abortRef = useRef<AbortController | null>(null)
@@ -421,7 +423,7 @@ export default function App() {
         setItems([])
         if (isBattle) {
           const models = battleModels.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4)
-          if (!models.length) { setErrorBanner('Battle cần ít nhất 1 model'); return }
+          if (!models.length) { setErrorBanner(t('Battle cần ít nhất 1 model', 'Battle requires at least one model')); return }
           setBatch(models.map((m, i) => ({
             index: i, sessionId: '', title: m, status: 'running' as const,
             items: [{ kind: 'user', id: uid(), text } as Item],
@@ -439,7 +441,7 @@ export default function App() {
             setBatch((prev) => prev?.map((g) => {
               if (g.index !== ev.index) return g
               const inner = ev.event
-              const next: TaskGroup = { ...g, items: applyEvent(g.items, inner as AgentEvent) }
+              const next: TaskGroup = { ...g, items: applyEvent(g.items, inner as AgentEvent, t) }
               if (inner.type === 'task_done') next.status = 'done'
               if (inner.type === 'error') next.status = 'error'
               return next
@@ -450,8 +452,8 @@ export default function App() {
             setErrorBanner(ev.message)
           }
         }
-        if (isBattle) await api.battleStream(text, battleModels.split(',').map((s) => s.trim()).filter(Boolean), onBatch, ac.signal)
-        else await api.batchStream(prompts, onBatch, ac.signal, activeModel || undefined)
+        if (isBattle) await api.battleStream(text, battleModels.split(',').map((s) => s.trim()).filter(Boolean), onBatch, ac.signal, language)
+        else await api.batchStream(prompts, onBatch, ac.signal, activeModel || undefined, language)
       } else {
         setItems((prev) => [...prev, { kind: 'user', id: uid(), text, images: pendingImages.length ? pendingImages : undefined }])
         const imgs = pendingImages
@@ -465,8 +467,8 @@ export default function App() {
             if (ev.session_usage) setSessionUsage(ev.session_usage)
             return
           }
-          setItems((prev) => applyEvent(prev, ev))
-        }, ac.signal, imgs, false, activeModel || undefined)
+          setItems((prev) => applyEvent(prev, ev, t))
+        }, ac.signal, imgs, false, activeModel || undefined, language)
         if (!streamHadError) await loadSession(sid)
         refreshCtx(sid)
       }
@@ -479,7 +481,7 @@ export default function App() {
       abortRef.current = null
       // E4: tab đang ẩn → thông báo desktop khi xong (Claude-style notification)
       if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-        try { new Notification('Forge agent — đã xong', { body: text.slice(0, 90) }) } catch { /* ignore */ }
+        try { new Notification(t('Forge agent — đã xong', 'Forge agent — finished'), { body: text.slice(0, 90) }) } catch { /* ignore */ }
       }
       refreshSessions()
       refreshTree(sid)
@@ -548,7 +550,7 @@ export default function App() {
     try {
       const f = await api.readFile(sid, path)
       setFileSel(path)
-      setFileContent(f.binary ? '// (file nhị phân — không xem được)' : f.content)
+      setFileContent(f.binary ? t('// (file nhị phân — không xem được)', '// (binary file — preview unavailable)') : f.content)
       setFileDirty(false)
     } catch (e) { setErrorBanner(String(e)) }
   }
@@ -564,7 +566,7 @@ export default function App() {
 
   async function deleteFile() {
     if (!sid || !fileSel) return
-    if (!confirm(`Xóa ${fileSel}?`)) return
+    if (!confirm(t(`Xóa ${fileSel}?`, `Delete ${fileSel}?`))) return
     await api.deleteFile(sid, fileSel)
     closeFile()
     refreshTree(sid)
@@ -572,7 +574,7 @@ export default function App() {
 
   async function newFile() {
     if (!sid) return
-    const p = prompt('Đường dẫn file mới:', 'untitled.py')
+    const p = prompt(t('Đường dẫn file mới:', 'New file path:'), 'untitled.py')
     if (!p) return
     await api.saveFile(sid, p, '')
     refreshTree(sid)
@@ -583,7 +585,7 @@ export default function App() {
     if (!sid || !fs || fs.length === 0) return
     try {
       const r = await api.uploadFiles(sid, Array.from(fs))
-      if (r.skipped.length) setErrorBanner(`Bỏ qua: ${r.skipped.join(', ')}`)
+      if (r.skipped.length) setErrorBanner(t(`Bỏ qua: ${r.skipped.join(', ')}`, `Skipped: ${r.skipped.join(', ')}`))
       refreshTree(sid)
     } catch (e) { setErrorBanner(String(e)) }
   }
@@ -598,7 +600,7 @@ export default function App() {
     const picks = Array.from(files).slice(0, 4 - pendingImages.length)
     for (const f of picks) {
       if (!f.type.startsWith('image/')) continue
-      if (f.size > 4 * 1024 * 1024) { setErrorBanner(`Ảnh ${f.name} > 4MB — hãy thu nhỏ trước`); continue }
+      if (f.size > 4 * 1024 * 1024) { setErrorBanner(t(`Ảnh ${f.name} > 4MB — hãy thu nhỏ trước`, `Image ${f.name} is larger than 4 MB — resize it first`)); continue }
       const rd = new FileReader()
       rd.onload = () => { if (typeof rd.result === 'string') setPendingImages((p) => p.length >= 4 ? p : [...p, rd.result as string]) }
       rd.readAsDataURL(f)
@@ -612,7 +614,7 @@ export default function App() {
       const r = await api.fork(sid)
       if (r.session?.id) {
         activateSession(r.session.id); await loadSession(r.session.id); refreshSessions(); refreshTree(r.session.id)
-        setInfo(`🍴 Đã fork → phiên mới ${r.session.id}`)
+        setInfo(t(`🍴 Đã fork → phiên mới ${r.session.id}`, `🍴 Forked → new session ${r.session.id}`))
       }
     } catch (e) { setErrorBanner(String(e)) }
     finally { setBusyTool(null) }
@@ -634,8 +636,8 @@ export default function App() {
     setBusyTool('compact')
     try {
       const r = await api.compact(sid)
-      if (r.ok) { await loadSession(sid); refreshCtx(sid); setInfo(`🧹 Đã nén ${r.before} → ${r.after} tin nhắn`) }
-      else setErrorBanner(r.message ?? 'Không nén được')
+      if (r.ok) { await loadSession(sid); refreshCtx(sid); setInfo(t(`🧹 Đã nén ${r.before} → ${r.after} tin nhắn`, `🧹 Compacted ${r.before} → ${r.after} messages`)) }
+      else setErrorBanner(r.message ?? t('Không nén được', 'Could not compact the conversation'))
     } catch (e) { setErrorBanner(String(e)) }
     finally { setBusyTool(null) }
   }
@@ -645,8 +647,8 @@ export default function App() {
     setBusyTool('init')
     try {
       const r = await api.initAgents(sid)
-      if (r.ok) { refreshTree(sid); setInfo('🚀 Đã tạo AGENTS.md') }
-      else setErrorBanner(r.message ?? 'Không tạo được AGENTS.md')
+      if (r.ok) { refreshTree(sid); setInfo(t('🚀 Đã tạo AGENTS.md', '🚀 Created AGENTS.md')) }
+      else setErrorBanner(r.message ?? t('Không tạo được AGENTS.md', 'Could not create AGENTS.md'))
     } catch (e) { setErrorBanner(String(e)) }
     finally { setBusyTool(null) }
   }
@@ -708,13 +710,13 @@ export default function App() {
       return (
         <div key={it.id} className="msg user">
           {editable && (
-            <button className="msg-edit" title="Sửa & chạy lại từ đây"
+            <button className="msg-edit" title={t('Sửa & chạy lại từ đây', 'Edit and rerun from here')}
               onClick={() => { setEditing({ index: it.msgIndex as number, text: it.text, itemId: it.id }) }}>✏️</button>
           )}
           <div className="bubble">
             {it.images && it.images.length > 0 && (
               <div className="msg-images">
-                {it.images.map((src, i) => <img key={i} src={src} alt={`ảnh ${i + 1}`} />)}
+                {it.images.map((src, i) => <img key={i} src={src} alt={t(`ảnh ${i + 1}`, `image ${i + 1}`)} />)}
               </div>
             )}
             {it.text}
@@ -733,7 +735,7 @@ export default function App() {
     if (it.kind === 'reasoning') {
       return it.text.trim() ? (
         <details key={it.id} className="reasoning" open={it.streaming}>
-          <summary>💭 Suy nghĩ{it.streaming ? '…' : ''}</summary>
+          <summary>💭 {t('Suy nghĩ', 'Reasoning')}{it.streaming ? '…' : ''}</summary>
           <div className="reasoning-body">{it.text}</div>
         </details>
       ) : null
@@ -747,7 +749,7 @@ export default function App() {
               <span className="tool-icon">{it.status === 'running' ? <span className="spinner" /> : '🧩'}</span>
               <span className="tool-label">Sub-agent{it.model && it.model !== 'inherit' ? ` · ${it.model}` : ''}</span>
               <code className="tool-arg">{it.task.slice(0, 60)}</code>
-              <span className="tool-status">{it.status === 'running' ? `${it.tools} tools…` : 'xong'}</span>
+              <span className="tool-status">{it.status === 'running' ? `${it.tools} tools…` : t('xong', 'done')}</span>
             </div>
             {it.output && (
               <div className="tool-body"><pre>{it.output.slice(0, 4000)}</pre></div>
@@ -789,9 +791,9 @@ export default function App() {
           <div className={`tool-card ${done === it.items.length && it.items.length > 0 ? 'ok' : ''}`}>
             <div className="tool-head">
               <span className="tool-icon">📋</span>
-              <span className="tool-label">Tiến độ</span>
-              <code className="tool-arg">{done}/{it.items.length} việc xong</code>
-              <span className="tool-status">{done === it.items.length ? 'hoàn tất' : 'đang làm'}</span>
+              <span className="tool-label">{t('Tiến độ', 'Progress')}</span>
+              <code className="tool-arg">{done}/{it.items.length} {t('việc xong', 'completed')}</code>
+              <span className="tool-status">{done === it.items.length ? t('hoàn tất', 'complete') : t('đang làm', 'in progress')}</span>
             </div>
             <div className="tool-body todo-list">
               {it.items.map((x, i) => (
@@ -822,7 +824,7 @@ export default function App() {
     } catch { /* login vẫn hiển thị với policy đã nạp trước đó */ }
   }
 
-  if (authLoading) return <main className="login-page"><div className="auth-loading">⚡ Đang kiểm tra phiên…</div></main>
+  if (authLoading) return <main className="login-page"><div className="auth-loading">{t('⚡ Đang kiểm tra phiên…', '⚡ Checking your session…')}</div></main>
   if (!user) {
     return <LoginScreen googleEnabled={googleEnabled} registrationEnabled={registrationEnabled}
       needsSetup={needsSetup} onLoggedIn={(u) => { setNeedsSetup(false); setUser(u) }} />
@@ -849,22 +851,22 @@ export default function App() {
           onClose={() => setShowSb(false)}
         />
       )}
-      {showSb && <button className="sb-scrim" aria-label="Đóng danh sách phiên" onClick={() => setShowSb(false)} />}
+      {showSb && <button className="sb-scrim" aria-label={t('Đóng danh sách phiên', 'Close session list')} onClick={() => setShowSb(false)} />}
 
       <main className="chat-pane">
         <header className="chat-topbar">
-          <button className="sb-toggle" aria-label="Danh sách phiên" aria-expanded={showSb}
+          <button className="sb-toggle" aria-label={t('Danh sách phiên', 'Session list')} aria-expanded={showSb}
             onClick={() => setShowSb((v) => !v)}>☰</button>
           <div className="session-heading">
-            <strong>{currentSession?.title || 'Phiên mới'}</strong>
-            <span>{sid ? `ID ${sid}` : 'Chưa có phiên'}</span>
+            <strong>{currentSession?.title || t('Phiên mới', 'New session')}</strong>
+            <span>{sid ? `ID ${sid}` : t('Chưa có phiên', 'No session')}</span>
           </div>
           <div className="topbar-actions">
             {settings?.demo && <span className="topbar-demo">DEMO</span>}
             <button className={`topbar-btn workspace-toggle ${showWorkspace ? 'on' : ''}`}
-              aria-label={showWorkspace ? 'Đóng Workspace' : 'Mở Workspace'} aria-expanded={showWorkspace}
+              aria-label={showWorkspace ? t('Đóng Workspace', 'Close Workspace') : t('Mở Workspace', 'Open Workspace')} aria-expanded={showWorkspace}
               onClick={() => setShowWorkspace((v) => !v)}><span aria-hidden="true">▤</span><span>Workspace</span></button>
-            <button className="topbar-btn topbar-settings" aria-label="Mở cài đặt nhanh"
+            <button className="topbar-btn topbar-settings" aria-label={t('Mở cài đặt nhanh', 'Open quick settings')}
               onClick={() => setSettingsOpen(true)}>⚙</button>
           </div>
         </header>
@@ -872,13 +874,13 @@ export default function App() {
           {items.length === 0 && !batch && (
             <div className="hero">
               <div className="hero-eyebrow"><span>⚡</span> LOCAL · PRIVATE · READY</div>
-              <h1>Bạn muốn xây dựng điều gì?</h1>
-              <p>Forge đọc code, chỉnh file và chạy lệnh ngay trong workspace của bạn.</p>
+              <h1>{t('Bạn muốn xây dựng điều gì?', 'What do you want to build?')}</h1>
+              <p>{t('Forge đọc code, chỉnh file và chạy lệnh ngay trong workspace của bạn.', 'Forge reads code, edits files, and runs commands right in your workspace.')}</p>
               <div className="hero-examples">
                 {[
-                  ['🎮', 'Tạo một trò chơi', 'Viết game snake bằng HTML/JS rồi mở thử'],
-                  ['📊', 'Khám phá dữ liệu', 'Phân tích dữ liệu csv trong workspace'],
-                  ['🚀', 'Xây REST API', 'Tạo REST API Python đơn giản + test'],
+                  ['🎮', t('Tạo một trò chơi', 'Build a game'), t('Viết game snake bằng HTML/JS rồi mở thử', 'Create a Snake game with HTML/JS and open it')],
+                  ['📊', t('Khám phá dữ liệu', 'Explore data'), t('Phân tích dữ liệu csv trong workspace', 'Analyze CSV data in the workspace')],
+                  ['🚀', t('Xây REST API', 'Build a REST API'), t('Tạo REST API Python đơn giản + test', 'Create a simple Python REST API with tests')],
                 ].map(([icon, title, prompt]) => (
                   <button key={prompt} onClick={() => { setInput(prompt); taRef.current?.focus() }}>
                     <span className="example-icon" aria-hidden="true">{icon}</span>
@@ -887,11 +889,11 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <div className="hero-tips" aria-label="Mẹo nhanh">
+              <div className="hero-tips" aria-label={t('Mẹo nhanh', 'Quick tips')}>
                 <span><code>/review</code> review diff</span>
-                <span><code>/diff</code> xem thay đổi</span>
-                <span><code>@file.py</code> đính file</span>
-                <span><code># ghi chú</code> ghi nhớ nhanh</span>
+                <span><code>/diff</code> {t('xem thay đổi', 'view changes')}</span>
+                <span><code>@file.py</code> {t('đính file', 'attach a file')}</span>
+                <span><code>{t('# ghi chú', '# note')}</code> {t('ghi nhớ nhanh', 'quick memory')}</span>
               </div>
             </div>
           )}
@@ -900,7 +902,7 @@ export default function App() {
             <div key={`g${g.index}`} className="batch-group">
               <div className="batch-head">
                 <span className={`st ${g.status === 'done' ? 'st-ok' : g.status === 'error' ? 'st-bad' : 'st-warn'}`}>
-                  {g.status === 'running' ? 'đang chạy…' : g.status}
+                  {g.status === 'running' ? t('đang chạy…', 'running…') : g.status}
                 </span>
                 <b>Task {g.index + 1}</b>
                 <span className="batch-title">{g.title.replace(/^⚔ [^:]+: /, '')}</span>
@@ -913,25 +915,25 @@ export default function App() {
           {errorBanner && (
             <div className="msg error-msg">
               <span className="error-text">⚠ {errorBanner}</span>
-              <button className="error-dismiss" title="Đóng" onClick={() => setErrorBanner(null)}>✕</button>
+              <button className="error-dismiss" title={t('Đóng', 'Close')} onClick={() => setErrorBanner(null)}>✕</button>
             </div>
           )}
           {info && (
             <div className="msg info-msg">
               <span className="error-text">{info}</span>
-              <button className="error-dismiss" title="Đóng" onClick={() => setInfo(null)}>✕</button>
+              <button className="error-dismiss" title={t('Đóng', 'Close')} onClick={() => setInfo(null)}>✕</button>
             </div>
           )}
         </div>
 
         {showJump && (
-          <button className="scroll-bottom" onClick={jumpToBottom} title="Xuống cuối">↓</button>
+          <button className="scroll-bottom" onClick={jumpToBottom} title={t('Xuống cuối', 'Jump to latest')}>↓</button>
         )}
 
         <div className="composer">
           {settings?.demo && (
             <div className="demo-banner">
-              <strong>DEMO</strong> — agent đang dùng kịch bản mẫu; tool vẫn chạy thật. Thêm provider key trong Cài đặt để dùng model thật.
+              <strong>DEMO</strong> — {t('agent đang dùng kịch bản mẫu; tool vẫn chạy thật. Thêm provider key trong Cài đặt để dùng model thật.', 'the agent is using a scripted model; tools still run for real. Add a provider key in Settings to use a real model.')}
             </div>
           )}
           {editing && (
@@ -947,24 +949,24 @@ export default function App() {
                 autoFocus
               />
               <div className="edit-actions">
-                <small>Sửa & chạy lại — mọi tin sau tin này bị bỏ. Enter = chạy lại · Esc = huỷ</small>
-                <button className="btn-ghost btn-sm" onClick={() => setEditing(null)}>Huỷ</button>
+                <small>{t('Sửa & chạy lại — mọi tin sau tin này bị bỏ. Enter = chạy lại · Esc = huỷ', 'Edit and rerun — later messages are discarded. Enter = rerun · Esc = cancel')}</small>
+                <button className="btn-ghost btn-sm" onClick={() => setEditing(null)}>{t('Huỷ', 'Cancel')}</button>
                 <button className="btn-primary btn-sm" disabled={!editing.text.trim() || streaming}
-                  onClick={() => void rerunFrom(editing.index, editing.text, editing.itemId)}>↻ Chạy lại</button>
+                  onClick={() => void rerunFrom(editing.index, editing.text, editing.itemId)}>{t('↻ Chạy lại', '↻ Rerun')}</button>
               </div>
             </div>
           )}
           <div className="composer-toolbar">
-            <div className="mode-picker" title={currentMode.desc}>
+            <div className="mode-picker" title={t(...currentMode.desc)}>
               <span aria-hidden="true">{currentMode.icon}</span>
-              <select aria-label="Chế độ làm việc" value={chatMode}
+              <select aria-label={t('Chế độ làm việc', 'Working mode')} value={chatMode}
                 onChange={(e) => setChatMode(e.target.value as ChatMode)}>
-                {MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                {MODES.map((m) => <option key={m.id} value={m.id}>{t(...m.label)}</option>)}
               </select>
             </div>
             <button className={`parallel-toggle ${parallel ? 'on' : ''}`} aria-pressed={parallel}
-              title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ làm việc)"
-              onClick={() => setParallel(!parallel)}>⚡ <span>Song song</span></button>
+              title={t('Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ làm việc)', 'Each input line becomes an independent parallel task (available in every mode)')}
+              onClick={() => setParallel(!parallel)}>⚡ <span>{t('Song song', 'Parallel')}</span></button>
             <div className="model-picker">
               <label htmlFor="session-model-input">Model</label>
               <div className="model-input-wrap">
@@ -976,11 +978,11 @@ export default function App() {
                   }}
                   onBlur={() => { void persistSessionModel() }}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
-                  title="Model cho phiên này — lưu khi Enter/rồi ô; server tự route provider"
-                  aria-label="Model cho phiên này" />
+                  title={t('Model cho phiên này — lưu khi Enter/rồi ô; server tự route provider', 'Model for this session — saved on Enter or blur; the server routes its provider automatically')}
+                  aria-label={t('Model cho phiên này', 'Model for this session')} />
                 <span className={`model-save-state ${modelSaveState}`} aria-live="polite"
-                  title={modelSaveState === 'error' ? 'Không lưu được model' : modelSaveState === 'dirty' ? 'Model chưa lưu' : 'Model đã lưu cho phiên'}>
-                  {modelSaveState === 'saving' ? '…' : modelSaveState === 'dirty' ? 'Chưa lưu' : modelSaveState === 'error' ? 'Lỗi' : '✓'}
+                  title={modelSaveState === 'error' ? t('Không lưu được model', 'Could not save model') : modelSaveState === 'dirty' ? t('Model chưa lưu', 'Model not saved') : t('Model đã lưu cho phiên', 'Model saved for this session')}>
+                  {modelSaveState === 'saving' ? '…' : modelSaveState === 'dirty' ? t('Chưa lưu', 'Unsaved') : modelSaveState === 'error' ? t('Lỗi', 'Error') : '✓'}
                 </span>
               </div>
             </div>
@@ -989,22 +991,22 @@ export default function App() {
             </datalist>
           </div>
           {chatMode === 'battle' && (
-            <input className="battle-models" value={battleModels} aria-label="Các model thi đấu"
+            <input className="battle-models" value={battleModels} aria-label={t('Các model thi đấu', 'Battle models')}
               onChange={(e) => setBattleModels(e.target.value)}
-              placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
+              placeholder={t('Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)', 'Battle models, comma-separated (up to 4)')} />
           )}
           {queued.length > 0 && (
             <div className="queued-list">
               {queued.map((q, i) => (
-                <span key={i} className="queued-pill" title="Sẽ tự gửi khi lượt hiện tại xong">
+                <span key={i} className="queued-pill" title={t('Sẽ tự gửi khi lượt hiện tại xong', 'Will be sent automatically when the current turn finishes')}>
                   ⏳ {q.slice(0, 60)}
-                  <button className="queued-x" title="Bỏ khỏi hàng đợi" onClick={() => unqueue(i)}>✕</button>
+                  <button className="queued-x" title={t('Bỏ khỏi hàng đợi', 'Remove from queue')} onClick={() => unqueue(i)}>✕</button>
                 </span>
               ))}
             </div>
           )}
           {menu && (
-            <div className="cmd-menu" role="listbox" aria-label="Gợi ý lệnh">
+            <div className="cmd-menu" role="listbox" aria-label={t('Gợi ý lệnh', 'Command suggestions')}>
               {menu.items.map((it, i) => (
                 <button key={it} role="option" aria-selected={i === menu.sel}
                   className={`cmd-item ${i === menu.sel ? 'on' : ''}`}
@@ -1016,7 +1018,7 @@ export default function App() {
                 </button>
               ))}
               {menu.kind === 'cmd' && (
-                <div className="cmd-foot">Lệnh tuỳ chỉnh .forge/commands/&lt;tên&gt;.md cũng gọi được: /&lt;tên&gt;</div>
+                <div className="cmd-foot">{t('Lệnh tuỳ chỉnh .forge/commands/<tên>.md cũng gọi được: /<tên>', 'Custom commands in .forge/commands/<name>.md are also available as /<name>')}</div>
               )}
             </div>
           )}
@@ -1024,22 +1026,22 @@ export default function App() {
             <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
               style={{ display: 'none' }} id="img-picker"
               onChange={(e) => { pickImages(e.target.files); e.target.value = '' }} />
-            <button className="btn-attach" aria-label="Đính kèm ảnh" title="Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)"
+            <button className="btn-attach" aria-label={t('Đính kèm ảnh', 'Attach images')} title={t('Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)', 'Attach images (up to 4 — the model must support vision)')}
               onClick={() => document.getElementById('img-picker')?.click()} disabled={streaming || pendingImages.length >= 4}>📎</button>
             <textarea
               ref={taRef}
-              aria-label="Nhiệm vụ gửi cho Forge"
+              aria-label={t('Nhiệm vụ gửi cho Forge', 'Task for Forge')}
               value={input}
               placeholder={streaming
-                ? 'Agent đang làm việc…'
+                ? t('Agent đang làm việc…', 'Agent is working…')
                 : chatMode === 'battle'
-                  ? 'Nhiệm vụ thi đấu… (Enter gửi)'
+                  ? t('Nhiệm vụ thi đấu… (Enter gửi)', 'Battle task… (Enter to send)')
                   : parallel
-                    ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
-                    : chatMode === 'direct' ? 'Hỏi gì đó… (Enter gửi)'
-                      : chatMode === 'plan' ? 'Mô tả tính năng cần lập kế hoạch…'
-                      : chatMode === 'architect' ? 'Mô tả việc cần làm — model mạnh sẽ vạch kế hoạch rồi tự thi công…'
-                        : 'Nhập nhiệm vụ… (@file.py đính kèm file · Enter gửi · Shift+Enter xuống dòng)'}
+                    ? t('Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy', 'Each line is a parallel task · Ctrl+Enter to run')
+                    : chatMode === 'direct' ? t('Hỏi gì đó… (Enter gửi)', 'Ask something… (Enter to send)')
+                      : chatMode === 'plan' ? t('Mô tả tính năng cần lập kế hoạch…', 'Describe the feature you want to plan…')
+                      : chatMode === 'architect' ? t('Mô tả việc cần làm — model mạnh sẽ vạch kế hoạch rồi tự thi công…', 'Describe the task — a strong model will plan before implementation…')
+                        : t('Nhập nhiệm vụ… (@file.py đính kèm file · Enter gửi · Shift+Enter xuống dòng)', 'Enter a task… (@file.py to attach · Enter to send · Shift+Enter for a new line)')}
               onChange={(e) => updateInput(e.target.value)}
               onKeyDown={(e) => {
                 if (menu) {
@@ -1058,31 +1060,31 @@ export default function App() {
               rows={parallel && chatMode !== 'battle' ? Math.min(6, Math.max(3, input.split('\n').length)) : Math.min(6, input.split('\n').length)}
             />
             {streaming
-              ? <button className="btn-stop" onClick={stop}>■ Dừng</button>
-              : <button className="btn-send" onClick={() => send()} disabled={!input.trim()}>Gửi ➤</button>}
+              ? <button className="btn-stop" onClick={stop}>{t('■ Dừng', '■ Stop')}</button>
+              : <button className="btn-send" onClick={() => send()} disabled={!input.trim()}>{t('Gửi ➤', 'Send ➤')}</button>}
           </div>
           <div className="composer-foot">
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
             {sessionUsage?.cost_usd != null && (
-              <span title="Chi phí ước lượng theo giá OpenRouter — chỉ tính các lượt đã chạy trong phiên này">
+              <span title={t('Chi phí ước lượng theo giá OpenRouter — chỉ tính các lượt đã chạy trong phiên này', 'Estimated cost from OpenRouter pricing — completed turns in this session only')}>
                 💵 <code>~${sessionUsage.cost_usd < 0.01 ? sessionUsage.cost_usd.toFixed(4) : sessionUsage.cost_usd.toFixed(2)}</code>
               </span>
             )}
-            {ctx && <span className={`ctx-chip ${ctx.percent !== null && ctx.percent >= 90 ? 'ctx-danger' : ctx.percent !== null && ctx.percent >= 70 ? 'ctx-warn' : ''}`} title={`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}${ctx.percent !== null && ctx.percent >= 70 ? ' · nên /compact (nút 🧹)' : ''}`}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
+            {ctx && <span className={`ctx-chip ${ctx.percent !== null && ctx.percent >= 90 ? 'ctx-danger' : ctx.percent !== null && ctx.percent >= 70 ? 'ctx-warn' : ''}`} title={t(`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}${ctx.percent !== null && ctx.percent >= 70 ? ' · nên /compact (nút 🧹)' : ''}`, `≈ ${ctx.est_tokens.toLocaleString()} tokens / ${(ctx.limit || 0).toLocaleString()} character limit · ${ctx.messages} messages${ctx.memory ? ' · includes MEMORY.md' : ''}${ctx.percent !== null && ctx.percent >= 70 ? ' · consider /compact (🧹)' : ''}`)}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
             <span className="foot-actions">
-              <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
-              <button className="foot-btn" disabled={busyTool !== null} title="Nén hội thoại bằng LLM để giải phóng context" onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} Nén</button>
-              <button className="foot-btn" disabled={busyTool !== null} title="Phân tích workspace và sinh AGENTS.md" onClick={doInit}>{busyTool === 'init' ? '…' : '🚀'} Init</button>
-              <button className="foot-btn" disabled={busyTool !== null || !sid} title="Fork phiên: copy messages + workspace thành bản mới để thử hướng khác" onClick={doFork}>{busyTool === 'fork' ? '…' : '🍴'} Fork</button>
-              <a className="foot-btn" href={sid ? `/api/sessions/${sid}/export` : '#'} download title="Tải hội thoại dạng Markdown" onClick={(e) => { if (!sid) e.preventDefault() }}>⤓ Export</a>
+              <button className="foot-btn" disabled={busyTool !== null} title={t('Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)', 'Undo the latest agent change (internal git checkpoint)')} onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>
+              <button className="foot-btn" disabled={busyTool !== null} title={t('Nén hội thoại bằng LLM để giải phóng context', 'Compact the conversation with an LLM to free context')} onClick={doCompact}>{busyTool === 'compact' ? '…' : '🧹'} {t('Nén', 'Compact')}</button>
+              <button className="foot-btn" disabled={busyTool !== null} title={t('Phân tích workspace và sinh AGENTS.md', 'Analyze the workspace and generate AGENTS.md')} onClick={doInit}>{busyTool === 'init' ? '…' : '🚀'} Init</button>
+              <button className="foot-btn" disabled={busyTool !== null || !sid} title={t('Fork phiên: copy messages + workspace thành bản mới để thử hướng khác', 'Fork this session: copy messages and workspace to explore another approach')} onClick={doFork}>{busyTool === 'fork' ? '…' : '🍴'} Fork</button>
+              <a className="foot-btn" href={sid ? `/api/sessions/${sid}/export` : '#'} download title={t('Tải hội thoại dạng Markdown', 'Download the conversation as Markdown')} onClick={(e) => { if (!sid) e.preventDefault() }}>⤓ Export</a>
             </span>
           </div>
           {pendingImages.length > 0 && (
             <div className="pending-images">
               {pendingImages.map((src, i) => (
                 <span key={i} className="pending-img">
-                  <img src={src} alt={`ảnh ${i + 1}`} />
-                  <button className="pending-x" title="Bỏ ảnh" onClick={() => setPendingImages((p) => p.filter((_, j) => j !== i))}>✕</button>
+                  <img src={src} alt={t(`ảnh ${i + 1}`, `image ${i + 1}`)} />
+                  <button className="pending-x" title={t('Bỏ ảnh', 'Remove image')} onClick={() => setPendingImages((p) => p.filter((_, j) => j !== i))}>✕</button>
                 </span>
               ))}
             </div>
@@ -1090,7 +1092,7 @@ export default function App() {
         </div>
       </main>
 
-      {showWorkspace && <button className="workspace-scrim" aria-label="Đóng vùng Workspace" onClick={() => setShowWorkspace(false)} />}
+      {showWorkspace && <button className="workspace-scrim" aria-label={t('Đóng vùng Workspace', 'Close Workspace area')} onClick={() => setShowWorkspace(false)} />}
       <FilesPane
         sid={sid ?? ''}
         tree={tree}

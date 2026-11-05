@@ -1,6 +1,6 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.37.1 "Visible provider diagnostics"** · 224 test / 34 suite · Chromium baseline 87/87 + hotfix 1/1 · mypy 0 lỗi · 39 files · bandit Medium+ 0
+> Cập nhật: 2026-11-06 · Phát hành hiện tại: **v0.38.0 "Bilingual Web UI"** · 228 test / 35 suite · Chromium UX 37/37 + English 23/23 + hotfix 1/1 · mypy 0 lỗi · 39 files · bandit Medium+ 0
 > Lịch sử v0.10 → v0.37 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
 
 ---
@@ -29,6 +29,7 @@
 | **v0.36.0** | `89f94f8` | **Persistent providers & diagnostics**: trạng thái key đúng từng provider, một key/provider cùng tồn tại, model session lưu trước prompt, Save setting không reset model, HTTP/SSE error có chi tiết redact, provider 501 actionable. 8 regression mới; toàn bộ 212 test PASS |
 | **v0.37.0** | `37e0bb6` | **Responsive shell & focused settings**: app shell gọn, sidebar/Workspace drawers, composer 5 modes, Connection cards, Theme, Settings theo role và fixed footer; guard async race, dedup model-save, validate Max tokens, keyboard/touch/focus. 8 regression mới; toàn bộ 220 test + Chromium 87/87 PASS |
 | **v0.37.1** | main (release) | **Visible provider diagnostics**: giữ SSE error sau prompt, empty completion fail-closed thay vì lưu assistant null, read-only streaming diagnostic có redaction. 4 regression mới; toàn bộ 224 test + Chromium hotfix 1/1 PASS |
+| **v0.38.0** | main (release) | **Bilingual Web UI**: Tiếng Việt/English trên login và Settings → Appearance, lưu theo thiết bị, labels/placeholders/errors/aria song ngữ; chat/batch/battle gửi language và demo theo ngôn ngữ; README + 3 ảnh English mới. 4 regression mới; toàn bộ 228 test + Chromium English 23/23 PASS |
 
 ---
 
@@ -60,10 +61,10 @@
 ### 🖥 4 giao diện
 | Giao diện | Điểm mạnh riêng |
 |---|---|
-| **Web** (`server/` + `web/`) | Login/register email/password + Google có điều kiện, auth bootstrap trước data, cookie/CSRF wrapper, reset state khi đổi user, Team admin + signup toggle, model canonical theo session; responsive sidebar/Workspace drawers, composer 5 modes, Settings theo role + Theme, keyboard/touch/focus; SSE chat/battle, terminal/files, diff, elicitation, ảnh 📎, fork/export/undo/nén/init |
+| **Web** (`server/` + `web/`) | Login/register email/password + Google có điều kiện, auth bootstrap trước data, cookie/CSRF wrapper, reset state khi đổi user, Team admin + signup toggle, model canonical theo session; responsive sidebar/Workspace drawers, composer 5 modes, Settings theo role + Theme + Tiếng Việt/English lưu theo thiết bị, keyboard/touch/focus; SSE chat/battle, terminal/files, diff, elicitation, ảnh 📎, fork/export/undo/nén/init |
 | **TUI** (`tui/`) | Toàn màn hình textual: 3 panel (sessions/chat/files), Ctrl+M đổi mode, mọi lệnh slash, modal duyệt + elicitation |
 | **CLI** (`cli/`) | REPL rich + `--once` + `--parallel` + `--battle` + `--profile`, mọi lệnh slash |
-| **Demo mode** | Không cần key vẫn chạy tool thật (kịch bản mẫu) — người mới bật là chạy |
+| **Demo mode** | Không cần key vẫn chạy tool thật (kịch bản mẫu) — người mới bật là chạy; reasoning/intro/final theo Tiếng Việt hoặc English đã chọn |
 
 ### 🌐 Server API (nhóm chính)
 `/api/health` · `/api/auth/{me,register,login,logout,users,password,registration/*,google/*}` · `/api/settings` (GET/POST: key, model, mode, web_search, allow/deny, max_tokens) · `/api/keycheck` · `/api/models` (canonical multi-provider; live OpenRouter + Gemini direct) · `/api/sessions` CRUD · `/api/sessions/{sid}/model` (PATCH, owner + CSRF) · `/api/sessions/{sid}/chat` (SSE) · `/undo` `/compact` `/init` `/fork` `/export` · `/api/batch` · `/api/battle` (SSE) · `/api/approvals/{aid}` · `/api/elicitations` + `/api/elicitation/{eid}` · `/api/workspace/{exec,open,close,tree,file,upload,export}` · `/api/mcp` CRUD
@@ -74,22 +75,26 @@
 
 | Gate | Phạm vi | Kết quả |
 |---|---|:-:|
-| Full clean regression | 34 suite `scripts/test_*.py`, gồm security + TUI + v0.37.1 hotfix, sau khi xoá `__pycache__` | **224/224 PASS** ✅ |
+| Full clean regression | 35 suite `scripts/test_*.py`, gồm security + TUI + v0.38 bilingual UI/demo | **228/228 PASS** ✅ |
 | `scripts/test_v033.py` | Secret store/hash, 3 providers, sanitized subprocess env, API redaction, cookie login/public health, release lock, CORS/preflight, rate-limit, terminal setup | **12/12** ✅ |
 | `scripts/test_v034.py` | AuthStore, anonymous/CSRF, email login/logout, Team, owner ACL, audit/usage/inbox/approval/elicitation, migration, registry/routing, concurrent providers, background owner, OIDC + RS256/JWKS local, image fail-closed, setup CLI/Web bundle, provider-specific demo/cost, member MCP/skills, first-run launcher | **17/17** ✅ |
 | `scripts/test_v035.py` | Bootstrap guard, admin-only policy, signup disabled/CSRF, validation/member-only/auto-login/duplicate/role injection, toggle/disable, IP+email rate-limit, Google policy, production bundle, owner isolation giữa hai public member | **8/8** ✅ |
 | `scripts/test_v036.py` | Ba provider key persist/reload + redaction, model session trước prompt + CSRF/owner ACL, Web-shaped chat vs image 501, provider 501 mock actionable, SSE error/done, concurrent routing, production bundle | **8/8** ✅ |
 | `scripts/test_v037.py` | Version/clientInfo, responsive shell/drawers, synchronous session ref + async owner guards, model-save dedup, Settings/Theme/role tabs/fixed footer/validation, production bundle + persistent browser suite | **8/8** ✅ |
 | `scripts/test_v0371.py` | Empty completion → error + không lưu null; completion bình thường vẫn lưu; Web chỉ reload timeline khi không có SSE error; diagnostic script + version | **4/4** ✅ |
+| `scripts/browser_v037.cjs` chạy lại trên v0.38 | Responsive shell, Settings, validation, Theme, model request discipline, member, mobile drawers, late-response guard | **37/37 PASS** ✅ |
+| `scripts/test_v038.py` | LanguageProvider/persistence; demo English chạy tool thật; default `vi` tương thích client cũ; Chat/Batch/Battle nhận và truyền language | **4/4** ✅ |
 | HTTP smoke thật | v0.34 · Uvicorn :8765 + release mode + fake users/data tạm: cookie Secure/HttpOnly, CSRF, login/logout, SSE demo, Team/owner ACL, model theo session | **22/22 PASS** ✅ |
 | Browser smoke thật | Fresh Chromium trên v0.37: audit key/model/empty-501/truncated-SSE **20/20** + responsive/Settings UX **37/37** + admin/member/model/ACL regression **14/14** + model-race **1/1** + signup **15/15** | **87/87 PASS** ✅ |
 | Browser hotfix v0.37.1 | Fresh Chromium + production bundle: SSE 401 giả lập vẫn visible sau 1.5s, prompt được giữ, không runtime error | **1/1 PASS** ✅ |
+| Browser English v0.38 | Login + localized auth errors, language switch/reload, admin/member tabs, validation, English demo + file thật, mobile drawers, không runtime error | **23/23 PASS** ✅ |
+| README screenshots | `scripts/capture_readme_v038.cjs`: production English UI + demo giả; scan desktop Settings/agent và mobile không còn text tiếng Việt ngoài ý định | **PASS** ✅ |
 | Responsive matrix | 320×720, 390×844, 768×900, 1024×768, 1440×1000; app + Settings/footer, không horizontal overflow/runtime error; mobile sidebar + Workspace drawer đã chụp/đọc | **PASS** ✅ |
-| Static checks | mypy `server/main.py` + `engine/`; TypeScript noEmit; Vite production build 42 modules | **PASS** ✅ |
+| Static checks | mypy `server/` + `engine/`; TypeScript noEmit; Vite production build 43 modules | **PASS** ✅ |
 | Security lint | bandit Medium+ trên engine/server/setup/migration/launcher | **0 finding** ✅ |
 | Ruff | Full cho new files; changed-core gate ngoại trừ legacy `E402/BLE001/S110/S112/RUF100/RUF012`; không tuyên bố toàn repo sạch | **PASS theo phạm vi** ✅ |
 
-Bundle cuối: `server/static/assets/index-CBsc0i5r.js` (234.05 kB) + `index-C17X40lX.css` (57.14 kB); Vite 42 modules.
+Bundle cuối: `server/static/assets/index-ClsnKDFI.js` (251.12 kB) + `index-Dy17wNdU.css` (57.81 kB); Vite 43 modules.
 
 Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global thay vì provider của model; battle dùng chung một demo boolean; background sub-agent mất router/owner default; architect đổi semantics TUI; demo bỏ ảnh vẫn đòi vision; `ScopedSessionStore` thiếu `allow_mcp`; launcher thiếu Authlib và còn kiểm tra shared release password. Các failure do fixture response shape/logout 204 được sửa ở test/smoke client, không nới product ACL.
 
@@ -98,6 +103,8 @@ Bug v0.36 bị repro bắt: Settings dùng mask của active provider cho mọi 
 Bug v0.37 bị repro bắt: Workspace ở laptop chỉ còn khoảng 1px khi đóng; nút ☰ mobile không đóng được sidebar; nhập Max tokens `100` đóng dialog nhưng server vẫn giữ `4096`; member mở Settings thấy các global controls nhưng không thể Save. Bản vá dùng drawer/scrim/Escape và explicit grid columns, validation + focus tại field lỗi, member tabs theo capability (Giao diện/Skills/Audit) mà không nới server ACL. Các guard mới giữ response session/tree/context/PATCH đến muộn khỏi phiên hoặc user mới; blur model không đổi không PATCH. Fresh Chromium kiểm cả delayed GET/PATCH, touch delete, keyboard/focus, Theme và member flow.
 
 Hotfix v0.37.1 từ incident Windows: OpenRouter diagnostic thật trả `401 Missing Authentication header`; UI lại im lặng vì SSE `error` bị `loadSession()` thay bằng persisted timeline ngay sau stream. v0.37.1 bỏ reload khi có SSE error, giữ prompt + cảnh báo. Mock empty stream cũng tái hiện `assistant_message: null`; Agent mới raise lỗi có model/finish_reason và không lưu assistant rỗng. Completion `OK` đối chứng vẫn stream/lưu đúng. `diagnose_llm.py` dùng synthetic prompt, không tools/session writes, redact credential và chỉ in response tối đa 6.000 ký tự. Bản vá cải thiện chẩn đoán nhưng **không tự sửa credential bị provider từ chối**.
+
+v0.38 bổ sung English mà không bỏ tiếng Việt: `LanguageProvider` mặc định `vi`, lưu `forge-language`, cập nhật `<html lang>`; login có VI/EN và Appearance có selector. Chuỗi UI, placeholder, aria/title, confirmation và auth errors được song ngữ hoá. Chat/batch/battle gửi `language`; request cũ không có field vẫn mặc định `vi`. Demo đổi reasoning/intro/final nhưng vẫn chạy tool thật; phản hồi provider thật không bị ép dịch. Browser scan bắt và đã sửa các chuỗi sót `# ghi chú`, `/skills new <tên>`, `data/audit/<ngày>.jsonl`; 3 ảnh README được chụp lại từ production English UI với tài khoản/workspace giả.
 
 **Chưa kiểm chứng:** Docker/container smoke (sandbox không có Docker CLI), Google OAuth thật bằng client production, và **nguồn HTTP 501 cụ thể trên máy Windows của user**. Empty-501 browser test và provider-501 mock kiểm cách hiển thị/xử lý, không chứng minh đó là nguồn ngoài máy user; cần banner chi tiết mới hoặc dòng log request để kết luận. OIDC đã kiểm bằng flow giả + JWT RS256/JWKS local; không dùng credential thật trong regression.
 
@@ -134,9 +141,9 @@ Hotfix v0.37.1 từ incident Windows: OpenRouter diagnostic thật trả `401 Mi
 
 ## 6. Trạng thái bàn giao
 
-- **Release:** v0.37.1, Web production build sẵn; ZIP `forge-agent-v0.37.1.zip`.
-- **Git:** nhánh main, release v0.37.1 tạo từ working tree đã kiểm; v0.37.0 `37e0bb6`, v0.36 `89f94f8` và các tag/ZIP cũ giữ nguyên.
-- **Kiểm thử:** 224/224 test · 34 suite · Chromium baseline 87/87 + hotfix 1/1 · responsive matrix 5 viewport · mypy 0 lỗi / 39 files · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
-- **Preview smoke:** uvicorn :8766, health 0.37.1, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
+- **Release:** v0.38.0, Web production build sẵn; ZIP `forge-agent-v0.38.0.zip`; v0.37.1 và artifact cũ giữ nguyên.
+- **Git:** nhánh main, release v0.38.0 tạo từ working tree đã kiểm; v0.37.1 `42a5c52`, v0.37.0 `37e0bb6` và các tag/ZIP cũ giữ nguyên.
+- **Kiểm thử:** 228/228 test · 35 suite · Chromium UX 37/37 + English 23/23 + hotfix 1/1 · responsive matrix 5 viewport ở baseline · mypy 0 lỗi / 39 files · bandit Medium+ 0.
+- **Preview smoke:** uvicorn :8766, health 0.38.0, data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
 - **Yêu cầu hệ thống:** Python 3.10+ · dependencies trong requirements (gồm Authlib) · OpenRouter/Google Gemini/custom provider hoặc demo không cần key.
 - **Giới hạn đã ghi rõ:** single process/VPS; owner ACL không phải OS sandbox; public signup chưa có SMTP verification/CAPTCHA; chưa có image-generation adapter; real Google OAuth và Docker smoke còn lại.

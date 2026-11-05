@@ -1098,7 +1098,7 @@ async def init_agents_md(agent: "Agent") -> dict:
 
 
 async def run_batch(store: SessionStore | ScopedSessionStore, tasks: list[dict], demo: bool | None = False,
-                    router: ModelRouter | None = None):
+                    router: ModelRouter | None = None, language: str = "vi"):
     """Parallel sub-agents. tasks: [{prompt, model?, title?}] (tối đa 5).
 
     Yields: task_created, task_event {index, event}, batch_done {tasks}.
@@ -1125,7 +1125,7 @@ async def run_batch(store: SessionStore | ScopedSessionStore, tasks: list[dict],
             ag = Agent(store, sid, model=model or None, router=router)
             use_demo = demo if demo is not None else not config.has_provider_credentials(
                 llm.split_model_id(model)[0])
-            src = send_demo(ag, prompt) if use_demo else ag.send(prompt)
+            src = send_demo(ag, prompt, language=language) if use_demo else ag.send(prompt)
             async for ev in src:
                 await queue.put((i, ev))
         except Exception as e:
@@ -1148,14 +1148,14 @@ async def run_batch(store: SessionStore | ScopedSessionStore, tasks: list[dict],
 
 
 async def run_battle(store: SessionStore | ScopedSessionStore, prompt: str, models: list[str],
-                     demo: bool | None = False, router: ModelRouter | None = None):
+                     demo: bool | None = False, router: ModelRouter | None = None, language: str = "vi"):
     """⚔ Battle: cùng 1 prompt chạy trên nhiều model song song (mỗi model 1 session + workspace)."""
     models = [m.strip() for m in models if m.strip()][:4]
     if not models:
         models = [config.get_model()]
     tasks = [{"prompt": prompt, "model": m,
               "title": f"⚔ {m.split('/')[-1]}: {prompt[:36]}"} for m in models]
-    async for ev in run_batch(store, tasks, demo=demo, router=router):
+    async for ev in run_batch(store, tasks, demo=demo, router=router, language=language):
         yield ev
 
 
@@ -1163,10 +1163,11 @@ async def run_battle(store: SessionStore | ScopedSessionStore, prompt: str, mode
 # Demo mode — scripted events used when no API key is configured.
 # It REALLY executes the tools so the file tree populates.
 # ---------------------------------------------------------------------------
-async def send_demo(agent: Agent, user_text: str):
+async def send_demo(agent: Agent, user_text: str, language: str = "vi"):
     import asyncio as _aio
     import json as _json
 
+    english = language.lower().startswith("en")
     s = agent.session
     s.messages.append({"role": "user", "content": user_text})
     if s.title == "New session":
@@ -1181,11 +1182,20 @@ async def send_demo(agent: Agent, user_text: str):
         yield {"type": "turn_end", "usage": None, "message_count": len(s.messages)}
         return
 
-    yield {"type": "reasoning_delta",
-           "text": "Demo mode: chưa có API key cho provider của model này. Tôi sẽ chạy một kịch bản mẫu để bạn "
-                   "thấy cách agent làm việc: ghi file → chạy lệnh → tổng kết."}
+    reasoning = (
+        "Demo mode: no API key is configured for this model's provider. I'll run a scripted scenario "
+        "so you can see the agent workflow: write a file → run a command → summarize."
+        if english else
+        "Demo mode: chưa có API key cho provider của model này. Tôi sẽ chạy một kịch bản mẫu để bạn "
+        "thấy cách agent làm việc: ghi file → chạy lệnh → tổng kết."
+    )
+    yield {"type": "reasoning_delta", "text": reasoning}
     await _aio.sleep(0.4)
     demo_text = (
+        f"This is **Demo mode** (no API key is configured for the selected provider), but the tools "
+        f"still run for real in workspace `{agent.workspace.name}`.\n\n"
+        "I'll create a small Python script and run it to demonstrate the agent loop:"
+        if english else
         f"Đây là **chế độ Demo** (chưa cấu hình API key cho provider đang chọn) — nhưng mọi thứ "
         f"bạn thấy đều chạy thật trong workspace `{agent.workspace.name}`.\n\n"
         "Tôi sẽ tạo một script Python nhỏ rồi chạy nó để minh họa vòng lặp agent:"
@@ -1229,13 +1239,22 @@ async def send_demo(agent: Agent, user_text: str):
     s.messages.append({"role": "tool", "tool_call_id": tc2["id"], "content": result["output"]})
     await _aio.sleep(0.3)
 
-    final = ("Xong! ✅ Trong 1 lượt việc, tôi đã:\n\n"
-             "1. `write_file` → tạo `hello_forge.py`\n"
-             "2. `run_command` → chạy script, thấy output thật\n\n"
-             "Bạn có thể mở tab **Files** bên phải để xem file vừa tạo. "
-             "Để dùng agent thật, vào **⚙ Settings** và nhập API key của "
-             "[OpenRouter](https://openrouter.ai/keys) — sau đó mọi prompt của bạn "
-             "sẽ được xử lý bởi model thật (Claude, GPT, Gemini, DeepSeek…).")
+    final = (
+        "Done! ✅ I used two real tools in one turn:\n\n"
+        "1. `write_file` → created `hello_forge.py`\n"
+        "2. `run_command` → ran the script and captured real output\n\n"
+        "Open the **Workspace** panel to inspect the new file. To use a real model, open "
+        "**⚙ Settings** and add an [OpenRouter](https://openrouter.ai/keys) API key — "
+        "subsequent prompts will be handled by the selected real model (Claude, GPT, Gemini, DeepSeek…)."
+        if english else
+        "Xong! ✅ Trong 1 lượt việc, tôi đã:\n\n"
+        "1. `write_file` → tạo `hello_forge.py`\n"
+        "2. `run_command` → chạy script, thấy output thật\n\n"
+        "Bạn có thể mở tab **Files** bên phải để xem file vừa tạo. "
+        "Để dùng agent thật, vào **⚙ Settings** và nhập API key của "
+        "[OpenRouter](https://openrouter.ai/keys) — sau đó mọi prompt của bạn "
+        "sẽ được xử lý bởi model thật (Claude, GPT, Gemini, DeepSeek…)."
+    )
     for ch in [final[i:i + 8] for i in range(0, len(final), 8)]:
         yield {"type": "assistant_delta", "text": ch}
         await _aio.sleep(0.02)

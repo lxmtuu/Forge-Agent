@@ -32,10 +32,10 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-@check("T1 Version 0.37.1 nhất quán package/server/engine/MCP/LSP")
+@check("T1 Version 0.38.0 nhất quán package/server/engine/MCP/LSP")
 def t1():
     for name in ("pyproject.toml", "server/main.py", "engine/__init__.py", "engine/mcp.py", "engine/lsp.py"):
-        assert "0.37.1" in read(name), name
+        assert "0.38.0" in read(name), name
 
 
 @check("T2 App shell có topbar, Workspace drawer và keyboard/touch controls")
@@ -45,9 +45,10 @@ def t2():
     files = read("web/src/components/FilesPane.tsx")
     for marker in ("chat-topbar", "showWorkspace", "workspace-scrim", "Mở Workspace", "Đóng vùng Workspace"):
         assert marker in app, marker
-    for marker in ("session-main", "Đóng sidebar", "aria-label=\"Tìm phiên\""):
+    for marker in ("session-main", "Đóng sidebar", "Close sidebar", "Tìm phiên", "Search sessions"):
         assert marker in sidebar, marker
-    for marker in ("Đóng panel Workspace", "aria-expanded={open}", "aria-label=\"Lệnh terminal\""):
+    for marker in ("Đóng panel Workspace", "Close Workspace panel", "aria-expanded={open}",
+                   "Lệnh terminal", "Terminal command"):
         assert marker in files, marker
 
 

@@ -257,8 +257,8 @@ export const api = {
     }).then((r) => j<{ ok: boolean }>(r)),
 
   /** POST chat and stream SSE events (proxy-safe, abortable). images = data URIs. */
-  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[], rerun?: boolean, model?: string) =>
-    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, model, images: images ?? [], rerun: rerun ?? false }, onEvent, signal),
+  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[], rerun?: boolean, model?: string, language?: string) =>
+    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, model, images: images ?? [], rerun: rerun ?? false, language }, onEvent, signal),
 
   rerun: (sid: string, index: number, text: string) =>
     req(`/api/sessions/${sid}/rerun`, {
@@ -313,12 +313,12 @@ export const api = {
     }).then((r) => j<{ ok: boolean }>(r)),
 
   /** Parallel sub-agents: one prompt per line/task. */
-  batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal, model?: string) =>
-    sseRequest<BatchEvent>('/api/batch', { prompts, model }, onEvent, signal),
+  batchStream: (prompts: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal, model?: string, language?: string) =>
+    sseRequest<BatchEvent>('/api/batch', { prompts, model, language }, onEvent, signal),
 
   /** ⚔ Battle: cùng 1 prompt chạy trên nhiều model song song. */
-  battleStream: (prompt: string, models: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal) =>
-    sseRequest<BatchEvent>('/api/battle', { prompt, models }, onEvent, signal),
+  battleStream: (prompt: string, models: string[], onEvent: (ev: BatchEvent) => void, signal: AbortSignal, language?: string) =>
+    sseRequest<BatchEvent>('/api/battle', { prompt, models, language }, onEvent, signal),
 
   /** Terminal tích hợp: chạy lệnh trong workspace. */
   exec: (sid: string, command: string) =>

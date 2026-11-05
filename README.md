@@ -32,7 +32,7 @@ Forge Agent gives you the engine, interface, sessions, workspaces, and data. Use
   <a href="docs/assets/forge-web-agent.png">
     <img src="docs/assets/forge-web-agent.png" alt="Forge Agent Web workspace showing an agent creating and running a Python file" width="100%">
   </a>
-  <sub>The real v0.37 Web UI, captured with demo data and no real provider credentials.</sub>
+  <sub>The real v0.38 English Web UI, captured with demo data and no real provider credentials.</sub>
 </p>
 
 ## Why Forge Agent?
@@ -103,6 +103,7 @@ The responsive Web app keeps the conversation, model controls, workspace, termin
 - **Memory and context:** `AGENTS.md`, imported project rules, quick memory, persistent lessons, and manual or automatic compaction.
 - **Automation:** background shell commands, background agents, scheduled `/loop` tasks, lifecycle hooks, and headless JSON for scripts and CI.
 - **Collaboration:** optional accounts, admin/member boundaries, Google OIDC, per-user sessions and workspaces, and exportable audit history.
+- **Vietnamese + English UI:** switch languages on the login screen or in **Settings → Appearance**. The choice is saved on the device, and scripted demos follow the selected language.
 - **Clear diagnostics:** provider errors remain visible, empty responses fail closed, and `scripts/diagnose_llm.py` tests real streaming without writing a session.
 
 ## Quick start
@@ -182,13 +183,12 @@ Interactive REPL ───┘              │
 
 ## Release verification
 
-**v0.37.1** was verified from the extracted release archive:
+**v0.38.0** was verified from the extracted release archive:
 
-- **224/224 checks passed across 34 test suites.**
-- **141/141 extracted files** matched their expected SHA-256 hashes.
-- Chromium UX regression: **87/87 checks passed**.
-- Persistent provider-error browser hotfix: **1/1 passed**.
-- TypeScript, Vite, mypy, Ruff, Bandit Medium+, archive integrity, and secret scans passed.
+- **228/228 checks passed across 35 test suites.**
+- **149/149 extracted files** matched their expected SHA-256 hashes.
+- Chromium regressions: **37/37 responsive UX**, **23/23 English/i18n**, and **1/1 persistent provider-error** checks passed.
+- TypeScript, Vite (43 modules), mypy (39 source files), scoped Ruff, Bandit Medium+, archive integrity, and secret scans passed.
 
 See [PROJECT_AUDIT.md](PROJECT_AUDIT.md) for engineering notes and release evidence.
 
@@ -208,5 +208,5 @@ See [PROJECT_AUDIT.md](PROJECT_AUDIT.md) for engineering notes and release evide
 
 <p align="center">
   <strong>Own the workspace. Choose the model. Stay in control.</strong><br>
-  <a href="https://github.com/lxmtuu/Forge-Agent/releases/latest">Download Forge Agent v0.37.1</a>
+  <a href="https://github.com/lxmtuu/Forge-Agent/releases/latest">Download Forge Agent v0.38.0</a>
 </p>

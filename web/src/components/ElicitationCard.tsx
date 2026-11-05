@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { Item } from '../types'
+import { useI18n } from '../i18n'
 
 type Schema = NonNullable<Extract<Item, { kind: 'elicitation' }>['schema']>
 
@@ -8,6 +9,7 @@ export function ElicitationCard(props: {
   item: Extract<Item, { kind: 'elicitation' }>
   onResolve: (eid: string, action: string, content?: Record<string, unknown>) => void
 }) {
+  const { t } = useI18n()
   const { item } = props
   const propsSchema: Schema['properties'] = item.schema?.properties ?? {}
   const required: string[] = item.schema?.required ?? []
@@ -36,12 +38,12 @@ export function ElicitationCard(props: {
   return (
     <div className="msg">
       <div className="elic-card">
-        <div className="elic-head">🔔 <b>{item.server}</b> cần bạn cung cấp thông tin (MCP elicitation)</div>
+        <div className="elic-head">🔔 <b>{item.server}</b> {t('cần bạn cung cấp thông tin (MCP elicitation)', 'needs additional information (MCP elicitation)')}</div>
         <div className="elic-msg">{item.message || '—'}</div>
 
         {item.url && (
           <div className="elic-url">
-            Mở URL này nếu bạn muốn tiếp tục (Forge <b>không tự mở</b>):<br />
+            {t('Mở URL này nếu bạn muốn tiếp tục (Forge', 'Open this URL if you want to continue (Forge')} <b>{t('không tự mở', 'does not open it automatically')}</b>):<br />
             <code>{item.url}</code>
           </div>
         )}
@@ -62,30 +64,30 @@ export function ElicitationCard(props: {
                   <input
                     type={def?.type === 'number' ? 'number' : 'text'}
                     value={String(values[k] ?? '')}
-                    placeholder={def?.type === 'string[]' ? 'giá-trị-1, giá-trị-2' : ''}
+                    placeholder={def?.type === 'string[]' ? t('giá-trị-1, giá-trị-2', 'value-1, value-2') : ''}
                     onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))}
                   />
                 )}
               </label>
             ))}
             {missing.length > 0 && (
-              <div className="elic-missing">Thiếu trường bắt buộc: {missing.join(', ')}</div>
+              <div className="elic-missing">{t('Thiếu trường bắt buộc:', 'Missing required fields:')} {missing.join(', ')}</div>
             )}
           </div>
         )}
 
         {answered ? (
-          <div className="elic-done">→ Đã trả lời: <b>{item.action}</b></div>
+          <div className="elic-done">{t('→ Đã trả lời:', '→ Response:')} <b>{item.action}</b></div>
         ) : (
           <div className="elic-actions">
             {!item.url && Object.keys(propsSchema).length > 0 && (
-              <button className="elic-btn ok" onClick={submit}>✓ Gửi</button>
+              <button className="elic-btn ok" onClick={submit}>{t('✓ Gửi', '✓ Submit')}</button>
             )}
             {!item.url && Object.keys(propsSchema).length === 0 && (
-              <button className="elic-btn ok" onClick={() => props.onResolve(item.eid, 'accept')}>✓ Xác nhận</button>
+              <button className="elic-btn ok" onClick={() => props.onResolve(item.eid, 'accept')}>{t('✓ Xác nhận', '✓ Confirm')}</button>
             )}
-            <button className="elic-btn bad" onClick={() => props.onResolve(item.eid, 'decline')}>✕ Từ chối</button>
-            <button className="elic-btn dim" onClick={() => props.onResolve(item.eid, 'cancel')}>Đóng</button>
+            <button className="elic-btn bad" onClick={() => props.onResolve(item.eid, 'decline')}>{t('✕ Từ chối', '✕ Decline')}</button>
+            <button className="elic-btn dim" onClick={() => props.onResolve(item.eid, 'cancel')}>{t('Đóng', 'Close')}</button>
           </div>
         )}
       </div>

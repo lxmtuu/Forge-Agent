@@ -35,7 +35,7 @@ from engine.session import ScopedSessionStore, SessionStore
 from server import auth as auth_web
 from server.auth import require_admin, require_user
 
-app = FastAPI(title="Forge Agent", version="0.37.1")
+app = FastAPI(title="Forge Agent", version="0.38.0")
 app.include_router(auth_web.router)
 # Development giữ CORS mở cho tooling; release mặc định same-origin. Muốn mở
 # cross-origin phải liệt kê rõ FORGE_CORS_ORIGINS=https://app.example,...
@@ -66,11 +66,13 @@ class ChatBody(BaseModel):
     capability: str = "code"  # code | reasoning | vision | design | tools
     images: list[str] = []  # data URI image/png|jpeg|webp|gif (tối đa 4)
     rerun: bool = False  # true: chạy lại từ tin user đã sửa (qua /rerun) — không append tin mới
+    language: str = "vi"  # Web UI language for scripted demo content
 
 
 class BattleBody(BaseModel):
     prompt: str
     models: list[str] = []
+    language: str = "vi"
 
 
 class ExecBody(BaseModel):
@@ -111,6 +113,7 @@ class McpServerBody(BaseModel):
 class BatchBody(BaseModel):
     prompts: list[str]
     model: str | None = None
+    language: str = "vi"
 
 
 class ApprovalBody(BaseModel):
@@ -1217,9 +1220,12 @@ async def chat(sid: str, body: ChatBody, request: Request, user: User = Depends(
             if demo:
                 demo_text = text
                 if images:
-                    demo_text += (f"\n\n(demo mode: bỏ qua {len(images)} ảnh đính kèm — "
-                                  "nhập API key để dùng vision)")
-                source = send_demo(agent, demo_text)
+                    demo_text += (
+                        f"\n\n(demo mode: skipped {len(images)} attached image(s) — add an API key to use vision)"
+                        if body.language.lower().startswith("en") else
+                        f"\n\n(demo mode: bỏ qua {len(images)} ảnh đính kèm — nhập API key để dùng vision)"
+                    )
+                source = send_demo(agent, demo_text, language=body.language)
             else:
                 source = agent.send(text, chat_mode=chat_mode, content=content,
                                     append_user=not body.rerun)
@@ -1274,7 +1280,7 @@ async def batch(body: BatchBody, request: Request, user: User = Depends(require_
     async def gen():
         try:
             async for ev in run_batch(db, [{"prompt": p, "model": batch_model} for p in prompts],
-                                      demo=demo, router=model_router):
+                                      demo=demo, router=model_router, language=body.language):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
@@ -1303,7 +1309,8 @@ async def battle(body: BattleBody, request: Request, user: User = Depends(requir
 
     async def gen():
         try:
-            async for ev in run_battle(db, prompt, battle_models, demo=None, router=model_router):
+            async for ev in run_battle(db, prompt, battle_models, demo=None, router=model_router,
+                                       language=body.language):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)

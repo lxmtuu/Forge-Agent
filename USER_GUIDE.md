@@ -68,6 +68,12 @@ Lưu ý chi phí: BYOK trả trực tiếp cho provider; `402/429` thường là
 - **⚙ Settings**: navigation bên trái (hoặc thanh ngang trên mobile), nội dung cuộn riêng và nút Save luôn ở footer. Admin có 9 nhóm: Kết nối · Giao diện · Team · An toàn · MCP · Dịch vụ · Skills · Audit · Hệ thống. Member thấy đúng ba nhóm usable: **Giao diện · Skills · Audit**; model theo phiên vẫn chọn ở composer.
 - Đa phiên: nút phiên mới trên thanh bên; đổi phiên không mất dữ liệu (lưu `data/sessions/`).
 
+### Đổi ngôn ngữ / Language
+
+- **Tiếng Việt:** Forge vẫn mặc định tiếng Việt. Vào **⚙ Cài đặt → 🎨 Giao diện → Ngôn ngữ giao diện** để chọn **English**, hoặc bấm **EN** ngay trên màn hình đăng nhập. Lựa chọn được lưu trên thiết bị/trình duyệt và giữ nguyên sau khi reload.
+- **English:** choose **EN** on the login screen, or open **⚙ Settings → 🎨 Appearance → Interface language** and select **English**. To return to Vietnamese, select **Tiếng Việt**. This preference is local to the current browser/device.
+- Ngôn ngữ này đổi labels, nút, placeholders, thông báo hệ thống và kịch bản **Demo**. Forge không tự dịch câu trả lời của model thật; ngôn ngữ phản hồi của provider vẫn phụ thuộc prompt và model.
+
 ## 5. Năm chế độ — dùng khi nào
 
 | Chế độ | Hành vi | Dùng cho |
@@ -145,7 +151,7 @@ Mỗi tool MCP lần đầu chạy đều **hỏi duyệt** (allowlist) — khô
 | Cổng 8000 bận | `$env:FORGE_PORT=8010` rồi chạy lại bat (hoặc tắt tiến trình cũ) |
 | Lỗi 402/429 từ model | Hết credit / quá tốc độ OpenRouter — nạp tiền hoặc đổi model (`/model`); agent có fallback tự động |
 | Tưởng API key biến mất sau Save | Từ v0.36, mở ⚙ → Kết nối và xem **Trạng thái API key các provider**. Ô password luôn trống để không trả secret thô; `đã lưu` mới là trạng thái thật. Chọn đúng provider; để trống rồi Save không xoá key |
-| Prompt đã lưu nhưng không có phản hồi/lỗi | Nâng lên v0.37.1: bản cũ có thể xoá SSE error khi reload timeline; bản mới giữ cảnh báo và chặn empty assistant. Chạy `.\.venv\Scripts\python.exe scripts\diagnose_llm.py --provider openrouter` (hoặc `--provider google`) để xem HTTP + response đã redact. **Đã lưu key không đồng nghĩa key hợp lệ** — cần Kiểm tra key rồi Save |
+| Prompt đã lưu nhưng không có phản hồi/lỗi | Nâng lên v0.38.0: bản cũ có thể xoá SSE error khi reload timeline; bản mới giữ cảnh báo và chặn empty assistant. Chạy `.\.venv\Scripts\python.exe scripts\diagnose_llm.py --provider openrouter` (hoặc `--provider google`) để xem HTTP + response đã redact. **Đã lưu key không đồng nghĩa key hợp lệ** — cần Kiểm tra key rồi Save |
 | `HTTP 501` khi tiếp tục Agent | Đọc endpoint + chi tiết trong banner mới. Nếu chi tiết từ provider nói không hỗ trợ request, đổi model có tool calling; Direct/tắt Effort chỉ để chẩn đoán vì Agent cần tools. Nếu body rỗng, chụp banner và copy dòng request 501 trong terminal Forge — chưa suy ra root cause chỉ từ status |
 | `SSE ... kết thúc trước event done` | Stream bị cắt giữa chừng hoặc server dừng; kiểm tra terminal/proxy timeout rồi thử lại. Bản mới không coi stream cụt là thành công |
 | MCP server báo `error` | `/mcp` đọc dòng error — thường là thiếu biến môi trường (đặt lại rồi `/mcp refresh`) |

@@ -559,7 +559,7 @@ async def t15():
             yield {"type": "assistant_message", "content": marker, "tool_calls": None}
             yield {"type": "turn_end", "usage": None, "message_count": len(self.session.messages)}
 
-        async def fake_demo(agent, text):
+        async def fake_demo(agent, text, language="vi"):
             marker = f"DEMO:{agent.model}"
             agent.session.messages.extend([{"role": "user", "content": text},
                                            {"role": "assistant", "content": marker}])

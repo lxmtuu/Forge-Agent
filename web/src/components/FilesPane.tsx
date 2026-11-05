@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { api } from '../api'
 import type { FileNode } from '../types'
+import { useI18n } from '../i18n'
 
 function TreeRow(props: {
   node: FileNode
@@ -35,6 +36,7 @@ function TreeRow(props: {
 }
 
 function Terminal({ sid }: { sid: string }) {
+  const { t } = useI18n()
   const [cmd, setCmd] = useState('')
   const [out, setOut] = useState('')
   const [busy, setBusy] = useState(false)
@@ -65,14 +67,14 @@ function Terminal({ sid }: { sid: string }) {
   return (
     <div className="term">
       <div className="term-head">TERMINAL</div>
-      <pre className="term-out" ref={outRef}>{out || '(gõ lệnh để chạy trong workspace — ví dụ: dir / ls)'} </pre>
+      <pre className="term-out" ref={outRef}>{out || t('(gõ lệnh để chạy trong workspace — ví dụ: dir / ls)', '(type a command to run in the workspace — e.g. dir / ls)')} </pre>
       <div className="term-row">
         <span className="term-ps1">$</span>
         <input
           value={cmd}
-          aria-label="Lệnh terminal"
+          aria-label={t('Lệnh terminal', 'Terminal command')}
           disabled={busy}
-          placeholder={busy ? 'đang chạy…' : 'lệnh…'}
+          placeholder={busy ? t('đang chạy…', 'running…') : t('lệnh…', 'command…')}
           onChange={(e) => setCmd(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); run() }
@@ -106,25 +108,26 @@ export function FilesPane(props: {
   onExport: () => void
   onClose?: () => void
 }) {
+  const { t } = useI18n()
   const uploadRef = useRef<HTMLInputElement>(null)
   return (
     <aside className="files-pane" aria-label="Workspace">
       <div className="files-head">
         <span>WORKSPACE</span>
         <div className="files-actions">
-          <button title="Tải file lên workspace" aria-label="Tải file lên workspace" onClick={() => uploadRef.current?.click()}>⬆</button>
-          <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} aria-label="Chọn file tải lên"
+          <button title={t('Tải file lên workspace', 'Upload files to workspace')} aria-label={t('Tải file lên workspace', 'Upload files to workspace')} onClick={() => uploadRef.current?.click()}>⬆</button>
+          <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} aria-label={t('Chọn file tải lên', 'Choose files to upload')}
             onChange={(e) => { props.onUpload(e.target.files); e.currentTarget.value = '' }} />
-          <button title="Xuất workspace (.zip)" aria-label="Xuất workspace" onClick={props.onExport}>⤓</button>
-          <button title="File mới" aria-label="File mới" onClick={props.onNewFile}>＋</button>
-          <button title="Làm mới" aria-label="Làm mới workspace" onClick={props.onRefresh}>⟳</button>
-          {props.selected && <button title="Xóa file" aria-label="Xóa file" onClick={props.onDelete}>🗑</button>}
-          <button className="files-close" title="Đóng panel Workspace" aria-label="Đóng panel Workspace" onClick={props.onClose}>✕</button>
+          <button title={t('Xuất workspace (.zip)', 'Export workspace (.zip)')} aria-label={t('Xuất workspace', 'Export workspace')} onClick={props.onExport}>⤓</button>
+          <button title={t('File mới', 'New file')} aria-label={t('File mới', 'New file')} onClick={props.onNewFile}>＋</button>
+          <button title={t('Làm mới', 'Refresh')} aria-label={t('Làm mới workspace', 'Refresh workspace')} onClick={props.onRefresh}>⟳</button>
+          {props.selected && <button title={t('Xóa file', 'Delete file')} aria-label={t('Xóa file', 'Delete file')} onClick={props.onDelete}>🗑</button>}
+          <button className="files-close" title={t('Đóng panel Workspace', 'Close Workspace panel')} aria-label={t('Đóng panel Workspace', 'Close Workspace panel')} onClick={props.onClose}>✕</button>
         </div>
       </div>
       <div className="files-tree">
         {props.tree.length === 0
-          ? <div className="empty">Workspace trống.<br />Nhờ agent tạo file nhé!</div>
+          ? <div className="empty">{t('Workspace trống.', 'Workspace empty.')}<br />{t('Nhờ agent tạo file nhé!', 'Ask the agent to create a file!')}</div>
           : props.tree.map((n) => (
             <TreeRow key={n.name} node={n} depth={0} path={n.name} selected={props.selected} onOpen={props.onOpen} />
           ))}
@@ -137,15 +140,15 @@ export function FilesPane(props: {
               className={`btn-save ${props.dirty ? 'dirty' : ''}`}
               onClick={props.onSave}
               disabled={!props.dirty}
-            >{props.dirty ? '● Lưu' : 'Đã lưu'}</button>
+            >{props.dirty ? t('● Lưu', '● Save') : t('Đã lưu', 'Saved')}</button>
           </div>
           <textarea
             className="editor-area"
-            aria-label={`Nội dung ${props.selected}`}
+            aria-label={t(`Nội dung ${props.selected}`, `Contents of ${props.selected}`)}
             spellCheck={false}
             value={props.content ?? ''}
             onChange={(e) => props.onChange(e.target.value)}
-            placeholder="(file trống)"
+            placeholder={t('(file trống)', '(empty file)')}
           />
         </div>
       )}

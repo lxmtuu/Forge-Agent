@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 **212 test / 32 suite**; v0.37.1 hiện hành **224 test / 34 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 **212 test / 32 suite**; v0.37.1 **224 test / 34 suite**; v0.38.0 hiện hành **228 test / 35 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -338,6 +338,20 @@ Incident Windows có nhiều prompt nhưng không assistant/error. Read-only dia
 | Phạm vi | Không thay secret store, provider headers, ACL/CSRF hay model routing. Hotfix làm lỗi nhìn thấy được; user vẫn phải sửa credential bị OpenRouter từ chối |
 
 **Release gate:** 224/224 test (34 suite), hotfix 4/4; Chromium hotfix 1/1; mypy 39 files; TypeScript noEmit + Vite 42 modules; Bandit Medium+ 0. Baseline v0.37 Chromium 87/87 và responsive matrix 5 viewport giữ nguyên.
+
+## 3p. v0.38.0 — Bilingual Web UI và English release assets
+
+Mục tiêu là thêm English mà giữ tiếng Việt mặc định, không thay đổi quyền, provider routing hay phản hồi model thật. `LanguageProvider` bọc App, đọc/ghi `forge-language`, cập nhật `<html lang>` và cung cấp `t(vi, en)`. Login có VI/EN để người dùng mới chọn trước khi xác thực; Settings → Appearance có selector tương đương cho admin/member.
+
+| Hạng mục | Thay đổi + kiểm chứng |
+|---|---|
+| Web coverage | App shell, Sidebar, Files/Terminal, Login, Tool/Approval/Elicitation cards và toàn bộ Settings tabs dùng translator cho text, placeholder, title/aria, errors và confirmations. AST scan không còn raw JSX tiếng Việt ngoài nhãn `Tiếng Việt` cố ý |
+| Language contract | Chat/Batch/Battle body có optional `language`, mặc định `vi`; Web gửi lựa chọn hiện tại. Client cũ không gửi field vẫn nhận demo tiếng Việt |
+| Demo + auth errors | `send_demo` đổi reasoning/intro/final theo ngôn ngữ nhưng vẫn ghi/chạy `hello_forge.py` thật. Login localize các lỗi auth đã biết. Provider output thật không bị ép dịch |
+| Browser | 23/23 English checks: login, persistence, admin/member, validation, demo + workspace file, mobile; 37/37 UX tiếng Việt và 1/1 SSE hotfix chạy lại PASS, không runtime error |
+| README assets | 3 PNG mới từ production English UI + account/workspace giả, không credential thật. Capture script scan visible text trên desktop agent/Settings/mobile và đã bắt/sửa `# ghi chú`, `<tên>`, `<ngày>` sót |
+
+**Release gate:** 228/228 test (35 suite) trên working tree và ZIP giải nén; 149/149 file đối chiếu SHA-256; Chromium 37/37 + 23/23 + 1/1; mypy 39 files; TypeScript noEmit + Vite 43 modules; Bandit Medium+ 0; Ruff theo scoped gate với legacy findings đã ghi rõ. Ảnh 1440×1000 (desktop) và 390×844 (mobile) được đọc lại sau capture/optimize.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
