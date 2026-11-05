@@ -193,6 +193,10 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
+### 🚀 Chạy nhanh (v0.31)
+
+Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
+
 ### 🔐 OAuth 2.1 cho connectors (v0.20)
 
 Playwright (điều khiển browser, 25 tool) · File System (`FORGE_FS_DIR`=<thư mục>) · Postgres (`DATABASE_URL`=connection string, chỉ-đọc) · Github (`/connectors auth github <PAT>`) · Context7 · Sequential Thinking — thêm nhanh bằng `/connectors add <tên>`, xem tool bằng `/mcp`. Biến môi trường được resolve lúc server spawn — đổi env xong gõ `/mcp refresh`.

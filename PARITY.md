@@ -314,6 +314,10 @@ Cộng OAuth 2.1 (Notion/Sentry/Linear) + hub Composio (500+ app). `$VAR` trong 
 
 Tab 📘 Audit (từ v0.18) nâng cấp chuẩn log-viewer: quick-filter **Tất cả/✅/❌**, cột **phiên** (sid), **click dòng** xem args JSON đầy đủ + ghi chú. Token trong log vẫn tự mask (test E2E). Bài học: claim backlog phải kiểm chứng bằng git — P3 audit UI thực ra đã đóng từ v0.18, đề mục stale đã được sửa.
 
+## 🚀 v0.31 "Onboarding" — 1 click là chạy
+
+`run_forge.bat` (Windows, double-click): tự .venv → tự cài → tự mở trình duyệt; banner tiếng Việt UTF-8 chuẩn mọi máy (theo research codepage-bat: logic chữ nằm ở Python helper, bat thuần ASCII). `--check` khám phá môi trường trước khi cài. **USER_GUIDE.md** tiếng Việt 11 mục cho người mới, có test bảo đảm mọi lệnh trong guide tồn tại thật trong code. Đối thủ cần bước `npm install -g` / install script; Forge: giải nén + double-click.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

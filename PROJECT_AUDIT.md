@@ -205,6 +205,22 @@ Yêu cầu chọn "Audit-log UI bảng (P3)". **Điều tra bằng git làm lộ
 
 **Kết quả vòng 14: 153/153 test (26 suite) · mypy 0 · bandit Medium+ 0 · tsc/vite build ✓.**
 
+## 3h. Vòng 15 (v0.31) — Onboarding: launcher 1-click + USER_GUIDE tiếng Việt
+
+Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Research trước: (1) bat phải **pure-ASCII** vì cmd parse file theo codepage console TRƯỚC khi chcp trong file kịp chạy → chữ có dấu chuyển hết vào `scripts/launch.py` (Python tự reconfigure stdout UTF-8); (2) pattern onboarding đối thủ (Claude Code quickstart): install → verify → chạy → hướng dẫn xác thực lần đầu.
+
+| Thành phần | Chi tiết |
+|---|---|
+| `run_forge.bat` | wrapper mỏng ASCII: tìm `py -3` → `python`; lỗi không có Python → hướng dẫn + pause; double-click chạy được |
+| `scripts/launch.py` | logic thật: tạo `.venv` (lần đầu) → `pip install -e .` → chạy uvicorn → chờ cổng → mở browser; `--check` khám phá môi trường không khởi động; `FORGE_PORT` đổi cổng; cổng bận → mở luôn tab, không chạy bản thứ hai |
+| `run_forge.sh` | macOS/Linux mỏng, exec launch.py |
+| `USER_GUIDE.md` | 11 mục đánh số + phụ lục lệnh: yêu cầu → cài/chạy 2 bước → key OpenRouter → 3 chế độ → việc thường ngày → skills/subagents → 18 MCP → an toàn → sự cố (bảng) → cập nhật/gỡ |
+| **Test chống bịa docs** | test_v031-T4: tách MỌI token `/slash` khỏi guide (đã strip URL) — mỗi token phải tồn tại trong source cli/tui/server/engine; T1 assert bat thuần ASCII + không chữ chcp |
+
+**E2E thật của launcher (sandbox):** venv tạo thật → pip install thật → server :8010 lên thật → health ok · demo true → banner UTF-8 chuẩn.
+
+**Kết quả vòng 15: 158/158 test (27 suite) · mypy 0 · bandit Medium+ 0.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
