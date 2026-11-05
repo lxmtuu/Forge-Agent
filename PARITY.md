@@ -306,6 +306,10 @@ Test: **4/4 suite v0.27 (frontmatter surgery đủ trường hợp + REST roundt
 
 Cộng OAuth 2.1 (Notion/Sentry/Linear) + hub Composio (500+ app). `$VAR` trong args được resolve lúc spawn — đổi env chỉ cần refresh.
 
+## 🧭 v0.29 "MCP catalog mở rộng" — 18 preset theo research
+
+7 gói mới: **Stripe** (remote chính thức, Restricted Key như Bearer) · **Atlassian** v2 · **Vercel** · **Supabase** remote read_only · **Memory** (knowledge-graph) · **Fetch** (uvx) · **Brave Search** (gói chính thức `@brave`). Loại có chủ đích các bản archived upstream (github/slack/brave stdio cũ, puppeteer, sqlite) — lý do đầy đủ trong **MCP_CATALOG.md**. Cộng OAuth 2.1 tự chạy (Notion/Sentry/Linear) + hub 500+ app.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

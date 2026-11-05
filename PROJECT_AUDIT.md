@@ -180,6 +180,18 @@ Yêu cầu: kiểm tra đã có **MCP Playwright · File System · Postgres · G
 
 **Kết quả vòng 12: 144/144 test (24 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
 
+## 3j. Vòng 13 (v0.29) — Research & mở rộng MCP catalog
+
+Yêu cầu: "xem còn các MCP nào nữa" — research 3 hướng (PulseMCP/toplist landscape, remote chính thức Stripe/Atlassian/Vercel, gói stdio active vs archived) trước khi chọn.
+
+**Thêm 7 preset (11 → 18):** stripe (`mcp.stripe.com`, Bearer Restricted Key — research: OAuth hoặc API key), atlassian (`mcp.atlassian.com/v2/mcp`), vercel (`mcp.vercel.com`), supabase remote (mặc định read_only), memory (npx chính thức, E2E thật: create_entities/search_nodes vào specs), fetch (uvx `mcp-server-fetch` — E2E skip khi máy thiếu uv), brave-search (**gói chính thức mới `@brave/brave-search-mcp-server`** — bản modelcontextprotocol đã archived).
+
+**Cố tình KHÔNG thêm (ghi lý do trong MCP_CATALOG.md):** server-github/brave/slack stdio (archived upstream), git/time/everything (trùng/trivial), puppeteer/sqlite/redis/gdrive (archived hoặc OAuth service-account phức tạp — Google apps qua hub Composio).
+
+**Bài học vòng 13:** (1) cùng một server có thể có vòng đời 2 đời — active tại modelcontextprotocol/servers vs servers-archived: PHẢI trỏ gói mới nhất (brave là ví dụ); (2) endpoint remote phải lấy từ docs nhà cung cấp/nguồn độc lập ≥2 — không đoán URL authorize/token nếu chưa thấy tài liệu (vercel/atlassian → oauth-pending + hub thay vì bịa endpoint).
+
+**Kết quả vòng 13: 149/149 test (25 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

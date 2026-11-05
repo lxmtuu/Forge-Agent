@@ -55,6 +55,40 @@ PRESETS: dict[str, dict] = {
                      "trước khi thêm. Chỉ READ-ONLY theo thiết kế — truy vấn SELECT/EXPLAIN thôi. "
                      "Xoá connector + đặt DATABASE_URL khác để đổi DB.",
     },
+    "stripe": {
+        "label": "Stripe — payments, customers, invoices, subscriptions (chính thức · remote)",
+        "transport": "http",
+        "url": "https://mcp.stripe.com",
+        "auth": "api-key",
+        "auth_hint": "Khuyến nghị Restricted Key (dashboard.stripe.com/apikeys → Restricted key, giới hạn "
+                     "quyền) dán qua /connectors auth Stripe <rk_...>; cũng nhận secret key sk_... "
+                     "như Bearer. Tool: stripe_api_search/details/read/write (write có bước xác nhận).",
+        "headers": {"Authorization": "Bearer {token}"},
+    },
+    "atlassian": {
+        "label": "Atlassian — Jira, Confluence, Compass (chính thức · remote v2)",
+        "transport": "http",
+        "url": "https://mcp.atlassian.com/v2/mcp",
+        "auth": "oauth-pending",
+        "auth_hint": "OAuth 2.1 phía Atlassian (client phải đăng ký trước với Atlassian) — cách chắc ăn "
+                     "hiện nay: hub Composio (managed OAuth) cho Jira/Confluence. Cần site Atlassian Cloud.",
+    },
+    "vercel": {
+        "label": "Vercel — deployments, logs, environments (chính thức · remote)",
+        "transport": "http",
+        "url": "https://mcp.vercel.com",
+        "auth": "oauth-pending",
+        "auth_hint": "OAuth phía Vercel (client phải đăng ký trước) — dùng hub Composio, hoặc gói "
+                     "vercel CLI riêng. Cần tài khoản Vercel có project.",
+    },
+    "supabase": {
+        "label": "Supabase — Postgres, SQL, logs (chính thức · remote · mặc định read_only)",
+        "transport": "http",
+        "url": "https://mcp.supabase.com/mcp?read_only=true",
+        "auth": "oauth-pending",
+        "auth_hint": "Remote chính thức dùng OAuth theo tổ chức (client đăng ký trước) — dùng hub Composio. "
+                     "DB ngoài Supabase hoặc cần gọn: preset 'postgres' (cục bộ, $DATABASE_URL, chỉ đọc).",
+    },
     "notion": {
         "label": "Notion — pages, databases (chính thức · chỉ OAuth)",
         "transport": "http",
@@ -128,6 +162,34 @@ PRESETS: dict[str, dict] = {
         "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
         "auth": "none",
         "auth_hint": "Không cần cấu hình — tool 'sequentialthinking' xuất hiện sau /mcp refresh.",
+    },
+    "memory": {
+        "label": "Memory — trí nhớ knowledge-graph bền qua các phiên (chính thức · npx)",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"],
+        "auth": "none",
+        "auth_hint": "Không cần cấu hình — tool create_entities/add_observations/search_nodes…; "
+                     "dữ liệu lưu memory.json trong thư mục chạy forge-agent.",
+    },
+    "fetch": {
+        "label": "Fetch — đọc trang web → markdown gọn cho LLM (chính thức · uvx)",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-fetch"],
+        "auth": "none",
+        "auth_hint": "Cần uv: Windows 'winget install astral-sh.uv' hoặc 'pip install uv'. "
+                     "Tool fetch(url) — tôn trọng robots.txt mặc định.",
+    },
+    "brave-search": {
+        "label": "Brave Search — tìm web/ảnh/video/tin tức (gói chính thức của Brave)",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@brave/brave-search-mcp-server"],
+        "auth": "env",
+        "auth_hint": "Đặt BRAVE_API_KEY TRƯỚC khi thêm (free 2.000 truy vấn/tháng — "
+                     "brave.com/search/api). Bản cũ @modelcontextprotocol/server-brave-search "
+                     "đã archived upstream — dùng gói @brave này.",
     },
     "composio-hub": {
         "label": "Composio Hub — Gmail, Slack, Vercel… 500+ app, managed OAuth (free 20k calls/tháng)",
