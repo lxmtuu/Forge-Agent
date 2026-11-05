@@ -35,7 +35,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 | # | Tính năng | Ai có | Forge | Ưu tiên |
 |---|---|---|---|---|
 | B1 | **✅ ĐÃ LÀM v0.22** Auto-commit (opt-in) mỗi lượt — git init ngầm workspace, message Conventional Commits do model rẻ sinh (fallback heuristic), attribution 🤖 | Aider (signature), Codex (auto-PR) | /commit + /autocommit ở cả 3 UI | **P0** (opt-in) |
-| B2 | Worktree isolation cho fork/subagent | Claude (/fork→worktree, isolation: worktree) | ❌ fork copy nguyên chỗ | P2 |
+| B2 | **✅ ĐÃ LÀM v0.24** Worktree isolation — sub-agent `isolation=worktree` (bản sao git-worktree từ checkpoint, merge/discard có chủ đích) + fork xuất từ snapshot (nhanh, nhất quán) | Claude (/fork→worktree, isolation: worktree) | /worktree merge\|discard đủ 3 UI | P2 |
 
 ### Nhóm C — Hooks & sự kiện
 

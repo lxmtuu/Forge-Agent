@@ -105,6 +105,12 @@ class SessionStore:
                 pass
         src_ws = self.workspace(sid)
         dst_ws = config.WORKSPACES_DIR / ns.id
+        try:
+            from . import worktree as fwt
+            if fwt.export_tree_sync(sid, dst_ws):  # B2: fork từ snapshot (nhanh, nhất quán)
+                return ns
+        except Exception:  # noqa: BLE001 — archive lỗi → copytree như cũ
+            pass
         if src_ws.exists():
             shutil.copytree(
                 src_ws, dst_ws,

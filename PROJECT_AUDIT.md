@@ -121,6 +121,17 @@
 
 **Kết quả vòng 7: 129/129 test (20 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
+## 3h. Vòng 8 (v0.24) — Worktree isolation
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **B2** | **Sub-agent `isolation=worktree`** | `engine/worktree.py`: `make()` tạo `wt-<sub>` từ branch `iso/<sub>` rẽ nhánh tại `forge` (repo checkpoint của cha) → sub làm việc trong bản sao (sửa/thêm/XOÁ đều không đụng workspace cha — test chứng minh) → `diff_stat` theo điểm rẽ nhánh → `merge` (patch `--binary` áp bằng `git apply -C <ws-cha>`) hoặc `discard` (dọn wt + branch + repo). Lệnh `/worktree list\|merge\|discard` đủ 3 UI + REST. Không có checkpoint → tự fallback chia sẻ (an toàn hơn fail) |
+| B2-fork | **Fork từ snapshot** | fork xuất cây bằng `git archive forge` (nhanh, trạng thái nhất quán — test: file đổi SAU snapshot không lọt vào fork); không có checkpoint → copytree như cũ |
+
+**Bài học vòng 8 (quan trọng nhất từ trước tới nay):** khi chèn method mới vào tui/app.py, tôi neo edit vào dòng `async def run_turn` và **làm rơi decorator `@work(exclusive=True)`** (đính nhầm lên method mới) → `run_turn` thành coroutine không ai await → **TUI không chạy lượt nào** (RuntimeWarning "coroutine never awaited"). Chỉ nhờ test hồi quy T7 (gửi tin thật qua ô nhập) bắt được. Quy tắc mới: **(1) edit anchor phải bao gồm cả dòng decorator/context phía trên; (2) sau mọi sửa TUI phải chạy `scripts.test_tui`; (3) cảnh báo "never awaited" = decorator @work mất — kiểm tra ngay.** Thêm 2 bài học nhỏ: `git archive/diff --binary` phải đi qua pipe BYTES (decode text làm hỏng tar/patch — 2 lần dính); `git apply` không tôn trọng `--work-tree` (phải `git -C <dir> apply`).
+
+**Kết quả vòng 8: 129/129 test (21 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

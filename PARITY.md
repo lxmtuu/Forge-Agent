@@ -259,6 +259,15 @@ Test: **5/5 suite v0.23 (git thật: log/-1 chứa subject+attribution; fallback
 
 Test: **4/4 suite v0.24 (unit manager + E2E server 2 lượt demo thật persist vào session + CSV parse ngược) — tổng 129/129 / 20 suite · bandit Medium+ 0.**
 
+## 🌿 v0.24 "Worktree isolation"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🌿 Sub-agent cô lập worktree (B2)** | `spawn_subagent` với `isolation: "worktree"`: sub làm việc trong bản sao git-worktree rẽ từ checkpoint của cha — sửa/thêm/xoá KHÔNG đụng workspace của bạn; báo cáo kèm diff; gộp có chủ đích (`/worktree merge`) hoặc bỏ (`/worktree discard`) |
+| 2 | **🍴 Fork từ snapshot** | Fork xuất workspace từ checkpoint (git archive) — nhanh và nhất quán (không dính file đang ghi dở) |
+
+Test: **4/4 suite v0.25 (git thật: vòng đời make→sửa/xoá→diff→merge→discard; stub chứng minh sub chạy trong wt, cha bất động) — tổng 129/129 / 21 suite · bandit Medium+ 0.** Bắt thêm bug nghiêm trọng: chèn method mới làm rơi `@work` của `run_turn` (TUI ngừng chạy lượt) — T7 hồi quy bắt được trước khi giao.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

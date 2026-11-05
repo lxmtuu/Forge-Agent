@@ -146,14 +146,37 @@ class Agent:
         async for ev in llm.stream_chat(messages, tools=tools, model=fb):
             yield ev
 
-    async def _run_subagent(self, tc_id: str, task: str, sub_model: str | None):
-        """Chạy sub-agent: phiên mới + workspace dùng chung cha, context hoàn toàn riêng."""
+    async def _run_subagent(self, tc_id: str, task: str, sub_model: str | None,
+                            isolation: str = "shared"):
+        """Chạy sub-agent: phiên mới + context hoàn toàn riêng.
+
+        isolation="worktree": sub làm việc trong bản sao git-worktree từ checkpoint
+        của cha (B2) — sửa/xoá không đụng workspace cha; báo cáo kèm hướng gộp/bỏ.
+        """
         sub_sid = self.store.create(model=sub_model or "", title=f"\U0001F9E9 {task[:46]}").id
-        try:
-            ptr = config.WORKSPACES_DIR / f"{sub_sid}.path"
-            ptr.write_text(str(self.workspace), encoding="utf-8")
-        except OSError:
-            pass
+        iso_note = ""
+        if isolation == "worktree":
+            from . import worktree as fwt
+            wt = await fwt.make(self.session.id, sub_sid)
+            if wt:
+                try:
+                    ptr = config.WORKSPACES_DIR / f"{sub_sid}.path"
+                    ptr.write_text(wt, encoding="utf-8")
+                except OSError:
+                    pass
+                iso_note = wt
+            else:
+                iso_note = ""  # không có checkpoint → fallback chia sẻ (an toàn hơn fail)
+                yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid,
+                       "task": task[:200], "model": sub_model or "inherit"}
+                yield {"type": "subagent_progress", "id": tc_id, "tools": 0,
+                       "last_tool": "(worktree không khả dụng — dùng workspace chung)"}
+        if iso_note == "" and isolation != "worktree":
+            try:
+                ptr = config.WORKSPACES_DIR / f"{sub_sid}.path"
+                ptr.write_text(str(self.workspace), encoding="utf-8")
+            except OSError:
+                pass
         yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid,
                "task": task[:200], "model": sub_model or "inherit"}
         sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
@@ -176,6 +199,12 @@ class Agent:
         summary = "\n\n".join(t for t in texts if t).strip()[-4000:] or "(subagent không trả lời)"
         if error:
             summary = f"(subagent lỗi: {error})\n" + summary
+        if isolation == "worktree" and iso_note:
+            from . import worktree as fwt
+            stat = await fwt.diff_stat(sub_sid, self.session.id, iso_note)
+            tail = (f"\n\n📁 Cô lập worktree: {iso_note}\n{('Diff:\n' + stat) if stat else '(không khác gì điểm rẽ nhánh)'}\n"
+                    f"Gộp về đây: /worktree merge {sub_sid} · Bỏ: /worktree discard {sub_sid}")
+            summary = summary[:4200] + tail
         yield {"type": "subagent_done", "id": tc_id, "session_id": sub_sid,
                "tools": n_tools, "summary": summary[:300]}
         out = f"KẾT QUẢ SUB-AGENT (phiên {sub_sid}, {n_tools} tool calls):\n\n{summary}"
@@ -241,7 +270,8 @@ class Agent:
 
         async def _pump(tc_id: str, task_: str, model_: str | None, q):
             try:
-                async for ev in self._run_subagent(tc_id, task_, model_):
+                iso_ = str((_args or {}).get("isolation") or "shared")
+                async for ev in self._run_subagent(tc_id, task_, model_, iso_):
                     await q.put(ev)
             except Exception as e:  # noqa: BLE001
                 await q.put({"type": "subagent_output", "id": tc_id,

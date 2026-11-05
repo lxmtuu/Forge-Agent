@@ -346,7 +346,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop "
+                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop /worktree "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -420,6 +420,8 @@ class ForgeTUI(App):
             for r in rows:
                 self.add_line(f"  {r['id']}  {r['title'][:40]} · {r['message_count']} tin",
                               cls="sys-line")
+        elif cmd == "/worktree":
+            asyncio.get_running_loop().create_task(self._worktree_cmd(arg.strip()))
         elif cmd == "/loop":
             from engine import scheduler as fsched
             l_arg = arg.strip()
@@ -681,6 +683,30 @@ class ForgeTUI(App):
             self.add_line("⚠ " + (res.get("message") or "Không tạo được AGENTS.md."), cls="tool-bad")
 
     # ------------------------------------------------------- agent loop
+    async def _worktree_cmd(self, w_arg: str) -> None:
+        from engine import worktree as fwt
+        try:
+            if w_arg.startswith("merge "):
+                sub = w_arg[6:].strip()
+                ws = self.agent.workspace if self.agent else Path.cwd()
+                res = await fwt.merge(sub, self.sid, self.sid, ws)
+                self.add_line(("✅ " if res["ok"] else "❌ ") + res["message"], cls="sys-line")
+            elif w_arg.startswith("discard "):
+                res = await fwt.discard(w_arg[8:].strip(), self.sid)
+                self.add_line(("🗑 " + ", ".join(res["removed"])) if res["ok"]
+                              else "(không có gì để bỏ)", cls="sys-line")
+            else:
+                rows = await fwt.list_all()
+                if not rows:
+                    self.add_line("Không có worktree nào (spawn_subagent isolation=worktree sẽ tạo).",
+                                  cls="sys-line")
+                for r in rows:
+                    self.add_line(f"📁 {r['session']} — {r['stat']}", cls="sys-line")
+                self.add_line("Gộp: /worktree merge <phiên-con> · Bỏ: /worktree discard <phiên-con>",
+                              cls="sys-line")
+        except Exception as e:  # noqa: BLE001 — lệnh quản lý không được crash app
+            self.add_line(f"❌ worktree: {e}", cls="sys-line")
+
     @work(exclusive=True)
     async def run_turn(self, text: str, mode: str | None = None) -> None:
         _t0 = time.monotonic()

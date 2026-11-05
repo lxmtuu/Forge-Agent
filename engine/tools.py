@@ -30,6 +30,11 @@ TOOL_SPECS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "task": {"type": "string", "description": "Nhiệm vụ tự chứa cho sub-agent"},
+                    "isolation": {"type": "string", "enum": ["shared", "worktree"],
+                                  "description": "worktree = sub-agent làm việc trong BẢN SAO "
+                                                 "git-worktree tách từ checkpoint — sửa/xoá KHÔNG "
+                                                 "ảnh hưởng workspace của bạn; gộp về bằng "
+                                                 "/worktree merge, bỏ bằng /worktree discard"},
                     "model": {"type": "string",
                               "description": "Model cho sub-agent. Alias: 'inherit' (mặc định, "
                                              "dùng model hiện tại) · 'cheap' (model rẻ/miễn phí — "

@@ -429,6 +429,30 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- B2: worktree sub-agent
+@app.get("/api/worktrees")
+async def worktree_list():
+    from engine import worktree as fwt
+    return {"worktrees": await fwt.list_all()}
+
+
+@app.post("/api/worktrees/{sub_sid}/merge")
+async def worktree_merge(sub_sid: str, sid: str):
+    from engine import worktree as fwt
+    st = store.get(sid)
+    if not st:
+        raise HTTPException(404, "Session not found")
+    return await fwt.merge(sub_sid, sid, store.workspace(sid))
+
+
+@app.delete("/api/worktrees/{sub_sid}")
+async def worktree_discard(sub_sid: str, sid: str):
+    from engine import worktree as fwt
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    return await fwt.discard(sub_sid, sid)
+
+
 # ----------------------------------------------------- F1: /loop — chạy định kỳ
 class LoopBody(BaseModel):
     text: str
@@ -644,6 +668,38 @@ async def chat(sid: str, body: ChatBody, request: Request):
         a_n = int(a_arg) if a_arg.isdigit() else 20
         audit_synthetic = [{"type": "assistant_message",
                             "content": auditlog.format_listing(a_n)}]
+    # /worktree [list|merge <sub>|discard <sub>] — B2 quản lý worktree sub-agent
+    wt_synthetic: list[dict] | None = None
+    if text == "/worktree" or text.startswith("/worktree "):
+        from engine import worktree as fwt
+        w_arg = text[9:].strip()
+        if w_arg.startswith("merge "):
+            sub = w_arg[6:].strip()
+            res = await fwt.merge(sub, sid, sid, ws)
+            if res["ok"]:
+                try:
+                    from engine import checkpoints as fckpt
+                    await fckpt.snapshot(sid, ws, f"merge wt-{sub}")
+                except Exception:  # noqa: BLE001 — snapshot lỗi không xoá kết quả merge
+                    pass
+            wt_synthetic = [{"type": "assistant_message",
+                             "content": ("✅ " if res["ok"] else "❌ ") + res["message"]}]
+        elif w_arg.startswith("discard "):
+            res = await fwt.discard(w_arg[8:].strip(), sid)
+            wt_synthetic = [{"type": "assistant_message",
+                             "content": ("🗑 Đã bỏ worktree: " + ", ".join(res["removed"]))
+                                        if res["ok"] else "(không có worktree nào để bỏ)"}]
+        else:
+            rows = await fwt.list_all()
+            if not rows:
+                wt_synthetic = [{"type": "assistant_message",
+                                 "content": "Không có worktree nào. Dùng: spawn_subagent với isolation=worktree, rồi `/worktree merge <phiên-con>` để gộp."}]
+            else:
+                lines = ["### 📁 Worktree đang cô lập"]
+                for r in rows:
+                    lines.append(f"- `{r['session']}` — {r['stat']}\n  `{r['path']}`")
+                lines.append("Gộp: `/worktree merge <phiên-con>` · Bỏ: `/worktree discard <phiên-con>`")
+                wt_synthetic = [{"type": "assistant_message", "content": "\n".join(lines)}]
     # /loop [interval] [off|status] — lịch chạy định kỳ trong tiến trình (F1)
     loop_synthetic: list[dict] | None = None
     if text == "/loop" or text.startswith("/loop "):
@@ -728,9 +784,10 @@ async def chat(sid: str, body: ChatBody, request: Request):
                 text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
     synthetic: list[dict] | None = (audit_synthetic if audit_synthetic is not None else
-                                    (loop_synthetic if loop_synthetic is not None else
-                                     (connectors_synthetic
-                                      if connectors_synthetic is not None else skills_synthetic)))
+                                    (wt_synthetic if wt_synthetic is not None else
+                                     (loop_synthetic if loop_synthetic is not None else
+                                      (connectors_synthetic
+                                       if connectors_synthetic is not None else skills_synthetic))))
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

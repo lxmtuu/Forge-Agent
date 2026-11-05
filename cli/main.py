@@ -55,6 +55,7 @@ HELP = """[bold]Lệnh[/bold]
   /rename <tên>        đổi tên phiên        /find <từ-khóa>  tìm phiên (tiêu đề+nội dung)
   /commit              commit thay đổi workspace (message conventional)   /autocommit [on|off]
   /loop <30m|1h> <tác vụ>  chạy định kỳ trong tiến trình · /loop off · /loop xem trạng thái
+  /worktree [merge|discard]  quản lý worktree của sub-agent (isolation=worktree)
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -502,6 +503,24 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows[:20]:
                 console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} "
                               f"[dim]· {r['message_count']} tin[/dim]")
+            continue
+        if text == "/worktree" or text.startswith("/worktree "):
+            from engine import worktree as fwt
+            w_arg = text[9:].strip()
+            if w_arg.startswith("merge "):
+                sub = w_arg[6:].strip()
+                res = await fwt.merge(sub, session_id, session_id, store.workspace(session_id))
+                console.print(("✅ " if res["ok"] else "❌ ") + res["message"])
+            elif w_arg.startswith("discard "):
+                res = await fwt.discard(w_arg[8:].strip(), session_id)
+                console.print(("🗑 " + ", ".join(res["removed"])) if res["ok"] else "(không có gì để bỏ)")
+            else:
+                rows = await fwt.list_all()
+                if not rows:
+                    console.print("Không có worktree nào (spawn_subagent isolation=worktree sẽ tạo).")
+                for r in rows:
+                    console.print(f"📁 {r['session']} — {r['stat']}\n   [dim]{r['path']}[/dim]")
+                console.print("[dim]Gộp: /worktree merge <phiên-con> · Bỏ: /worktree discard <phiên-con>[/dim]")
             continue
         if text == "/loop" or text.startswith("/loop "):
             from engine import scheduler as fsched

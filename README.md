@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🌿 Worktree isolation (v0.24)
+
+Bảo sub-agent làm việc trong **bản sao an toàn**: yêu cầu agent "dùng spawn_subagent với isolation=worktree" — sub sửa/xoá thoải mái mà workspace của bạn không đổi; xem diff trong báo cáo rồi quyết: `/worktree merge <phiên-con>` (gộp về) hoặc `/worktree discard <phiên-con>` (bỏ trắng). Fork phiên cũng nhanh hơn — xuất từ checkpoint nên không dính file đang ghi dở.
+
 ### 🔁 /loop + ⤓ Xuất audit (v0.23)
 
 `/loop 30m <tác vụ>` — agent tự chạy lại tác vụ mỗi 30 phút (dõi PR, chạy test định kỳ…): CLI/TUI gõ trực tiếp, web gõ trong ô chat; `/loop off` để dừng. Mỗi nhịp là 1 lượt agent thật (tool + audit log + lưu phiên). Loop sống trong tiến trình — restart là dừng. Tab 📘 Audit có nút **⤓ Xuất CSV**.
