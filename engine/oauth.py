@@ -101,7 +101,7 @@ def build_authorize_url(authorize_url: str, client_id: str, redirect_uri: str,
     return f"{authorize_url}{sep}{urllib.parse.urlencode(q)}"
 
 
-def _client_auth(data: dict, client_id: str, client_secret: str, style: str) -> httpx.BasicAuth | None:
+def _client_auth(data: dict, client_id: str, client_secret: str | None, style: str) -> httpx.BasicAuth | None:
     if client_secret:
         if style == "basic":
             return httpx.BasicAuth(client_id, client_secret)

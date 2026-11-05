@@ -96,7 +96,7 @@ class LspSession:
         method = msg.get("method", "")
         if method == "workspace/configuration":
             items = ((msg.get("params") or {}).get("items") or [])
-            result = [{} for _ in items]
+            result: list | None = [{} for _ in items]
         else:
             result = None
         try:
@@ -175,7 +175,7 @@ class LspSession:
                 "processId": None,
                 "rootUri": self.workspace.as_uri(),
                 "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
-                "clientInfo": {"name": "forge-agent", "version": "0.26.0"},
+                "clientInfo": {"name": "forge-agent", "version": "0.27.0"},
             }, timeout=15)
             if result is None:
                 return False
@@ -246,7 +246,7 @@ class LspSession:
                     line = (it.get("range", {}).get("start", {}).get("line", 0)) + 1
                     children = it.get("children") or []
                 out.append({"name": it.get("name", "?"),
-                            "kind": self.SYMBOL_KIND.get(it.get("kind"), "Symbol"),
+                            "kind": self.SYMBOL_KIND.get(it.get("kind") or 0, "Symbol"),
                             "line": line, "depth": depth})
                 walk(children, depth + 1)
 
@@ -309,7 +309,7 @@ class LspSession:
             loc = it.get("location") or {}
             out.append({
                 "name": it.get("name", "?"),
-                "kind": self.SYMBOL_KIND.get(it.get("kind"), "Symbol"),
+                "kind": self.SYMBOL_KIND.get(it.get("kind") or 0, "Symbol"),
                 "file": self._uri_to_path(loc.get("uri", "")),
                 "line": ((loc.get("range") or {}).get("start") or {}).get("line", 0) + 1,
             })
@@ -342,7 +342,7 @@ class LspSession:
             rng = d.get("range", {}).get("start", {})
             out.append({
                 "line": int(rng.get("line", 0)) + 1,
-                "severity": sev.get(d.get("severity"), "info"),
+                "severity": sev.get(d.get("severity") or 0, "info"),
                 "message": str(d.get("message", ""))[:MAX_MSG],
                 "source": d.get("source") or self.lang,
             })

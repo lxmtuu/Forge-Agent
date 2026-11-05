@@ -14,7 +14,7 @@ from . import config, guard, llm, tools
 from .auditlog import log_tool, monotonic_ms
 from .llm import LLMError
 from .mcp import manager as mcp_manager
-from .session import SessionStore
+from .session import Session, SessionStore
 
 MAX_ITERATIONS = 30
 MAX_SUBAGENTS_PER_TURN = 6   # chống phình (Anthropic: lead từng spawn 50 subagent vô ích)
@@ -113,9 +113,10 @@ class Agent:
                  depth: int = 0):
         self.depth = depth
         self.store = store
-        self.session = store.get(session_id)
-        if self.session is None:
+        s0 = store.get(session_id)
+        if s0 is None:
             raise ValueError(f"Session {session_id} not found")
+        self.session: Session = s0  # narrow cho mypy: sau raise trên, luôn khác None
         if model:
             self.session.model = model
         self.model = self.session.model or config.get_model()
@@ -558,7 +559,7 @@ class Agent:
                                     result = {"ok": True, "output": _sev["output"]}
                                 else:
                                     yield _sev
-                        log_tool(s.id, name, args, result.get("ok", False),
+                        log_tool(s.id, name, args, bool(result.get("ok", False)),
                                  monotonic_ms(_t0),
                                  "mcp" if name in mcp_routing else "internal")
                         ev = {"type": "tool_result", "id": tc["id"], "name": name,
@@ -698,7 +699,7 @@ class Agent:
                                    "items": _jtodo.loads(_tp.read_text(encoding="utf-8"))}
                         except Exception:
                             pass
-                    log_tool(s.id, name, args, result["ok"], monotonic_ms(_t0),
+                    log_tool(s.id, name, args, bool(result["ok"]), monotonic_ms(_t0),
                              "mcp" if name in mcp_routing else "internal")
                     ev = {"type": "tool_result", "id": tc["id"], "name": name,
                           "args": args, "ok": result["ok"], "output": result["output"]}

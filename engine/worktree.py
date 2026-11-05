@@ -30,16 +30,17 @@ def _repo(sid: str):
 
 
 async def _run(*args: str, timeout: float = 60) -> tuple[int, str]:
-    if not GIT:
+    git = GIT
+    if git is None:
         return 127, "git không có"
     proc = await asyncio.create_subprocess_exec(
-        GIT, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        git, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
         return 124, "timeout"
-    return proc.returncode, out.decode("utf-8", "replace").strip()
+    return proc.returncode or 0, out.decode("utf-8", "replace").strip()
 
 
 async def available_for(sid: str) -> bool:
@@ -146,7 +147,7 @@ async def discard(sub_sid: str, src_sid: str) -> dict:
 
 async def list_all() -> list[dict]:
     """Quét worktree đang tồn tại (wt-*) + dòng diff ngắn (repo cha suy từ file .git)."""
-    out = []
+    out: list[dict] = []
     if not config.WORKSPACES_DIR.exists():
         return out
     for p in sorted(config.WORKSPACES_DIR.glob("wt-*")):

@@ -285,6 +285,14 @@ Test: **5/5 suite v0.26 (bus unit · stub LLM chạy tool thật giữa lượt 
 
 Test: **4/4 suite v0.27 (frontmatter surgery đủ trường hợp + REST roundtrip + /skills không vỡ) — tổng 139/139 / 23 suite · bandit Medium+ 0.**
 
+## 🧪 v0.27 "mypy về 0"
+
+| Thành tựu | Chi tiết |
+|---|---|
+| **3 gate xanh cùng lúc** | **139/139 test (23 suite) · mypy engine/ 0 lỗi / 32 file · bandit Medium+ 0** — ít project agent tự host nào có cả 3 |
+| Bắt thêm 1 bug thật | tools.py ghi vào `proc.returncode` (property read-only của asyncio.Process) — runtime im lặng, mypy chỉ ra; thay bằng biến `hook_rc` |
+| Bài học | Baseline type **trượt khi thêm module mới mà không chạy gate** (75 → 96): từ nay mỗi vòng phải chạy cả `mypy engine/` — đã chuẩn hoá config vào pyproject.toml |
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

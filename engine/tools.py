@@ -763,8 +763,10 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
                     hook_out = out.decode("utf-8", "replace").strip()[:600]
                 except asyncio.TimeoutError:
                     proc.kill()
-                    hook_out, proc.returncode = "timeout 30s", 124
-                output += (f"\n🔗 Hook on_file_change (exit {proc.returncode}): "
+                    hook_out, hook_rc = "timeout 30s", 124
+                else:
+                    hook_rc = proc.returncode or 0
+                output += (f"\n🔗 Hook on_file_change (exit {hook_rc}): "
                            + (hook_out or "(không output)"))
         except Exception as _e:
             output += f"\n🔗 Hook on_file_change lỗi: {_e}"
@@ -788,10 +790,10 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
     p = Path(rel) if str(rel).startswith("/") else workspace / rel
     if not p.is_file():
         return f"Error: không tìm thấy file {rel}", False, None
-    if _lsp.lang_for(p) is None:
+    lang = _lsp.lang_for(p)
+    if lang is None:
         return f"Bỏ qua: {p.suffix} không phải file code có language server", True, None
-    if not _lsp.server_cmd(_lsp.lang_for(p)):
-        lang = _lsp.lang_for(p)
+    if not _lsp.server_cmd(lang):
         return (f"LSP cho {lang} chưa cài trên máy. Hướng dẫn: pip install "
                 f'\"python-lsp-server[pyflakes,pycodestyle]\" (Python) hoặc '
                 f"npm i -g typescript typescript-language-server (TS/JS).", True, None)
@@ -801,7 +803,7 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
             return f"✓ {rel}: không có lỗi LSP", True, None
         return _lsp.format_diags(diags).replace("sau khi ghi file", f"({rel})"), True, None
     # các tool còn lại cần session
-    sess = await _lsp._get_session(workspace, _lsp.lang_for(p))
+    sess = await _lsp._get_session(workspace, lang)
     if sess is None:
         return f"Error: không khởi động được language server cho {p.suffix}", False, None
     if name == "lsp_symbols":

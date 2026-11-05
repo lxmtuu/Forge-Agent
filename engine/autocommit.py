@@ -46,8 +46,8 @@ async def ensure_repo(ws) -> None:
 
 def normalize_subject(raw: str, fallback: str = "cập nhật workspace") -> str:
     """Ép về đúng 1 dòng conventional ≤72 ký tự; thiếu prefix → đoán theo nội dung."""
-    s = (raw or "").strip().strip("\"'`").splitlines()
-    s = s[0].strip() if s else ""
+    lines_ = (raw or "").strip().strip("\"'`").splitlines()
+    s = lines_[0].strip() if lines_ else ""
     if len(s) > _MAX_SUBJECT:
         s = s[:_MAX_SUBJECT - 1].rstrip() + "…"
     low = s.lower()
@@ -69,9 +69,9 @@ def _fallback_subject(user_text: str, stat: str) -> str:
             name = ln.split("|")[0].strip().split("/")[-1]
             if name:
                 files.append(name)
-    base = (user_text or "").strip().splitlines()
-    base = base[0].strip() if base else ""
-    base = (base[:48] or (", ".join(files[:3]) or "cập nhật workspace"))
+    ulines = (user_text or "").strip().splitlines()
+    first = ulines[0].strip() if ulines else ""
+    base = (first[:48] or (", ".join(files[:3]) or "cập nhật workspace"))
     kind = "fix" if any(k in (user_text or "").lower() for k in ("fix", "lỗi", "bug", "sửa")) else "feat"
     return f"{kind}: {base}"
 

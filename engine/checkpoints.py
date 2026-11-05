@@ -35,8 +35,11 @@ def _git_args(sid: str, workspace) -> list[str]:
 
 
 async def _run(args: list[str]) -> tuple[int, str]:
+    git = GIT
+    if git is None:  # không có git binary — caller đã check available() nhưng đừng nổ
+        return 127, "git không có"
     proc = await asyncio.create_subprocess_exec(
-        GIT, *args,
+        git, *args,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
     )
     try:
@@ -44,7 +47,7 @@ async def _run(args: list[str]) -> tuple[int, str]:
     except asyncio.TimeoutError:
         proc.kill()
         return 124, "timeout"
-    return proc.returncode, out.decode("utf-8", "replace").strip()
+    return proc.returncode or 0, out.decode("utf-8", "replace").strip()
 
 
 def _env_clean() -> dict:
@@ -94,8 +97,11 @@ async def snapshot(sid: str, workspace, label: str) -> str | None:
 
 
 async def _run_with_env(args: list[str], env: dict) -> tuple[int, str]:
+    git = GIT
+    if git is None:  # hàm snap/undo luôn qua _run (đã check); chốt cho mypy
+        return 127, "git không có"
     proc = await asyncio.create_subprocess_exec(
-        GIT, *args,
+        git, *args,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=env,
     )
     try:
@@ -103,7 +109,7 @@ async def _run_with_env(args: list[str], env: dict) -> tuple[int, str]:
     except asyncio.TimeoutError:
         proc.kill()
         return 124, "timeout"
-    return proc.returncode, out.decode("utf-8", "replace").strip()
+    return proc.returncode or 0, out.decode("utf-8", "replace").strip()
 
 
 async def undo(sid: str, workspace) -> dict:

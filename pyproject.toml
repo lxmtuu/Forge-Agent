@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-agent"
-version = "0.26.0"
+version = "0.27.0"
 description = "⚡ Forge — self-hosted AI coding agent (TUI + Web + CLI, Claude Code / Codex style)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,3 +31,13 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 server = ["static/**/*"]
+
+[tool.mypy]
+ignore_missing_imports = true
+python_version = "3.11"
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true

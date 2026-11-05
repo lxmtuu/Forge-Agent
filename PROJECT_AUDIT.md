@@ -153,13 +153,21 @@
 
 **Kết quả vòng 10: 139/139 test (23 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
+## 3k. Vòng 11 (v0.27) — mypy về 0
+
+| Mục | Kết quả thực đo |
+|---|---|
+| **mypy engine/ = 0 lỗi (32 file)** | Đo lại thấy baseline TRƯỢT XUỐNG 96 lỗi/7 file (v0.22–0.26 thêm autocommit/worktree/oauth nhưng chưa chạy mypy — vi phạm đúng quy tắc nhà). Sửa triệt để: (1) **narrow 1 chỗ ở nguồn** — `Agent.__init__` gán `self.session: Session = s0` sau raise → tắt 61/76 lỗi của agent.py; (2) pattern `GIT: str \| None` → gán biến cục bộ narrow trước `create_subprocess_exec` (checkpoints ×2, worktree); (3) `proc.returncode or 0` (returncode là `int \| None`); (4) tách biến list/str tái dùng trong autocommit (mypy bắt đúng chỗ code khó đọc); (5) `bool(result["ok"])` 2 chỗ log_tool; (6) sửa 1 bug tools.py thật: **ghi vào `proc.returncode` (property read-only) — thay bằng biến `hook_rc`**. Config chuẩn hoá `[tool.mypy]` trong pyproject.toml → `python -m mypy engine/` không cần flag |
+
+**Kết quả vòng 11: 139/139 test (23 suite) · mypy 0 · bandit Medium+ 0 — 3 gate đều xanh.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
 |---|---|---|
 | ~~P2~~ ✅ v0.17.2 | ~~TUI smoke~~ · ~~Audit log~~ · ~~Adversarial suite~~ | Đã làm — xem mục 3b |
 | P3 | Audit-log UI trong web (bảng lọc theo phiên/tool) | hiện /audit là text; bảng đẹp hơn |
-| P3 | mypy engine/ (baseline 75 lỗi/4 file — đã ghi v0.18, module mới bắt buộc sạch) | giảm dần theo từng vòng |
+| ~~P3~~ ✅ v0.27 | ~~mypy engine/~~ **0 lỗi / 32 file** (`python -m mypy engine/`) | gate thứ 3 xanh |
 | P3 | Audit-log xuất CSV/JSON từ web (một nút) | tiện phân tích ngoài |
 
 ## 5. Kết luận
