@@ -32,10 +32,10 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-@check("T1 Version 0.37.0 nhất quán package/server/engine/MCP/LSP")
+@check("T1 Version 0.37.1 nhất quán package/server/engine/MCP/LSP")
 def t1():
     for name in ("pyproject.toml", "server/main.py", "engine/__init__.py", "engine/mcp.py", "engine/lsp.py"):
-        assert "0.37.0" in read(name), name
+        assert "0.37.1" in read(name), name
 
 
 @check("T2 App shell có topbar, Workspace drawer và keyboard/touch controls")

@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 **212 test / 32 suite**; v0.37 hiện hành **220 test / 33 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 **212 test / 32 suite**; v0.37.1 hiện hành **224 test / 34 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -325,6 +325,19 @@ User báo trên Windows/localhost v0.35: key dường như biến mất khi mở
 | Regression artifact | `scripts/browser_v037.cjs` lưu 37 behavioral checks, URL/credentials cấu hình bằng env; `scripts/test_v037.py` có 8 static regression. Bundle mới `index-CnsaCxm0.js` + `index-C17X40lX.css` |
 
 **Release gate:** 220/220 test (33 suite, gồm security + TUI), v0.37 8/8; fresh Chromium audit 20/20 + UX 37/37 + existing 14/14 + model-race 1/1 + signup 15/15 = 87/87; responsive matrix 5 viewport; mypy `engine/` + `server/` 39 files; TypeScript noEmit + Vite build 42 modules; bandit Medium+ 0. Ruff theo scoped gate với legacy findings được ghi rõ. Real Google OAuth, Docker/container smoke và nguồn 501 ngoài máy Windows vẫn chưa kiểm chứng.
+
+## 3o. Hotfix v0.37.1 — Provider errors không được biến mất
+
+Incident Windows có nhiều prompt nhưng không assistant/error. Read-only diagnostic trên máy user cho OpenRouter `HTTP 401` + `Missing Authentication header`; không dùng credential thật trong regression. Code audit xác định Web áp SSE error vào timeline rồi gọi `loadSession()`, thay timeline bằng `session.messages` và xoá cảnh báo vì error không được persist. Controlled mock khác tái hiện empty stream → `assistant_message: null`.
+
+| Hạng mục | Vá + kiểm chứng |
+|---|---|
+| SSE error | Chỉ reload timeline sau stream không có error; giữ prompt + provider diagnostic. Fresh Chromium với SSE 401 giả lập: error vẫn visible sau 1.5s, prompt còn, không runtime error |
+| Empty completion | Agent theo `finish_reason`; không content/tool call → `LLMError` actionable, không append assistant null. Test `finish=stop` đạt; completion `OK` đối chứng vẫn stream/lưu |
+| Diagnostic | `scripts/diagnose_llm.py`: OpenRouter/Google, synthetic prompt, no tools/session writes, HTTP metadata + response tối đa 6.000 ký tự đã redact; Ruff/py_compile/mock self-test PASS |
+| Phạm vi | Không thay secret store, provider headers, ACL/CSRF hay model routing. Hotfix làm lỗi nhìn thấy được; user vẫn phải sửa credential bị OpenRouter từ chối |
+
+**Release gate:** 224/224 test (34 suite), hotfix 4/4; Chromium hotfix 1/1; mypy 39 files; TypeScript noEmit + Vite 42 modules; Bandit Medium+ 0. Baseline v0.37 Chromium 87/87 và responsive matrix 5 viewport giữ nguyên.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

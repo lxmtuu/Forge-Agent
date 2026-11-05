@@ -614,6 +614,7 @@ class Agent:
                 content_parts: list[str] = []
                 tool_calls: list[dict] | None = None
                 usage = None
+                finish_reason: str | None = None
 
                 async for ev in self._llm_with_fallback(messages, active_specs, turn_model):
                     et = ev["type"]
@@ -626,10 +627,23 @@ class Agent:
                         tool_calls = ev["tool_calls"]
                     elif et == "usage":
                         usage = ev["usage"]
+                    elif et == "finish":
+                        finish_reason = ev.get("reason")
                     elif et == "model_fallback":
                         yield ev
 
                 content = "".join(content_parts)
+                if not content.strip() and not tool_calls:
+                    detail = f" (finish={finish_reason})" if finish_reason else ""
+                    if finish_reason == "length":
+                        hint = ("Model dừng ở giới hạn token trước khi có nội dung; "
+                                "tăng Max tokens hoặc tắt Effort suy luận.")
+                    elif chat_mode != "direct":
+                        hint = "Thử Direct (không tools), chọn model khác hoặc tắt Effort suy luận."
+                    else:
+                        hint = "Thử model khác hoặc kiểm tra trạng thái/hạn mức của provider."
+                    raise LLMError(
+                        f"Model {turn_model or self.model} trả về phản hồi rỗng{detail}. {hint}")
                 assistant_msg = llm.build_assistant_message(content, tool_calls)
                 s.messages.append(assistant_msg)
                 messages.append(assistant_msg)

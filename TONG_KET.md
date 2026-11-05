@@ -1,6 +1,6 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.37.0 "Responsive shell & focused settings"** · 220 test / 33 suite · Chromium 87/87 · mypy 0 lỗi · 39 files · bandit Medium+ 0
+> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.37.1 "Visible provider diagnostics"** · 224 test / 34 suite · Chromium baseline 87/87 + hotfix 1/1 · mypy 0 lỗi · 39 files · bandit Medium+ 0
 > Lịch sử v0.10 → v0.37 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
 
 ---
@@ -27,7 +27,8 @@
 | **v0.34.0** | `908683c` | **Private team + multi-provider**: per-user cookie auth + CSRF, email/password + Google OIDC, Team admin, owner ACL toàn bộ dữ liệu, canonical model theo session, provider-aware demo/cost/fallback/sub-agent, migration CLI và first-run bootstrap. 17 regression mới; toàn bộ 196 test PASS |
 | **v0.35.0** | `7d1250a` | **Opt-in public signup + auth UX**: form đăng ký member, auto-login, admin toggle bền vững, CSRF + rate-limit IP/email, role injection guard, Google self-signup theo policy, trạng thái Google chưa cấu hình rõ ràng. 8 regression mới; toàn bộ 204 test PASS |
 | **v0.36.0** | `89f94f8` | **Persistent providers & diagnostics**: trạng thái key đúng từng provider, một key/provider cùng tồn tại, model session lưu trước prompt, Save setting không reset model, HTTP/SSE error có chi tiết redact, provider 501 actionable. 8 regression mới; toàn bộ 212 test PASS |
-| **v0.37.0** | main (release) | **Responsive shell & focused settings**: app shell gọn, sidebar/Workspace drawers, composer 5 modes, Connection cards, Theme, Settings theo role và fixed footer; guard async race, dedup model-save, validate Max tokens, keyboard/touch/focus. 8 regression mới; toàn bộ 220 test + Chromium 87/87 PASS |
+| **v0.37.0** | `37e0bb6` | **Responsive shell & focused settings**: app shell gọn, sidebar/Workspace drawers, composer 5 modes, Connection cards, Theme, Settings theo role và fixed footer; guard async race, dedup model-save, validate Max tokens, keyboard/touch/focus. 8 regression mới; toàn bộ 220 test + Chromium 87/87 PASS |
+| **v0.37.1** | main (release) | **Visible provider diagnostics**: giữ SSE error sau prompt, empty completion fail-closed thay vì lưu assistant null, read-only streaming diagnostic có redaction. 4 regression mới; toàn bộ 224 test + Chromium hotfix 1/1 PASS |
 
 ---
 
@@ -73,26 +74,30 @@
 
 | Gate | Phạm vi | Kết quả |
 |---|---|:-:|
-| Full clean regression | 33 suite `scripts/test_*.py`, gồm security + TUI, sau khi xoá `__pycache__` | **220/220 PASS** ✅ |
+| Full clean regression | 34 suite `scripts/test_*.py`, gồm security + TUI + v0.37.1 hotfix, sau khi xoá `__pycache__` | **224/224 PASS** ✅ |
 | `scripts/test_v033.py` | Secret store/hash, 3 providers, sanitized subprocess env, API redaction, cookie login/public health, release lock, CORS/preflight, rate-limit, terminal setup | **12/12** ✅ |
 | `scripts/test_v034.py` | AuthStore, anonymous/CSRF, email login/logout, Team, owner ACL, audit/usage/inbox/approval/elicitation, migration, registry/routing, concurrent providers, background owner, OIDC + RS256/JWKS local, image fail-closed, setup CLI/Web bundle, provider-specific demo/cost, member MCP/skills, first-run launcher | **17/17** ✅ |
 | `scripts/test_v035.py` | Bootstrap guard, admin-only policy, signup disabled/CSRF, validation/member-only/auto-login/duplicate/role injection, toggle/disable, IP+email rate-limit, Google policy, production bundle, owner isolation giữa hai public member | **8/8** ✅ |
 | `scripts/test_v036.py` | Ba provider key persist/reload + redaction, model session trước prompt + CSRF/owner ACL, Web-shaped chat vs image 501, provider 501 mock actionable, SSE error/done, concurrent routing, production bundle | **8/8** ✅ |
 | `scripts/test_v037.py` | Version/clientInfo, responsive shell/drawers, synchronous session ref + async owner guards, model-save dedup, Settings/Theme/role tabs/fixed footer/validation, production bundle + persistent browser suite | **8/8** ✅ |
+| `scripts/test_v0371.py` | Empty completion → error + không lưu null; completion bình thường vẫn lưu; Web chỉ reload timeline khi không có SSE error; diagnostic script + version | **4/4** ✅ |
 | HTTP smoke thật | v0.34 · Uvicorn :8765 + release mode + fake users/data tạm: cookie Secure/HttpOnly, CSRF, login/logout, SSE demo, Team/owner ACL, model theo session | **22/22 PASS** ✅ |
 | Browser smoke thật | Fresh Chromium trên v0.37: audit key/model/empty-501/truncated-SSE **20/20** + responsive/Settings UX **37/37** + admin/member/model/ACL regression **14/14** + model-race **1/1** + signup **15/15** | **87/87 PASS** ✅ |
+| Browser hotfix v0.37.1 | Fresh Chromium + production bundle: SSE 401 giả lập vẫn visible sau 1.5s, prompt được giữ, không runtime error | **1/1 PASS** ✅ |
 | Responsive matrix | 320×720, 390×844, 768×900, 1024×768, 1440×1000; app + Settings/footer, không horizontal overflow/runtime error; mobile sidebar + Workspace drawer đã chụp/đọc | **PASS** ✅ |
 | Static checks | mypy `server/main.py` + `engine/`; TypeScript noEmit; Vite production build 42 modules | **PASS** ✅ |
 | Security lint | bandit Medium+ trên engine/server/setup/migration/launcher | **0 finding** ✅ |
 | Ruff | Full cho new files; changed-core gate ngoại trừ legacy `E402/BLE001/S110/S112/RUF100/RUF012`; không tuyên bố toàn repo sạch | **PASS theo phạm vi** ✅ |
 
-Bundle cuối: `server/static/assets/index-CnsaCxm0.js` (234.01 kB) + `index-C17X40lX.css` (57.14 kB); Vite 42 modules.
+Bundle cuối: `server/static/assets/index-CBsc0i5r.js` (234.05 kB) + `index-C17X40lX.css` (57.14 kB); Vite 42 modules.
 
 Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global thay vì provider của model; battle dùng chung một demo boolean; background sub-agent mất router/owner default; architect đổi semantics TUI; demo bỏ ảnh vẫn đòi vision; `ScopedSessionStore` thiếu `allow_mcp`; launcher thiếu Authlib và còn kiểm tra shared release password. Các failure do fixture response shape/logout 204 được sửa ở test/smoke client, không nới product ACL.
 
 Bug v0.36 bị repro bắt: Settings dùng mask của active provider cho mọi provider; đổi provider có thể mang draft key sang Save nhầm; model session chỉ ghi khi chat; Save setting khác reset model về default; empty/non-JSON HTTP error chỉ còn status; SSE cụt được coi là thành công; synthetic command thiếu `done`. Controlled test trên v0.35 tái hiện banner trần `HTTP 501` bằng response 501 body rỗng; v0.36 giữ status + endpoint + diagnostic. Provider 501 cũng được mock riêng để kiểm redaction và hướng xử lý tools/streaming/reasoning.
 
 Bug v0.37 bị repro bắt: Workspace ở laptop chỉ còn khoảng 1px khi đóng; nút ☰ mobile không đóng được sidebar; nhập Max tokens `100` đóng dialog nhưng server vẫn giữ `4096`; member mở Settings thấy các global controls nhưng không thể Save. Bản vá dùng drawer/scrim/Escape và explicit grid columns, validation + focus tại field lỗi, member tabs theo capability (Giao diện/Skills/Audit) mà không nới server ACL. Các guard mới giữ response session/tree/context/PATCH đến muộn khỏi phiên hoặc user mới; blur model không đổi không PATCH. Fresh Chromium kiểm cả delayed GET/PATCH, touch delete, keyboard/focus, Theme và member flow.
+
+Hotfix v0.37.1 từ incident Windows: OpenRouter diagnostic thật trả `401 Missing Authentication header`; UI lại im lặng vì SSE `error` bị `loadSession()` thay bằng persisted timeline ngay sau stream. v0.37.1 bỏ reload khi có SSE error, giữ prompt + cảnh báo. Mock empty stream cũng tái hiện `assistant_message: null`; Agent mới raise lỗi có model/finish_reason và không lưu assistant rỗng. Completion `OK` đối chứng vẫn stream/lưu đúng. `diagnose_llm.py` dùng synthetic prompt, không tools/session writes, redact credential và chỉ in response tối đa 6.000 ký tự. Bản vá cải thiện chẩn đoán nhưng **không tự sửa credential bị provider từ chối**.
 
 **Chưa kiểm chứng:** Docker/container smoke (sandbox không có Docker CLI), Google OAuth thật bằng client production, và **nguồn HTTP 501 cụ thể trên máy Windows của user**. Empty-501 browser test và provider-501 mock kiểm cách hiển thị/xử lý, không chứng minh đó là nguồn ngoài máy user; cần banner chi tiết mới hoặc dòng log request để kết luận. OIDC đã kiểm bằng flow giả + JWT RS256/JWKS local; không dùng credential thật trong regression.
 
@@ -129,9 +134,9 @@ Bug v0.37 bị repro bắt: Workspace ở laptop chỉ còn khoảng 1px khi đ�
 
 ## 6. Trạng thái bàn giao
 
-- **Release:** v0.37.0, Web production build sẵn; ZIP `forge-agent-v0.37.0.zip`.
-- **Git:** nhánh main, release v0.37 tạo từ working tree đã kiểm; v0.36 `89f94f8` / tag `v0.36.0` và ZIP cũ giữ nguyên.
-- **Kiểm thử:** 220/220 test · 33 suite · fresh Chromium 87/87 · responsive matrix 5 viewport · mypy 0 lỗi / 39 files · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
-- **Preview smoke:** uvicorn :8766, health 0.37.0, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
+- **Release:** v0.37.1, Web production build sẵn; ZIP `forge-agent-v0.37.1.zip`.
+- **Git:** nhánh main, release v0.37.1 tạo từ working tree đã kiểm; v0.37.0 `37e0bb6`, v0.36 `89f94f8` và các tag/ZIP cũ giữ nguyên.
+- **Kiểm thử:** 224/224 test · 34 suite · Chromium baseline 87/87 + hotfix 1/1 · responsive matrix 5 viewport · mypy 0 lỗi / 39 files · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
+- **Preview smoke:** uvicorn :8766, health 0.37.1, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
 - **Yêu cầu hệ thống:** Python 3.10+ · dependencies trong requirements (gồm Authlib) · OpenRouter/Google Gemini/custom provider hoặc demo không cần key.
 - **Giới hạn đã ghi rõ:** single process/VPS; owner ACL không phải OS sandbox; public signup chưa có SMTP verification/CAPTCHA; chưa có image-generation adapter; real Google OAuth và Docker smoke còn lại.

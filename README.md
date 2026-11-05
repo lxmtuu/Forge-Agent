@@ -193,6 +193,13 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
+### 🔎 Visible provider errors + empty-response guard (v0.37.1)
+
+- SSE `error` (401/402/501/provider/network) không còn bị `loadSession()` xoá ngay sau prompt; giữ cả prompt và diagnostic trên màn hình.
+- Provider kết thúc với assistant rỗng không còn lưu `assistant: null` rồi im lặng. Forge báo model + `finish_reason`, gợi ý Direct/model khác/Max tokens theo trường hợp; completion bình thường vẫn lưu như cũ.
+- `scripts/diagnose_llm.py` kiểm tra streaming trực tiếp bằng key đã lưu, không tools/session writes, chỉ in HTTP metadata + response đã redact. Windows: `.\.venv\Scripts\python.exe scripts\diagnose_llm.py --provider openrouter` (hoặc `--provider google`).
+- `401 Missing Authentication header` là lỗi xác thực ở provider, không phải model đang suy nghĩ. Trạng thái **đã lưu** chỉ xác nhận có secret; phải **Kiểm tra key mới → Key hợp lệ → Lưu thay đổi**.
+
 ### 🎨 Responsive app shell + role-aware Settings (v0.37)
 
 - **App gọn và rõ việc:** top bar hiển thị phiên hiện tại; mode, song song và model nằm trong một toolbar; footer chỉ giữ token/context và thao tác phiên. Empty state có ví dụ thao tác trực tiếp.

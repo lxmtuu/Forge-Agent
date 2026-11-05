@@ -456,14 +456,18 @@ export default function App() {
         setItems((prev) => [...prev, { kind: 'user', id: uid(), text, images: pendingImages.length ? pendingImages : undefined }])
         const imgs = pendingImages
         setPendingImages([])
+        let streamHadError = false
         await api.streamChat(sid, text, chatMode, (ev: AgentEvent) => {
+          // Provider errors live only in the SSE timeline, not in session.messages.
+          // Reloading here would immediately erase the diagnostic from the screen.
+          if (ev.type === 'error') streamHadError = true
           if (ev.type === 'turn_end') {
             if (ev.session_usage) setSessionUsage(ev.session_usage)
             return
           }
           setItems((prev) => applyEvent(prev, ev))
         }, ac.signal, imgs, false, activeModel || undefined)
-        await loadSession(sid)
+        if (!streamHadError) await loadSession(sid)
         refreshCtx(sid)
       }
     } catch (e) {

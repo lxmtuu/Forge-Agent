@@ -35,7 +35,7 @@ from engine.session import ScopedSessionStore, SessionStore
 from server import auth as auth_web
 from server.auth import require_admin, require_user
 
-app = FastAPI(title="Forge Agent", version="0.37.0")
+app = FastAPI(title="Forge Agent", version="0.37.1")
 app.include_router(auth_web.router)
 # Development giữ CORS mở cho tooling; release mặc định same-origin. Muốn mở
 # cross-origin phải liệt kê rõ FORGE_CORS_ORIGINS=https://app.example,...
