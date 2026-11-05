@@ -51,6 +51,7 @@ HELP = """[bold]Lệnh[/bold]
   /skills [add|new|remove …]  quản lý skill (chuẩn Agent Skills SKILL.md)
   /connectors [add|auth|allow…] kết nối GitHub/Linear/Gmail… qua MCP
   /audit [n]           nhật ký tool call (JSONL data/audit/)
+  /rename <tên>        đổi tên phiên        /find <từ-khóa>  tìm phiên (tiêu đề+nội dung)
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -484,6 +485,20 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows:
                 console.print(f"  🤖 [bold]{r['name']}[/bold] — {r['description'] or '(không mô tả)'}"
                               + (f" · {r['model']}" if r["model"] else ""))
+            continue
+        if text.startswith("/rename "):
+            ok = store.rename(session_id, text[8:].strip())
+            console.print("[green]✅ Đã đổi tên phiên[/green]" if ok
+                          else "[red]❌ Không đổi được (phiên không tồn tại?)[/red]")
+            continue
+        if text.startswith("/find "):
+            q = text[6:].strip()
+            rows = store.list(q=q)
+            if not rows:
+                console.print(f"[dim](không có phiên nào khớp «{q}» — tìm theo tiêu đề + nội dung tin nhắn)[/dim]")
+            for r in rows[:20]:
+                console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} "
+                              f"[dim]· {r['message_count']} tin[/dim]")
             continue
         if text == "/audit" or text.startswith("/audit "):
             from engine import auditlog

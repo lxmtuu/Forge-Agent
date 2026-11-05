@@ -72,6 +72,7 @@ export interface Settings {
   web_search: boolean
   allow_commands: string[]
   deny_commands: string[]
+  custom_base_url?: string
 }
 
 export interface ContextStats {

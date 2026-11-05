@@ -59,7 +59,7 @@ async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => voi
 export const api = {
   health: () => fetch('/api/health').then((r) => j<Settings>(r)),
 
-  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[] }) =>
+  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string }) =>
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

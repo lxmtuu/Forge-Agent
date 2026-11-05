@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🖥 Model cục bộ (v0.19) — Ollama/LM Studio không cần key
+
+⚙ Cài đặt → **Base URL tuỳ chỉnh**: `http://localhost:11434/v1` → Model: `llama3.2` (tên model cục bộ) → chat như OpenRouter. Xoá URL để quay lại OpenRouter. Tiện ích kèm theo: `/rename <tên>`, `/find <từ-khóa>` (tìm trong cả nội dung tin nhắn), ô 🔍 trên sidebar, thông báo desktop khi agent xong (tab ẩn).
+
 ### 📘 Audit log (v0.17.2)
 
 Mọi tool call của agent (kể cả MCP, lệnh bị từ chối, hook chặn) được ghi `data/audit/<ngày>.jsonl` — token tự mask. Xem: `/audit [n]` trên cả 3 UI, hoặc tab **📘 Audit** trong ⚙ Cài đặt (web) — bảng + ô lọc realtime.

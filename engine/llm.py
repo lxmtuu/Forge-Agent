@@ -85,6 +85,33 @@ def pick_fallback(model: str | None, err: Exception) -> str | None:
     return None
 
 
+def _endpoint(api_key: str | None) -> tuple[str, dict]:
+    """Chọn endpoint + headers: base URL tuỳ chỉnh (Ollama/LM Studio/vLLM…) hoặc OpenRouter.
+
+    - Base URL custom: key TÙY CHỌN (lấy custom_api_key nếu có — Ollama không cần).
+    - OpenRouter: bắt buộc key.
+    """
+    base = config.get_base_url()
+    if base:
+        headers = {
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/forge-agent",
+            "X-Title": "Forge Agent",
+        }
+        ck = api_key or config.get_custom_api_key()
+        if ck:
+            headers["Authorization"] = f"Bearer {ck}"
+        return base + "/chat/completions", headers
+    key = api_key or config.get_api_key()
+    if not key:
+        raise LLMError(
+            "Chưa cấu hình API key OpenRouter. Đặt biến môi trường OPENROUTER_API_KEY "
+            "hoặc nhập key trong phần Settings — hoặc đặt 'Base URL tuỳ chỉnh' "
+            "(vd http://localhost:11434/v1 cho Ollama) để dùng model cục bộ."
+        )
+    return OPENROUTER_URL, _headers(key)
+
+
 async def stream_chat(
     messages: list[dict],
     tools: list[dict] | None = None,
@@ -100,12 +127,7 @@ async def stream_chat(
       {"type": "usage",     "usage": dict}
     Raises LLMError on HTTP/network failures.
     """
-    key = api_key or config.get_api_key()
-    if not key:
-        raise LLMError(
-            "Chưa cấu hình API key OpenRouter. Đặt biến môi trường OPENROUTER_API_KEY "
-            "hoặc nhập key trong phần Settings."
-        )
+    url, headers = _endpoint(api_key)
     payload: dict = {
         "model": resolve_model(model or config.get_model()),
         "messages": messages,
@@ -125,7 +147,7 @@ async def stream_chat(
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             async with client.stream(
-                "POST", OPENROUTER_URL, headers=_headers(key), json=payload
+                "POST", url, headers=headers, json=payload
             ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", "replace")[:2000]

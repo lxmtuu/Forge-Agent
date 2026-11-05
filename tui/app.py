@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from textual import work
@@ -345,7 +346,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory [clear] /doctor /agents /connectors [add|auth] /audit "
+                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -407,6 +408,18 @@ class ForgeTUI(App):
                 self.add_line(f"🧠 Context: {pct} ({ctx['chars']:,} ký tự ≈ {ctx['est_tokens']:,} "
                               f"tokens / {lim}) · {ctx['messages']} tin · "
                               f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
+        elif cmd == "/rename":
+            ok = store.rename(self.sid, arg) if self.sid else False
+            self.add_line("✅ Đã đổi tên phiên" if ok else "❌ Không đổi được", cls="sys-line")
+            if ok:
+                self.refresh_sessions(select_latest=False)
+        elif cmd == "/find":
+            rows = store.list(q=arg)[:20]
+            if not rows:
+                self.add_line(f"(không có phiên nào khớp «{arg}»)", cls="sys-line")
+            for r in rows:
+                self.add_line(f"  {r['id']}  {r['title'][:40]} · {r['message_count']} tin",
+                              cls="sys-line")
         elif cmd == "/audit":
             from engine import auditlog
             n = int(arg) if arg.isdigit() else 20
@@ -591,6 +604,7 @@ class ForgeTUI(App):
     # ------------------------------------------------------- agent loop
     @work(exclusive=True)
     async def run_turn(self, text: str, mode: str | None = None) -> None:
+        _t0 = time.monotonic()
         if not self.sid:
             self.new_session()
         self.busy = True
@@ -689,6 +703,11 @@ class ForgeTUI(App):
         finally:
             self.busy = False
             self._md_widget = None
+            if time.monotonic() - _t0 > 5:  # turn dài — chuông báo (E4, chuẩn Claude hooks-notification)
+                try:
+                    self.bell()
+                except Exception:
+                    pass
             # app có thể đang shutdown (user quit giữa lượt) — widgets đã gỡ thì bỏ qua
             try:
                 self.refresh_sessions(select_latest=False)

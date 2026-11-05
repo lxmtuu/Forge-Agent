@@ -725,3 +725,7 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .audit-src { color: var(--dim, #8b8d96); font-size: 11px; border: 1px solid var(--border, #2a2b33); border-radius: 999px; padding: 0 7px; }
 .audit-ms { color: var(--dim, #8b8d96); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
 .audit-args { color: var(--dim, #a5a7ae); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* ── v0.19: tìm kiếm phiên ── */
+.session-search { margin: 0 12px 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, #2a2b33); background: var(--bg-in, #1b1c21); color: inherit; font-size: 12.5px; outline: none; width: calc(100% - 24px); }
+.session-search:focus { border-color: var(--accent, #d97757); }

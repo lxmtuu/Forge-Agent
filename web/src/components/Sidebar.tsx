@@ -19,6 +19,11 @@ export function Sidebar(props: {
   model: string
   onOpenSettings: () => void
 }) {
+  const [q, setQ] = React.useState('')
+  const shown = props.sessions.filter((s) => {
+    const t = q.trim().toLowerCase()
+    return !t || s.title.toLowerCase().includes(t)
+  })
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -28,9 +33,15 @@ export function Sidebar(props: {
 
       <button className="btn-primary" onClick={props.onNew}>＋ Phiên mới</button>
 
+      <input
+        className="session-search"
+        placeholder="🔍 Tìm phiên…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
       <div className="session-list">
-        {props.sessions.length === 0 && <div className="empty">Chưa có phiên nào</div>}
-        {props.sessions.map((s) => (
+        {shown.length === 0 && <div className="empty">{q ? 'Không khớp phiên nào' : 'Chưa có phiên nào'}</div>}
+        {shown.map((s) => (
           <div
             key={s.id}
             className={`session-item ${s.id === props.currentId ? 'active' : ''}`}

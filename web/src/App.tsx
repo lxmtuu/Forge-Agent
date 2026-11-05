@@ -272,6 +272,10 @@ export default function App() {
     const ac = new AbortController()
     abortRef.current = ac
     setStreaming(true)
+    // E4: xin quyền thông báo 1 lần (khi người dùng chủ động gửi — chuẩn UX browser)
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => {})
+    }
 
     try {
       if (parallel || chatMode === 'battle') {
@@ -333,6 +337,10 @@ export default function App() {
     } finally {
       setStreaming(false)
       abortRef.current = null
+      // E4: tab đang ẩn → thông báo desktop khi xong (Claude-style notification)
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        try { new Notification('Forge agent — đã xong', { body: text.slice(0, 90) }) } catch { /* ignore */ }
+      }
       refreshSessions()
       refreshTree(sid)
       const [next, ...rest] = queuedRef.current
@@ -496,7 +504,7 @@ export default function App() {
   }
 
   // ------------------------------------------------------------- settings
-  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number }) {
+  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string }) {
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
   }

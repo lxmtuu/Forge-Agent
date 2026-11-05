@@ -48,7 +48,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 | # | Tính năng | Ai có | Forge | Ưu tiên |
 |---|---|---|---|---|
 | D1 | **Chi phí $ theo phiên/lượt** — đã có giá từ /api/models + usage tokens → chỉ cần nhân | Claude (projected cost), Aider | ❌ chỉ hiện tokens | **P0** (nhỏ, giá trị cao) |
-| D2 | **Local models** — OpenAI-compatible base URL (Ollama/LM Studio) | Aider, OpenCode (75+ providers) | ❌ khoá OpenRouter (BYOK vẫn giữ: thêm custom base_url) | P1 |
+| D2 | **✅ ĐÃ LÀM v0.19** Local models — OpenAI-compatible base URL (Ollama/LM Studio) | Aider, OpenCode (75+ providers) | custom_base_url + custom_api_key (Ollama không cần key), cost tự ẩn | P1 |
 | D3 | Effort/reasoning budget per request | Claude (--effort), OpenRouter reasoning | ❌ | P2 |
 
 ### Nhóm E — UX phiên
@@ -56,9 +56,9 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 | # | Tính năng | Ai có | Forge | Ưu tiên |
 |---|---|---|---|---|
 | E1 | **Queue message khi agent đang chạy** — gõ tiếp được, tự gửi khi xong | Claude (queued messages) | ❌ chỉ có nút Dừng | **P0** |
-| E2 | /rename + tự đặt tên phiên từ ngữ cảnh | Claude (/rename auto) | ❌ title = tin nhắn đầu | P1 (nhỏ) |
-| E3 | Tìm kiếm phiên trong sidebar | OpenCode | ❌ | P1 (nhỏ) |
-| E4 | Thông báo khi xong (browser Notification API) | Claude (Notification hooks) | ❌ | P1 (nhỏ) |
+| E2 | **✅ ĐÃ LÀM v0.19** /rename (tự đặt tên = tin nhắn đầu có sẵn) | Claude (/rename auto) | store.rename + POST /api/rename, 3 UI | P1 (nhỏ) |
+| E3 | **✅ ĐÃ LÀM v0.19** Tìm phiên — sidebar (tiêu đề) + /find (tiêu đề+NỘI DUNG) | OpenCode | list(q) + ô 🔍 + /find | P1 (nhỏ) |
+| E4 | **✅ ĐÃ LÀM v0.19** Thông báo khi xong — web Notification (tab ẩn) + TUI bell (>5s) | Claude (Notification hooks) | xin quyền lần gửi đầu | P1 (nhỏ) |
 | E5 | Edit lại tin người dùng → chạy lại từ đó | chuẩn web chat | ❌ | P2 |
 
 ### Nhóm F — Tự động hoá

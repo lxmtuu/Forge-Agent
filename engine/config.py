@@ -108,6 +108,16 @@ def save_config(patch: dict) -> dict:
     return cfg
 
 
+def get_base_url() -> str:
+    """Base URL OpenAI-compatible tuỳ chỉnh (Ollama/LM Studio/vLLM…). '' = dùng OpenRouter."""
+    return (load_config().get("custom_base_url") or "").strip().rstrip("/")
+
+
+def get_custom_api_key() -> str:
+    """API key cho base URL tuỳ chỉnh (Ollama không cần)."""
+    return (load_config().get("custom_api_key") or "").strip()
+
+
 def get_api_key() -> str | None:
     """Env var wins over saved config (12-factor style)."""
     env = os.environ.get("OPENROUTER_API_KEY", "").strip()

@@ -66,6 +66,8 @@ class SettingsBody(BaseModel):
     web_search: bool | None = None
     allow_commands: list[str] | None = None
     deny_commands: list[str] | None = None
+    custom_base_url: str | None = None
+    custom_api_key: str | None = None
 
 
 class FileSaveBody(BaseModel):
@@ -117,6 +119,7 @@ async def health():
         "deny_commands": cfg.get("deny_commands") or [],
         "active_profile": cfg.get("active_profile"),
         "profiles": sorted(config.list_profiles().keys()),
+        "custom_base_url": config.get_base_url(),
         "lsp_available": _lsp_available(),
     }
 
@@ -165,6 +168,10 @@ async def set_settings(body: SettingsBody):
         patch["allow_commands"] = [x.strip() for x in body.allow_commands if x.strip()][:50]
     if body.deny_commands is not None:
         patch["deny_commands"] = [x.strip() for x in body.deny_commands if x.strip()][:50]
+    if body.custom_base_url is not None:  # chuỗi rỗng = quay lại OpenRouter
+        patch["custom_base_url"] = body.custom_base_url.strip().rstrip("/")
+    if body.custom_api_key is not None and body.custom_api_key.strip():
+        patch["custom_api_key"] = body.custom_api_key.strip()
     config.save_config(patch)
     return await health()
 
@@ -212,8 +219,19 @@ async def mcp_remove(name: str):
 # Sessions
 # ---------------------------------------------------------------------------
 @app.get("/api/sessions")
-async def list_sessions():
-    return {"sessions": store.list()}
+async def list_sessions(q: str = ""):
+    return {"sessions": store.list(q=q)}
+
+
+class RenameBody(BaseModel):
+    title: str
+
+
+@app.post("/api/sessions/{sid}/rename")
+async def rename_session(sid: str, body: RenameBody):
+    if not store.rename(sid, body.title):
+        raise HTTPException(404, "Session not found")
+    return {"ok": True, "title": body.title.strip()[:80]}
 
 
 @app.post("/api/sessions")

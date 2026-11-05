@@ -24,7 +24,7 @@ type TabId = typeof TABS[number]['id']
 export function SettingsModal(props: {
   settings: Settings
   onClose: () => void
-  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[] }) => Promise<void>
+  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string }) => Promise<void>
 }) {
   const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
@@ -35,6 +35,7 @@ export function SettingsModal(props: {
   const [webSearch, setWebSearch] = useState(props.settings.web_search ?? false)
   const [allowCmds, setAllowCmds] = useState((props.settings.allow_commands ?? []).join('\n'))
   const [denyCmds, setDenyCmds] = useState((props.settings.deny_commands ?? []).join('\n'))
+  const [baseUrl, setBaseUrl] = useState(props.settings.custom_base_url ?? '')
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState<string | null>(null)
   const [mcp, setMcp] = useState<McpServerStatus[]>([])
@@ -71,7 +72,8 @@ export function SettingsModal(props: {
     docker !== initial.docker ||
     webSearch !== initial.webSearch ||
     allowCmds !== initial.allowCmds ||
-    denyCmds !== initial.denyCmds
+    denyCmds !== initial.denyCmds ||
+    baseUrl !== (props.settings.custom_base_url ?? '')
 
   const applyTheme = (t: string) => {
     setTheme(t)
@@ -124,6 +126,7 @@ export function SettingsModal(props: {
         web_search: webSearch,
         allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
         deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
+        custom_base_url: baseUrl.trim(),
         ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
       })
       props.onClose()
@@ -167,6 +170,15 @@ export function SettingsModal(props: {
         <div className="settings-body">
         {tab === 'conn' && (
           <>
+            <div className="field">
+              <span>Base URL tuỳ chỉnh <em>(model cục bộ — Ollama/LM Studio/vLLM; để trống = OpenRouter)</em></span>
+              <input
+                placeholder="vd: http://localhost:11434/v1"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+              <small>Dán URL rồi đặt Model thành tên cục bộ (vd <code>llama3.2</code>, <code>qwen2.5-coder</code>). API key tuỳ chọn — điền ở ô key bên trên nếu server cần.</small>
+            </div>
             <label className="field">
               <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
               <div className="key-row">

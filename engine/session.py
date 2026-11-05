@@ -124,11 +124,16 @@ class SessionStore:
         except Exception:
             return None
 
-    def list(self) -> list[dict]:
+    def list(self, q: str = "") -> list[dict]:
+        """Danh sách phiên mới nhất trước. q ≠ '' → lọc theo tiêu đề NỘI DUNG tin nhắn."""
         out = []
+        ql = (q or "").strip().lower()
         for p in sorted(config.SESSIONS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
-                d = json.loads(p.read_text(encoding="utf-8"))
+                raw = p.read_text(encoding="utf-8")
+                if ql and ql not in raw.lower():
+                    continue
+                d = json.loads(raw)
                 out.append({
                     "id": d["id"], "title": d.get("title", "New session"),
                     "model": d.get("model", ""), "updated_at": d.get("updated_at", 0),
@@ -138,6 +143,17 @@ class SessionStore:
             except Exception:
                 continue
         return out
+
+    def rename(self, sid: str, title: str) -> bool:
+        """Đổi tiêu đề phiên (≤80 ký tự). False nếu phiên không tồn tại."""
+        s_ = self.get(sid)
+        if not s_:
+            return False
+        t = (title or "").strip()[:80]
+        if t:
+            s_.title = t
+            self.save(s_)
+        return True
 
     def save(self, s: Session) -> None:
         config.ensure_dirs()

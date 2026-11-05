@@ -210,6 +210,17 @@ Theo CONNECTORS_RESEARCH.md (chuẩn ngành 2026: remote MCP chính thức + hub
 
 Test: **6/6 smoke v0.17 ×2 + regression 79 (tổng 85 test xanh)** · E2E: add → auth → listing mask token 0 lần echo.
 
+## 🖥 v0.19 "Local & Tìm kiếm" — đóng nốt hàng P1
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🖥 Local models (D2)** | Base URL OpenAI-compatible tuỳ chỉnh (Ollama `http://localhost:11434/v1`, LM Studio, vLLM…) trong ⚙ Cài đặt; key tuỳ chọn; chọn endpoint/headers đúng (test E2E fake-server); cost $ tự ẩn với local; BYOK OpenRouter giữ nguyên khi bỏ URL |
+| 2 | **✏️ /rename (E2)** | Đổi tên phiên trên cả 3 UI + `POST /api/sessions/{sid}/rename` |
+| 3 | **🔍 Tìm phiên (E3)** | Ô 🔍 trong sidebar (tiêu đề, realtime) + `/find <từ-khóa>` tìm cả NỘI DUNG tin nhắn (server-side) |
+| 4 | **🔔 Thông báo (E4)** | Web: desktop Notification khi tab ẩn (xin quyền lần gửi đầu) · TUI: chuông terminal khi turn >5s xong |
+
+Test: **5/5 smoke v0.20×(E2E fake-Ollama: đúng path/không-Auth/model/stream/usage) + 110/110 toàn bộ 16 suite**.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**
