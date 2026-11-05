@@ -89,7 +89,7 @@
 | Web UI tự host có editor | ✅ cloud | ✅ cloud | 🟡 desktop | ⭐ | ⭐ | explorer + editor + **terminal tích hợp** — hơn cả 3 đối thủ |
 | REPL đơn giản | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | Lệnh cài vào PATH | ✅ claude | ✅ codex | ✅ opencode | ✅ forge | ✅ | + build exe 3 OS |
-| Themes | ✅ | ➖ | ✅ nhiều | ❌ P2 | ❌ | **còn thiếu** |
+| Themes | ✅ | ➖ | ✅ nhiều | ❌ P2 | ✅ | web 3 theme (data-theme): dark/light/amber — đối chiếu code 05/11 |
 | **Model tuỳ ý (BYOK)** | ❌ Anthropic-only | ❌ OpenAI-first | ✅ 75+ | ⭐ | ⭐ | **450+** đồng bộ kèm giá + lọc free |
 | **⚔ Battle mode** | ❌ | ❌ | ❌ | ⭐ | ⭐ | **duy nhất trên thị trường** |
 | Sub-agent song song | ✅ | ✅ worktrees | ➖ | ✅ | ✅ | + battle per-model workspace |
@@ -289,7 +289,7 @@ Test: **4/4 suite v0.27 (frontmatter surgery đủ trường hợp + REST roundt
 
 | Thành tựu | Chi tiết |
 |---|---|
-| **3 gate xanh cùng lúc** | **139/139 test (23 suite) · mypy engine/ 0 lỗi / 32 file · bandit Medium+ 0** — ít project agent tự host nào có cả 3 |
+| **3 gate xanh cùng lúc** | **143/143 test (23 suite — đếm lại per-suite 05/11) · mypy engine/ 0 lỗi / 32 file · bandit Medium+ 0** — ít project agent tự host nào có cả 3 |
 | Bắt thêm 1 bug thật | tools.py ghi vào `proc.returncode` (property read-only của asyncio.Process) — runtime im lặng, mypy chỉ ra; thay bằng biến `hook_rc` |
 | Bài học | Baseline type **trượt khi thêm module mới mà không chạy gate** (75 → 96): từ nay mỗi vòng phải chạy cả `mypy engine/` — đã chuẩn hoá config vào pyproject.toml |
 

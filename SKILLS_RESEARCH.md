@@ -2,6 +2,7 @@
 
 > Ngày research: 05/11/2026 · Câu hỏi: **"Agent Skills hiện nay như thế nào, forge-agent áp dụng và phát triển được không?"**
 > Trả lời ngắn: **Áp dụng được và RẤT NÊN** — đây là chuẩn mở chính thức (đã quyên cho Linux Foundation, 70+ nền tảng theo). Forge-agent có sẵn nền từ v0.11 nhưng **lệch chuẩn ở 4 điểm then chốt** → nâng cấp vừa phải, không phải viết lại.
+> 🔄 **Đối chiếu 05/11:** các mục ❌ trong bảng §lệch chuẩn đã đóng: #12 trust ✅ S5 v0.26 · #13 marketplace `/skills add` ✅ v0.16 · #14 lệnh `/skills` ✅ v0.16 — phần *Đã giao* cuối file; định dạng thư mục chuẩn đã hỗ trợ song song cả dẹt lẫn `<tên>/SKILL.md` (S8 v0.26).
 
 ---
 

@@ -5,6 +5,10 @@
 > Aider 2026 (repo-map, auto-commit, watch), tổng hợp 8-agent comparison (amux).
 > Nguyên tắc: research → kiểm tra → test → sửa.
 
+> **🔄 ĐỐI CHIẾU 05/11/2026 (tổng-kiểm tài liệu):** mọi mục P0 đã ĐÓNG — A1/A2/A3/D1/E1 ✅ v0.14
+> (mục 3) · B1 ✅ v0.22 · A6 ✅ v0.21 · D2 ✅ v0.19 · D3 ✅ v0.22 · E2–E4 ✅ v0.19 · E5 ✅ v0.21 ·
+> F1 ✅ v0.23 · F2 ✅ v0.25 · B2 ✅ v0.24. **CÒN MỞ (chưa lên lịch) — xem §2b:** A4 · A5 · C1.
+
 ---
 
 ## 1. Forge ĐÃ CÓ (khẳng định lại — ngắn gọn)
@@ -96,3 +100,13 @@ tiến độ) và người dùng **thấy được tiền + tiến độ** — 2
 - ofox.ai + composio.dev + computingforgeeks.com (4-agent comparison 2026)
 - webidroid.com + dashen-tech.com + amux.io (Aider repo-map/auto-commit, 8-agent table)
 - agentscamp.com (CLI agents 2026: git-native vs sandboxed)
+
+## 2b. CÒN MỞ — đối chiếu code 05/11/2026 (chưa lên lịch, ứng viên vòng sau)
+
+| # | Tính năng | Trạng thái code kiểm chứng | Ghi chú |
+|---|---|---|---|
+| A4 | Sub-agent **nền** (lead không chặn lượt, notification khi xong) | ❌ chưa — spawn subagent chạy trong lượt (song song ≤3 qua asyncio nhưng block tới xong) | cần kiến trúc task nền + event `agent_completed` |
+| A5 | **Repo map** (cây cấu trúc + symbol nén tự nạp) | ❌ chưa — có nguyên liệu LSP symbols + workspace tree để ghép | Aider dùng tree-sitter |
+| C1 | Thêm hook events `stop` · `user_prompt_submit` · `pre_compact` · `notification` | ❌ chưa — `engine/hooks.py` mới có PreToolUse/PostToolUse/SessionStart | nhỏ, giá trị trung bình |
+
+> 3 mục này là **backlog thật duy nhất còn lại** của dự án (đã loại các mục "⛔ cố tình không theo").

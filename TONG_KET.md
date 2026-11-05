@@ -1,6 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Commit mới nhất: `bb62c9c` (v0.9.0) · 15 commits từ v0.1 → v0.9.0
+> Cập nhật: 2026-11-05 (tổng-kiểm tài liệu) · Commit mới nhất: `055cd1b` (**v0.31.0**) · 48 commits từ v0.1 → v0.31.0
+> Lịch sử v0.10 → v0.31 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART.
 
 ---
 

@@ -17,6 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **162 test / 27 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). Backlog thật còn mở: GAP_ANALYSIS §2b (A4, A5, C1).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -141,7 +142,7 @@
 
 **Bài học vòng 9:** chèn 2 tool specs vào TOOLS_LIST — chèn đúng vị trí tên nhưng SAI mức lồng (thiếu wrapper `{"type": "function", "function": {…}}` giữa 2 entry) → SyntaxError. py_compile bắt ngay; sửa bằng edit_file từng khớp nối. Quy tắc nhắc lại: **với cấu trúc lồng nhau (list[dict]), mọi chèn giữa phải kèm cả wrapper đóng/mở.**
 
-**Kết quả vòng 9: 134/134 test (22 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+**Kết quả vòng 9: 139/139 test (22 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
 ## 3j. Vòng 10 (v0.26) — Skills trong web
 
@@ -151,7 +152,7 @@
 
 **Bài học vòng 10 (2 lớp):** frontmatter tối thiểu khi tự tạo phải ĐỦ `name` **và** `description` — thiếu name → parse lệch; thiếu description → spec BỎ skill ("thiếu description → BỎ") khiến skill biến mất khỏi catalog. Test T2 bắt cả 2 lớp qua StopIteration → diagnostic in catalog/diags mới thấy nguyên nhân thật.
 
-**Kết quả vòng 10: 139/139 test (23 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+**Kết quả vòng 10: 143/143 test (23 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
 ## 3k. Vòng 11 (v0.27) — mypy về 0
 
@@ -159,7 +160,7 @@
 |---|---|
 | **mypy engine/ = 0 lỗi (32 file)** | Đo lại thấy baseline TRƯỢT XUỐNG 96 lỗi/7 file (v0.22–0.26 thêm autocommit/worktree/oauth nhưng chưa chạy mypy — vi phạm đúng quy tắc nhà). Sửa triệt để: (1) **narrow 1 chỗ ở nguồn** — `Agent.__init__` gán `self.session: Session = s0` sau raise → tắt 61/76 lỗi của agent.py; (2) pattern `GIT: str \| None` → gán biến cục bộ narrow trước `create_subprocess_exec` (checkpoints ×2, worktree); (3) `proc.returncode or 0` (returncode là `int \| None`); (4) tách biến list/str tái dùng trong autocommit (mypy bắt đúng chỗ code khó đọc); (5) `bool(result["ok"])` 2 chỗ log_tool; (6) sửa 1 bug tools.py thật: **ghi vào `proc.returncode` (property read-only) — thay bằng biến `hook_rc`**. Config chuẩn hoá `[tool.mypy]` trong pyproject.toml → `python -m mypy engine/` không cần flag |
 
-**Kết quả vòng 11: 139/139 test (23 suite) · mypy 0 · bandit Medium+ 0 — 3 gate đều xanh.**
+**Kết quả vòng 11: 143/143 test (23 suite) · mypy 0 · bandit Medium+ 0 — 3 gate đều xanh.**
 
 ## 3l. Vòng 12 (v0.28) — Rà soát 6 gói MCP theo yêu cầu
 
@@ -178,7 +179,7 @@ Yêu cầu: kiểm tra đã có **MCP Playwright · File System · Postgres · G
 
 **Bài học vòng 12:** (1) status "stopped"/error None khi xem TRƯỚC khi start — test phải đi đúng flow thật (get_tool_specs/refresh gọi start); (2) status hiển thị template `$VAR` nguyên bản là ĐÚNG (resolve lúc spawn), assert test phải tách bạch template vs lỗi.
 
-**Kết quả vòng 12: 144/144 test (24 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
+**Kết quả vòng 12: 148/148 test (24 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
 
 ## 3j. Vòng 13 (v0.29) — Research & mở rộng MCP catalog
 
@@ -190,7 +191,7 @@ Yêu cầu: "xem còn các MCP nào nữa" — research 3 hướng (PulseMCP/top
 
 **Bài học vòng 13:** (1) cùng một server có thể có vòng đời 2 đời — active tại modelcontextprotocol/servers vs servers-archived: PHẢI trỏ gói mới nhất (brave là ví dụ); (2) endpoint remote phải lấy từ docs nhà cung cấp/nguồn độc lập ≥2 — không đoán URL authorize/token nếu chưa thấy tài liệu (vercel/atlassian → oauth-pending + hub thay vì bịa endpoint).
 
-**Kết quả vòng 13: 149/149 test (25 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
+**Kết quả vòng 13: 153/153 test (25 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
 
 ## 3i. Vòng 14 (v0.30) — Audit UI v2 + sửa claim backlog stale
 
@@ -203,7 +204,7 @@ Yêu cầu chọn "Audit-log UI bảng (P3)". **Điều tra bằng git làm lộ
 | Click dòng → chi tiết | expand: ts đầy đủ, phiên, nguồn, ghi chú, **args JSON pretty** (không cắt 90 ký tự như dòng chính) |
 | Test chống quên build | test_v030-T3 assert build artifact trong server/static chứa `audit-chip/audit-detail/audit-sid` — sửa TSX mà quên `npm run build` sẽ đỏ ngay |
 
-**Kết quả vòng 14: 153/153 test (26 suite) · mypy 0 · bandit Medium+ 0 · tsc/vite build ✓.**
+**Kết quả vòng 14: 157/157 test (26 suite) · mypy 0 · bandit Medium+ 0 · tsc/vite build ✓.**
 
 ## 3h. Vòng 15 (v0.31) — Onboarding: launcher 1-click + USER_GUIDE tiếng Việt
 
@@ -219,7 +220,7 @@ Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Researc
 
 **E2E thật của launcher (sandbox):** venv tạo thật → pip install thật → server :8010 lên thật → health ok · demo true → banner UTF-8 chuẩn.
 
-**Kết quả vòng 15: 158/158 test (27 suite) · mypy 0 · bandit Medium+ 0.**
+**Kết quả vòng 15: 162/162 test (27 suite) · mypy 0 · bandit Medium+ 0.**
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

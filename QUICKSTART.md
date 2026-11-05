@@ -4,6 +4,10 @@
 > v0.3.1 — bạn chỉ cần dùng bản zip này trở đi. Nếu lệnh `python` không có sẵn,
 > thử `py -m uvicorn ...` thay thế.
 
+## ⚡ CÁNH NHANH NHẤT (v0.31): Windows chỉ cần double-click `run_forge.bat`
+Tự tạo .venv → tự cài dependencies → chạy server → mở trình duyệt. macOS/Linux: `./run_forge.sh`.
+Hướng dẫn từng bước đầy đủ: **USER_GUIDE.md**. Phần dưới là cách tay (vẫn dùng được khi cần debug).
+
 ## 0. Muốn có "phần mềm" như Claude Code/OpenCode?
 ```bash
 pip install -e .

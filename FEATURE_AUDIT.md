@@ -4,6 +4,8 @@
 > đối chiếu với toàn bộ code Forge (đã chạy 15/15 test engine + TUI pilot + web health).
 > Chú thích: ✅ có · 🟡 một phần · ❌ chưa có · ⛔ cố tình không làm · ⭐ độc quyền của Forge
 
+> 🔄 **Bản chụp v0.6** — trạng thái HIỆN HÀNH xem **PARITY.md** (cột ✅ **vX** cập nhật tới v0.31: mọi mục ❌ P0/P1/P2 dưới đây đã xử lý).
+
 > **✅ CẬP NHẬT v0.7 — 5/5 P0 ĐÃ XỬ LÝ:** (1) Diff view xanh/đỏ trong tool card ·
 > (2) `/compact` + auto-compact (env `FORGE_AUTO_COMPACT`, mặc định 150k ký tự) ·
 > (3) Checkpoints/undo qua git-inner repo riêng · (4) `/init` sinh AGENTS.md (demo fallback) ·
