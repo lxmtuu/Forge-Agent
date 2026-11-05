@@ -143,6 +143,16 @@
 
 **Kết quả vòng 9: 134/134 test (22 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
+## 3j. Vòng 10 (v0.26) — Skills trong web
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **S8** | **Tab 🧩 Skills trong ⚙ Cài đặt** | GET `/api/skills?sid=` (catalog + diagnostics) · POST `/api/skills/toggle` (bật/tắt model-invocation bằng frontmatter surgery — sửa/thêm/xoá `disable-model-invocation`, file legacy không frontmatter → tự tạo **đầy đủ name+description**) · POST `/api/skills/trust`; tab hiển thị nhóm nguồn, badge 🔒/🔕/⚠, nút Cấm/Cho model gọi + Tin skill |
+
+**Bài học vòng 10 (2 lớp):** frontmatter tối thiểu khi tự tạo phải ĐỦ `name` **và** `description` — thiếu name → parse lệch; thiếu description → spec BỎ skill ("thiếu description → BỎ") khiến skill biến mất khỏi catalog. Test T2 bắt cả 2 lớp qua StopIteration → diagnostic in catalog/diags mới thấy nguyên nhân thật.
+
+**Kết quả vòng 10: 139/139 test (23 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

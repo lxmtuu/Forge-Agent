@@ -93,7 +93,7 @@ def add(workspace: Path, src: str) -> str:
         tmp = Path(tempfile.mkdtemp(prefix="forge-skill-"))
         r = subprocess.run(
             ["git", "clone", "--depth", "1", "--quiet", url, str(tmp / "repo")],
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, timeout=90, check=False,
         )
         if r.returncode != 0:
             err = (r.stderr or "").strip().splitlines()
@@ -263,3 +263,54 @@ def format_listing(workspace: Path) -> str:
     return (head + "\n\n".join(blocks) + tail
             + "\n\nLệnh: `/skills add <git-url|thư-mục>` · `/skills new <tên> [mô tả]` · "
               "`/skills trust [all|<tên>]` · `/skills remove <tên>`")
+
+
+def set_model_invocable(workspace: Path, skill_path: str, invocable: bool) -> str:
+    """Bật/tắt model-invocation cho 1 skill bằng cách sửa frontmatter SKILL.md.
+
+    - Tắt: đặt `disable-model-invocation: true` (sửa nếu đã có, thêm nếu thiếu;
+      file không có frontmatter → tạo frontmatter tối thiểu).
+    - Bật: xoá/mở dòng disable-model-invocation.
+    Trả chuỗi thông báo thân thiện (không raise với lỗi I/O thông thường).
+    """
+    from .skills import list_skills
+    f = Path(skill_path)
+    try:
+        skills, _ = list_skills(workspace)
+        match = [x for x in skills if str(x.get("path")) == str(f)]
+        if not match:
+            return f"❌ Không thấy skill tại {skill_path} (không nằm trong vị trí quét?)"
+        name = match[0]["name"]
+        try:
+            lines = f.read_text(encoding="utf-8").splitlines(keepends=True)
+        except OSError as e:
+            return f"❌ Không đọc được file: {e}"
+        if lines and lines[0].strip() == "---":
+            end = next((i for i in range(1, len(lines)) if lines[i].strip() in ("---", "...")), None)
+        else:
+            end = None
+        if end is None:
+            if invocable:
+                return f"ℹ️ '{name}' đã ở trạng thái bật."
+            lines = ["---\n", f"name: {name}\n",
+                     "description: (skill legacy — quản lý qua tab Skills)\n",
+                     "disable-model-invocation: true\n", "---\n"] + lines
+        else:
+            idx = next((i for i in range(1, end)
+                        if lines[i].strip().lower().startswith("disable-model-invocation")), None)
+            if invocable:
+                if idx is None:
+                    return f"ℹ️ '{name}' đã ở trạng thái bật."
+                del lines[idx]
+            elif idx is not None:
+                lines[idx] = "disable-model-invocation: true\n"
+            else:
+                lines.insert(1, "disable-model-invocation: true\n")
+        try:
+            f.write_text("".join(lines), encoding="utf-8")
+        except OSError as e:
+            return f"❌ Không ghi được file: {e}"
+        return (f"🔕 '{name}' — chỉ gọi tay (model không tự dùng)." if not invocable
+                else f"✅ '{name}' — model tự dùng được bình thường.")
+    except Exception as e:  # noqa: BLE001 — quản trị skill không được làm sập chat
+        return f"❌ Lỗi: {e}"

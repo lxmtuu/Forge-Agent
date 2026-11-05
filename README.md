@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🧩 Quản lý Skills trên web (v0.26)
+
+⚙ → **🧩 Skills**: xem toàn bộ skill (project/user/built-in) kèm mô tả, 🔑 allowed-tools, cảnh báo diagnostics. Bấm **🔕 Cấm model gọi** khi không muốn model tự dùng một skill (đổi frontmatter `disable-model-invocation`, hiệu lực ngay); skill từ repo lạ hiện 🔒 — bấm **🔓 Tin skill này** để nạp. Cần đang mở một phiên (skills theo workspace).
+
 ### 📨 Nhắn tin giữa các phiên (v0.25)
 
 Các phiên giờ trao đổi được: trong chat gõ `/msg <id-phiên> <nội dung>` (hoặc bảo agent dùng tool `send_message`) — phiên đích (vd phiên `/loop` đang chạy nền) thấy nhắc INBOX ở lượt kế tiếp và đọc bằng `check_inbox`. `/inbox` xem tin mới. Web có REST `POST/GET /api/sessions/{id}/messages`. Skill khai báo `allowed-tools` giờ hiện 🔑 trong `/skills`.

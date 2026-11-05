@@ -225,3 +225,15 @@ export interface ConnectorPreset {
   connected: boolean
   masked: string | null
 }
+
+export interface SkillInfo {
+  name: string
+  description: string
+  path: string
+  source: string
+  fmt: string
+  model_invocable: boolean
+  trusted: boolean
+  allowed_tools: string
+  diags: string[]
+}

@@ -277,6 +277,14 @@ Test: **4/4 suite v0.25 (git thật: vòng đời make→sửa/xoá→diff→mer
 
 Test: **5/5 suite v0.26 (bus unit · stub LLM chạy tool thật giữa lượt · injection system prompt · REST peek/mark-read · S7) — tổng 134/134 / 22 suite · bandit Medium+ 0.**
 
+## 🧩 v0.26 "Skills trong web"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🧩 Tab Skills (S8)** | ⚙ Cài đặt: catalog theo nguồn (project/user/built-in), badge 🔒 chưa tin · 🔕 chỉ gọi tay · ⚠ diagnostics, 🔑 allowed-tools; nút **Cấm/Cho model gọi** (frontmatter surgery, hiệu lực ngay) + **🔓 Tin skill** (chống prompt injection từ repo lạ); hiển thị diagnostics của cả catalog |
+
+Test: **4/4 suite v0.27 (frontmatter surgery đủ trường hợp + REST roundtrip + /skills không vỡ) — tổng 139/139 / 23 suite · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

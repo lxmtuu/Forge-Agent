@@ -898,6 +898,7 @@ export default function App() {
       {settingsOpen && settings && (
         <SettingsModal
           settings={settings}
+          sid={sid}
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
         />

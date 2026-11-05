@@ -429,6 +429,59 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- S8: Skills catalog (web tab)
+@app.get("/api/skills")
+async def skills_list(sid: str):
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    from engine.skills import list_skills
+    skills, diags = list_skills(store.workspace(sid))
+    rows = []
+    for x in skills:
+        rows.append({
+            "name": x["name"], "description": x.get("description", ""),
+            "path": str(x.get("path")), "source": x.get("source", ""),
+            "fmt": x.get("fmt", ""), "model_invocable": bool(x.get("model_invocable", True)),
+            "trusted": bool(x.get("trusted", True)),
+            "allowed_tools": x.get("allowed_tools", ""),
+            "diags": x.get("diags") or [],
+        })
+    return {"skills": rows, "diags": diags[:15]}
+
+
+class SkillToggleBody(BaseModel):
+    path: str
+    invocable: bool
+
+
+@app.post("/api/skills/toggle")
+async def skills_toggle(sid: str, body: SkillToggleBody):
+    from engine import skillmgr
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    msg = skillmgr.set_model_invocable(store.workspace(sid), body.path, body.invocable)
+    code = 400 if msg.startswith("❌") else 200
+    if code == 400:
+        raise HTTPException(400, msg)
+    return {"ok": True, "message": msg}
+
+
+class SkillTrustBody(BaseModel):
+    name: str
+
+
+@app.post("/api/skills/trust")
+async def skills_trust(sid: str, body: SkillTrustBody):
+    from engine import skillmgr
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    msg = skillmgr.trust(store.workspace(sid), body.name)
+    code = 400 if msg.startswith("❌") else 200
+    if code == 400:
+        raise HTTPException(400, msg)
+    return {"ok": True, "message": msg}
+
+
 # ----------------------------------------------------- F2: cross-session messaging
 class MessageBody(BaseModel):
     text: str

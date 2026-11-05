@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { AuditEntry, ConnectorPreset, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+import type { AuditEntry, ConnectorPreset, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, SkillInfo, UsageTotals } from '../types'
 
 const THEMES = [
   { id: 'dark', label: '🌑 Tối (mặc định)' },
@@ -17,6 +17,7 @@ const TABS = [
   { id: 'safe', label: '🛡 An toàn' },
   { id: 'mcp', label: '🔌 MCP' },
   { id: 'svc', label: '🔗 Dịch vụ' },
+  { id: 'skl', label: '🧩 Skills' },
   { id: 'audit', label: '📘 Audit' },
   { id: 'sys', label: '🩺 Hệ thống' },
 ] as const
@@ -24,6 +25,7 @@ type TabId = typeof TABS[number]['id']
 
 export function SettingsModal(props: {
   settings: Settings
+  sid?: string | null
   onClose: () => void
   onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) => Promise<void>
 }) {
@@ -101,6 +103,19 @@ export function SettingsModal(props: {
 
   const loadSvc = () => api.connectorPresets().then(setSvcPresets).catch(() => setSvcPresets([]))
 
+  // ── Skills tab ──
+  const [skillRows, setSkillRows] = useState<SkillInfo[] | null>(null)
+  const [skillDiags, setSkillDiags] = useState<string[]>([])
+  const [skillErr, setSkillErr] = useState<string | null>(null)
+  const [skillBusy, setSkillBusy] = useState<string | null>(null)
+
+  const loadSkills = () => {
+    if (!props.sid) { setSkillErr('Mở một phiên để xem skills của workspace đó.'); return }
+    setSkillErr(null)
+    api.skills(props.sid).then((d) => { setSkillRows(d.skills); setSkillDiags(d.diags) })
+      .catch((e) => setSkillErr(String((e as Error).message ?? e)))
+  }
+
   // ── Audit log tab ──
   const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null)
   const [auditFilter, setAuditFilter] = useState('')
@@ -108,6 +123,7 @@ export function SettingsModal(props: {
   useEffect(() => {
     if (tab === 'audit' && auditRows === null) loadAudit()
     if (tab === 'svc' && svcPresets === null) loadSvc()
+    if (tab === 'skl') loadSkills()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
@@ -436,6 +452,58 @@ export function SettingsModal(props: {
                 ))}
               </div>
               <small>Flow chuẩn OAuth 2.1: PKCE S256 + loopback 127.0.0.1:8765/callback + state chống CSRF. Preset chưa OAuth: cài qua <code>/connectors add</code>.</small>
+            </div>
+          </>
+        )}
+        {tab === 'skl' && (
+          <>
+            <div className="field">
+              <span>Skills <em>(chuẩn SKILL.md — quét .forge/skills · .agents/skills · .claude/skills · ~/.forge/skills)</em></span>
+              {skillErr && <div className="save-error">{skillErr}</div>}
+              {!skillErr && (
+                <div className="skill-list">
+                  {!skillRows && <div className="empty" style={{ padding: 10 }}>Đang nạp…</div>}
+                  {skillRows && skillRows.length === 0 && (
+                    <div className="empty" style={{ padding: 10 }}>Chưa có skill nào — <code>/skills new &lt;tên&gt;</code> để tạo.</div>
+                  )}
+                  {skillRows && skillRows.map((k) => (
+                    <div key={k.path} className={`skill-row ${k.trusted ? '' : 'untrusted'}`}>
+                      <div className="skill-head">
+                        <b>{k.name}</b>
+                        {k.fmt === 'standard' ? <span className="st st-dim">standard</span> : <span className="st st-dim">legacy</span>}
+                        {!k.trusted && <span className="st st-warn">🔒 chưa tin</span>}
+                        {!k.model_invocable && <span className="st st-dim">🔕 chỉ gọi tay</span>}
+                      </div>
+                      <div className="skill-desc">{k.description.slice(0, 140)}{k.description.length > 140 ? '…' : ''}</div>
+                      {k.allowed_tools && <div className="skill-meta">🔑 {k.allowed_tools}</div>}
+                      {k.diags.length > 0 && <div className="skill-meta">⚠ {k.diags.join('; ')}</div>}
+                      <div className="skill-actions">
+                        <button className="btn-ghost btn-sm" disabled={skillBusy === k.path}
+                          onClick={() => { setSkillBusy(k.path)
+                            api.skillToggle(props.sid as string, k.path, !k.model_invocable)
+                              .then(() => api.skills(props.sid as string)).then((d) => { setSkillRows(d.skills); setSkillDiags(d.diags) })
+                              .catch(() => {}).finally(() => setSkillBusy(null)) }}>
+                          {skillBusy === k.path ? '…' : k.model_invocable ? '🔕 Cấm model gọi' : '✅ Cho model gọi'}
+                        </button>
+                        {!k.trusted && k.source === 'project' && (
+                          <button className="btn-primary btn-sm" disabled={skillBusy === k.path}
+                            onClick={() => { setSkillBusy(k.path)
+                              api.skillTrust(props.sid as string, k.name)
+                                .then(() => api.skills(props.sid as string)).then((d) => { setSkillRows(d.skills); setSkillDiags(d.diags) })
+                                .catch(() => {}).finally(() => setSkillBusy(null)) }}>
+                            🔓 Tin skill này
+                          </button>
+                        )}
+                      </div>
+                      <code className="skill-path">{k.path}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {skillDiags.length > 0 && (
+                <small>⚠ {skillDiags.length} cảnh báo diagnostics: {skillDiags.slice(0, 3).join(' · ')}</small>
+              )}
+              <small>Bật/tắt chỉ đổi frontmatter <code>disable-model-invocation</code> trong SKILL.md — hiệu lực ngay.</small>
             </div>
           </>
         )}

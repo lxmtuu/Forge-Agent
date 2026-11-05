@@ -748,3 +748,14 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .edit-box textarea { width: 100%; background: transparent; color: inherit; border: none; outline: none; resize: vertical; font: inherit; }
 .edit-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .edit-actions small { margin-right: auto; color: var(--dim, #8b8d96); }
+
+/* ── v0.26: tab Skills ── */
+.skill-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border, #2a2b33); border-radius: 8px; margin: 8px 0; }
+.skill-row { padding: 9px 12px; border-bottom: 1px solid var(--border, #232428); display: flex; flex-direction: column; gap: 4px; }
+.skill-row:last-child { border-bottom: none; }
+.skill-row.untrusted { opacity: 0.75; }
+.skill-head { display: flex; align-items: center; gap: 8px; }
+.skill-desc { font-size: 12.5px; color: var(--dim, #a5a7ae); }
+.skill-meta { font-size: 12px; color: var(--dim, #8b8d96); }
+.skill-actions { display: flex; gap: 8px; margin-top: 4px; }
+.skill-path { font-size: 11px; color: var(--dim, #6f7178); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

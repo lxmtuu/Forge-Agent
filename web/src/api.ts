@@ -2,7 +2,7 @@ import type {
   AgentEvent, BatchEvent, ContextStats, DoctorReport, FileNode,
   KeyCheckResult, McpServerStatus, ModelInfo,
   SessionFull, SessionSummary, Settings, UsageTotals,
-  AuditEntry, ConnectorPreset,
+  AuditEntry, ConnectorPreset, SkillInfo,
 } from './types'
 
 async function j<T>(res: Response): Promise<T> {
@@ -159,6 +159,18 @@ export const api = {
     fetch(`/api/connectors/${encodeURIComponent(name)}/oauth/status`).then((r) => j<{ status: string; detail: string; authorize_url?: string }>(r)),
   oauthDisconnect: (name: string) =>
     fetch(`/api/connectors/${encodeURIComponent(name)}/oauth`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
+  skills: (sid: string) =>
+    fetch(`/api/skills?sid=${encodeURIComponent(sid)}`).then((r) => j<{ skills: SkillInfo[]; diags: string[] }>(r)),
+  skillToggle: (sid: string, path: string, invocable: boolean) =>
+    fetch(`/api/skills/toggle?sid=${encodeURIComponent(sid)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, invocable }),
+    }).then((r) => j<{ ok: boolean; message: string }>(r)),
+  skillTrust: (sid: string, name: string) =>
+    fetch(`/api/skills/trust?sid=${encodeURIComponent(sid)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then((r) => j<{ ok: boolean; message: string }>(r)),
   connectorInstall: (id: string) =>
     fetch(`/api/connectors/install?id=${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => j<{ ok: boolean; message: string }>(r)),
   connectorRemove: (id: string) =>
