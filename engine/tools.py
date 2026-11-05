@@ -170,6 +170,32 @@ TOOL_SPECS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "send_message",
+            "description": "Gửi tin nhắn sang MỘT phiên khác (vd phiên /loop đang chạy nền, "
+                           "phiên fork). Phiên đích sẽ thấy gợi ý INBOX ở lượt kế tiếp của nó "
+                           "và đọc bằng check_inbox. Dùng để điều phối: báo kết quả, đổi nhiệm "
+                           "vụ, cảnh báo. Không gửi cho chính phiên hiện tại.",
+            "parameters": {"type": "object",
+                           "properties": {
+                               "to_session": {"type": "string",
+                                              "description": "ID phiên đích (vd 20261105-ab12cd34)"},
+                               "text": {"type": "string", "description": "Nội dung (≤4000 ký tự)"},
+                           },
+                           "required": ["to_session", "text"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_inbox",
+            "description": "Đọc tin nhắn CHƯA ĐỌC từ phiên khác gửi tới (tự đánh dấu đã đọc). "
+                           "Gọi khi system prompt báo INBOX có tin.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "write_file",
             "description": "Create a new file or fully overwrite an existing one. "
                            "Parent folders are created automatically.",

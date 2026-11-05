@@ -132,6 +132,17 @@
 
 **Kết quả vòng 8: 129/129 test (21 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
+## 3i. Vòng 9 (v0.25) — Liên phiên & Ký năng rõ phép
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **F2** | **Cross-session messaging** | `engine/bus.py`: JSONL `data/messages/<sid>.jsonl` + mốc đọc theo offset (`<sid>.read`); tool **send_message** (validate phiên tồn tại, chặn self-send) + **check_inbox** (đọc = mark-read); đầu lượt có tin chưa đọc → system prompt nhắc "INBOX: N tin — gọi check_inbox" (test chứng minh có/hết tin); REST POST/GET (peek=true không đổi mốc); `/msg <phiên> <nội dung>` + `/inbox` đủ 3 UI. Hợp lực: gửi chỉ đạo cho phiên `/loop` đang nền |
+| **S7** | **allowed-tools hiển thị** | /skills listing hiện `🔑 read_file, list_dir…` cho skill khai báo allowed-tools (chỉ hiển thị — experimental, đúng kế hoạch SKILLS_RESEARCH) |
+
+**Bài học vòng 9:** chèn 2 tool specs vào TOOLS_LIST — chèn đúng vị trí tên nhưng SAI mức lồng (thiếu wrapper `{"type": "function", "function": {…}}` giữa 2 entry) → SyntaxError. py_compile bắt ngay; sửa bằng edit_file từng khớp nối. Quy tắc nhắc lại: **với cấu trúc lồng nhau (list[dict]), mọi chèn giữa phải kèm cả wrapper đóng/mở.**
+
+**Kết quả vòng 9: 134/134 test (22 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

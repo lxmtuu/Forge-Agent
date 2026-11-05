@@ -56,6 +56,7 @@ HELP = """[bold]Lệnh[/bold]
   /commit              commit thay đổi workspace (message conventional)   /autocommit [on|off]
   /loop <30m|1h> <tác vụ>  chạy định kỳ trong tiến trình · /loop off · /loop xem trạng thái
   /worktree [merge|discard]  quản lý worktree của sub-agent (isolation=worktree)
+  /msg <phiên> <nội dung>  gửi tin sang phiên khác (/loop, fork…)   /inbox  đọc tin mới
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -503,6 +504,32 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows[:20]:
                 console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} "
                               f"[dim]· {r['message_count']} tin[/dim]")
+            continue
+        if text.startswith("/msg "):
+            from engine import bus as fbus
+            parts = text[5:].strip().split(None, 1)
+            to_sid = parts[0].strip() if parts else ""
+            body = parts[1].strip() if len(parts) > 1 else ""
+            if not to_sid or not body:
+                console.print("❌ Cú pháp: /msg <id-phiên> <nội dung>")
+            elif store.get(to_sid) is None:
+                console.print(f"❌ Không có phiên '{to_sid}' (xem /agents).")
+            else:
+                fbus.send(to_sid, session_id, body)
+                console.print(f"📨 Đã gửi tới {to_sid} — phiên đích sẽ thấy ở lượt kế tiếp.")
+            continue
+        if text == "/inbox":
+            from engine import bus as fbus
+            rows = fbus.inbox(session_id)
+            if rows:
+                for r in rows:
+                    console.print(f"📥 [dim]{str(r['ts'])[11:16]}[/dim] [bold]{r['from']}[/bold]: {r['text'][:200]}")
+            else:
+                console.print("(hộp thư trống)")
+            continue
+        if text == "/agents":
+            for r in store.list()[:8]:
+                console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} [dim]· {r['message_count']} tin[/dim]")
             continue
         if text == "/worktree" or text.startswith("/worktree "):
             from engine import worktree as fwt

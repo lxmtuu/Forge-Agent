@@ -429,6 +429,32 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- F2: cross-session messaging
+class MessageBody(BaseModel):
+    text: str
+    from_session: str = "web"
+
+
+@app.post("/api/sessions/{sid}/messages")
+async def message_send(sid: str, body: MessageBody):
+    from engine import bus as fbus
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    if not body.text.strip():
+        raise HTTPException(400, "Empty message")
+    ent = fbus.send(sid, body.from_session or "web", body.text)
+    return {"ok": True, "entry": ent}
+
+
+@app.get("/api/sessions/{sid}/messages")
+async def message_inbox(sid: str, peek: bool = False):
+    from engine import bus as fbus
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    rows = fbus.peek(sid) if peek else fbus.inbox(sid)
+    return {"messages": rows, "count": len(rows)}
+
+
 # ----------------------------------------------------- B2: worktree sub-agent
 @app.get("/api/worktrees")
 async def worktree_list():
@@ -668,6 +694,32 @@ async def chat(sid: str, body: ChatBody, request: Request):
         a_n = int(a_arg) if a_arg.isdigit() else 20
         audit_synthetic = [{"type": "assistant_message",
                             "content": auditlog.format_listing(a_n)}]
+    # /msg <phiên> <nội dung> + /inbox — F2 cross-session messaging
+    msg_synthetic: list[dict] | None = None
+    if text.startswith("/msg ") or text == "/inbox":
+        from engine import bus as fbus
+        if text == "/inbox":
+            rows = fbus.inbox(sid)
+            if rows:
+                body = "\n\n".join(f"📥 **{r['from']}** ({str(r['ts'])[11:16]}): {r['text'][:300]}"
+                                   for r in rows)
+            else:
+                body = "(hộp thư trống)"
+            msg_synthetic = [{"type": "assistant_message", "content": body}]
+        else:
+            parts = text[5:].strip().split(None, 1)
+            to_sid = parts[0].strip() if parts else ""
+            body = parts[1].strip() if len(parts) > 1 else ""
+            if not to_sid or not body:
+                msg_synthetic = [{"type": "assistant_message",
+                                  "content": "❌ Cú pháp: `/msg <id-phiên> <nội dung>`"}]
+            elif store.get(to_sid) is None:
+                msg_synthetic = [{"type": "assistant_message",
+                                  "content": f"❌ Không có phiên '{to_sid}'."}]
+            else:
+                fbus.send(to_sid, sid, body)
+                msg_synthetic = [{"type": "assistant_message",
+                                  "content": f"📨 Đã gửi tới {to_sid} — phiên đích sẽ thấy ở lượt kế tiếp."}]
     # /worktree [list|merge <sub>|discard <sub>] — B2 quản lý worktree sub-agent
     wt_synthetic: list[dict] | None = None
     if text == "/worktree" or text.startswith("/worktree "):
@@ -784,10 +836,11 @@ async def chat(sid: str, body: ChatBody, request: Request):
                 text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
     synthetic: list[dict] | None = (audit_synthetic if audit_synthetic is not None else
+                                    (msg_synthetic if msg_synthetic is not None else
                                     (wt_synthetic if wt_synthetic is not None else
                                      (loop_synthetic if loop_synthetic is not None else
                                       (connectors_synthetic
-                                       if connectors_synthetic is not None else skills_synthetic))))
+                                       if connectors_synthetic is not None else skills_synthetic)))))
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

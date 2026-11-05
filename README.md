@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 📨 Nhắn tin giữa các phiên (v0.25)
+
+Các phiên giờ trao đổi được: trong chat gõ `/msg <id-phiên> <nội dung>` (hoặc bảo agent dùng tool `send_message`) — phiên đích (vd phiên `/loop` đang chạy nền) thấy nhắc INBOX ở lượt kế tiếp và đọc bằng `check_inbox`. `/inbox` xem tin mới. Web có REST `POST/GET /api/sessions/{id}/messages`. Skill khai báo `allowed-tools` giờ hiện 🔑 trong `/skills`.
+
 ### 🌿 Worktree isolation (v0.24)
 
 Bảo sub-agent làm việc trong **bản sao an toàn**: yêu cầu agent "dùng spawn_subagent với isolation=worktree" — sub sửa/xoá thoải mái mà workspace của bạn không đổi; xem diff trong báo cáo rồi quyết: `/worktree merge <phiên-con>` (gộp về) hoặc `/worktree discard <phiên-con>` (bỏ trắng). Fork phiên cũng nhanh hơn — xuất từ checkpoint nên không dính file đang ghi dở.

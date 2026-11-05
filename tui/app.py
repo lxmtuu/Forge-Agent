@@ -346,7 +346,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop /worktree "
+                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop /worktree /msg /inbox "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -420,6 +420,28 @@ class ForgeTUI(App):
             for r in rows:
                 self.add_line(f"  {r['id']}  {r['title'][:40]} · {r['message_count']} tin",
                               cls="sys-line")
+        elif cmd == "/msg":
+            from engine import bus as fbus
+            parts = arg.strip().split(None, 1)
+            to_sid = parts[0].strip() if parts else ""
+            body = parts[1].strip() if len(parts) > 1 else ""
+            if not to_sid or not body:
+                self.add_line("❌ Cú pháp: /msg <id-phiên> <nội dung>", cls="sys-line")
+            elif store.get(to_sid) is None:
+                self.add_line(f"❌ Không có phiên '{to_sid}'.", cls="sys-line")
+            else:
+                fbus.send(to_sid, self.sid, body)
+                self.add_line(f"📨 Đã gửi tới {to_sid} — phiên đích sẽ thấy ở lượt kế tiếp.",
+                              cls="sys-line")
+        elif cmd == "/inbox":
+            from engine import bus as fbus
+            rows = fbus.inbox(self.sid)
+            if rows:
+                for r in rows:
+                    self.add_line(f"📥 {str(r['ts'])[11:16]} {r['from']}: {r['text'][:160]}",
+                                  cls="sys-line")
+            else:
+                self.add_line("(hộp thư trống)", cls="sys-line")
         elif cmd == "/worktree":
             asyncio.get_running_loop().create_task(self._worktree_cmd(arg.strip()))
         elif cmd == "/loop":

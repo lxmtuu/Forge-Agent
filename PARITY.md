@@ -268,6 +268,15 @@ Test: **4/4 suite v0.24 (unit manager + E2E server 2 lượt demo thật persist
 
 Test: **4/4 suite v0.25 (git thật: vòng đời make→sửa/xoá→diff→merge→discard; stub chứng minh sub chạy trong wt, cha bất động) — tổng 129/129 / 21 suite · bandit Medium+ 0.** Bắt thêm bug nghiêm trọng: chèn method mới làm rơi `@work` của `run_turn` (TUI ngừng chạy lượt) — T7 hồi quy bắt được trước khi giao.
 
+## 📨 v0.25 "Liên phiên & Ký năng rõ phép"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **📨 Cross-session messaging (F2)** | Tool `send_message`/`check_inbox` + gợi ý INBOX đầu lượt + REST + `/msg`·`/inbox` — phiên chính chỉ đạo phiên `/loop` đang nền; đọc tự mark-read theo offset |
+| 2 | **🔑 allowed-tools hiển thị (S7)** | Skill khai báo `allowed-tools` hiện rõ trong `/skills` (experimental — chỉ hiển thị) |
+
+Test: **5/5 suite v0.26 (bus unit · stub LLM chạy tool thật giữa lượt · injection system prompt · REST peek/mark-read · S7) — tổng 134/134 / 22 suite · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

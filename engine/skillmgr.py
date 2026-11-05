@@ -239,6 +239,8 @@ def format_listing(workspace: Path) -> str:
             if src == "project" and not s.get("trusted", True):
                 icon = "🔒"
             inv = "" if s["model_invocable"] else " · 🔕 chỉ gọi tay"
+            at = (s.get("allowed_tools") or "").strip()
+            at_s = f" · 🔑 {at[:60]}" if at else ""
             res = []
             for k in ("scripts", "references", "assets"):
                 if s[k]:
@@ -246,7 +248,7 @@ def format_listing(workspace: Path) -> str:
             res_s = f" · {' '.join(res)}" if res else ""
             warn = f" · ⚠ {'; '.join(s['diags'])}" if s["diags"] else ""
             desc = s["description"][:100] + ("…" if len(s["description"]) > 100 else "")
-            lines.append(f"- {icon} **{s['name']}**{inv}{res_s} — {desc}{warn}")
+            lines.append(f"- {icon} **{s['name']}**{inv}{at_s}{res_s} — {desc}{warn}")
             lines.append(f"  `{s['path']}`")
         blocks.append("\n".join(lines))
     n_lock = sum(1 for s in skills if s["source"] == "project" and not s.get("trusted", True))

@@ -408,6 +408,14 @@ class Agent:
             print(f"[hooks] session_start lỗi (bỏ qua): {_e}")
             ss_extra = ""
         sys_msg = self._system_message(ss_extra)
+        try:
+            from . import bus as fbus
+            _n = fbus.unread_count(s.id)
+            if _n:
+                sys_msg["content"] += (f"\n\n=== INBOX: {_n} tin nhắn từ phiên khác — "
+                                       "gọi tool check_inbox để đọc ===")
+        except Exception as _be:  # noqa: BLE001 — hộp thư hỏng không được làm sập chat
+            print(f"[bus] bỏ qua: {_be}")
         if chat_mode == "plan":
             sys_msg["content"] += PLAN_ADDENDUM
         messages = [sys_msg] + s.messages
@@ -643,6 +651,33 @@ class Agent:
                             result = task.result()
                             if seen:
                                 self.store.save(s)
+                    elif name in ("send_message", "check_inbox"):
+                        # F2 cross-session messaging — cần store/own sid nên xử lý ở agent
+                        from . import bus as fbus
+                        if name == "send_message":
+                            to_sid = str(args.get("to_session", "")).strip()
+                            text = str(args.get("text", "")).strip()
+                            if not to_sid or not text:
+                                result = {"ok": False,
+                                          "output": "Error: cần 'to_session' (id phiên đích) và 'text'."}
+                            elif to_sid == s.id:
+                                result = {"ok": False, "output": "Error: không gửi cho chính mình."}
+                            elif self.store.get(to_sid) is None:
+                                result = {"ok": False,
+                                          "output": f"Error: không có phiên '{to_sid}'."}
+                            else:
+                                fbus.send(to_sid, s.id, text)
+                                result = {"ok": True,
+                                          "output": f"Đã gửi tới {to_sid} — phiên đích sẽ thấy ở lượt kế tiếp."}
+                        else:
+                            rows = fbus.inbox(s.id)
+                            if rows:
+                                out = "\n\n".join(
+                                    f"[{str(r['ts'])[11:16]} từ {r['from']}] {r['text']}"
+                                    for r in rows)
+                                result = {"ok": True, "output": f"📥 {len(rows)} tin:\n{out}"}
+                            else:
+                                result = {"ok": True, "output": "(hộp thư trống)"}
                     else:
                         result = await tools.execute_tool(name, args, self.workspace, override=override)
                     # hooks: post_tool_use — nối nhận xét hook vào output cho LLM
