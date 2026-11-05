@@ -1,4 +1,4 @@
-# 🔐 SECURITY — Forge Agent v0.35 account & access
+# 🔐 SECURITY — Forge Agent v0.36 account & access
 
 > Mô hình mục tiêu: **một VPS/process, account do admin tạo hoặc public signup opt-in, provider key do operator giữ**. Session/workspace có owner ACL ở application layer. Đây vẫn là môi trường cho nhóm tin cậy, **không phải sandbox OS hoặc multi-tenant isolation chống user độc hại**.
 
@@ -81,6 +81,12 @@ custom:model                  # OpenAI-compatible endpoint do admin cấu hình
 
 `openrouter:google/...` là model vendor Google **qua OpenRouter**, không phải Gemini direct. Provider key chỉ nằm trên server; client không gửi endpoint hay nhận secret. Demo/cost/fallback/sub-agent/batch/battle route theo provider của từng model, không theo active provider toàn cục.
 
+### Persistent keys/model và error boundary (v0.36)
+
+- Settings chỉ nhận boolean `provider_keys` cho từng provider và mask giả; không có API đọc lại secret thô. Browser chỉ lưu preference `forge-key-provider`, không lưu key. Đổi provider xoá draft để tránh ghi nhầm secret sang provider khác.
+- `PATCH /api/sessions/{sid}/model` đi qua cùng cookie auth, CSRF và `ScopedSessionStore`: member chỉ đổi session mình, session user khác trả 404. Model invalid không ghi đè giá trị đã lưu.
+- HTTP error client giữ status/endpoint nhưng redact các dạng provider key/Bearer token; FastAPI 422 chỉ lấy location/message, không echo trường `input` có thể chứa secret. SSE phải có `done`, nếu không client báo stream bị cắt.
+
 `image_generation` mới là capability contract. **Chưa có image-generation adapter**: catalog trả rỗng với `image_generation_adapter=false`, chat yêu cầu tạo ảnh trả 501. Không coi vision (hiểu ảnh) là image generation.
 
 ## 4. Google OIDC — chỉ login, không Gmail
@@ -156,8 +162,9 @@ Lệnh chỉ gán session owner rỗng, không đụng session đã thuộc user
 python scripts/test_v033.py
 python scripts/test_v034.py
 python scripts/test_v035.py
+python scripts/test_v036.py
 ```
 
-Suite dùng fake credential và data tạm. v0.35 kiểm public signup/toggle/role guard/rate-limit/Google policy/owner isolation; v0.34 kiểm AuthStore, owner ACL, CSRF/cookie, Team, model routing, background owner, OIDC flow giả và RS256/JWKS local, migration, member MCP/skill isolation.
+Suite dùng fake credential và data tạm. v0.36 kiểm lưu/reload ba provider key, model session trước prompt, owner ACL/CSRF, provider 501 mock + redaction, SSE error/done và concurrent routing; v0.35 kiểm public signup/toggle/role guard/rate-limit/Google policy/owner isolation; v0.34 kiểm AuthStore, owner ACL, CSRF/cookie, Team, model routing, background owner, OIDC flow giả và RS256/JWKS local, migration, member MCP/skill isolation.
 
 **Kiểm thử OIDC giả không thay thế Google OAuth thật trên production.** Sau khi cấu hình client thật, admin cần smoke: start → Google consent → callback → logout → login lại, và kiểm tra uninvited/disabled account. Không ghi client secret/token vào test log.

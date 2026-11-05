@@ -74,6 +74,9 @@ class ModelRegistry:
         raw = (model or "").strip()
         if not raw:
             raw = config.get_model()
+        prefix, sep, bare = raw.partition(":")
+        if sep and prefix.lower() in llm.PROVIDER_PREFIXES and not bare.strip():
+            raise ValueError(f"Model ID thiếu tên sau prefix provider '{prefix}:'")
         # Không đoán google/... là Gemini direct: trên OpenRouter đó là vendor prefix.
         return llm.qualify_model(raw, provider)
 

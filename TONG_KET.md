@@ -1,7 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.35.0 "Opt-in public signup"** · 204 test / 31 suite · mypy 0 lỗi · 38 files · bandit Medium+ 0
-> Lịch sử v0.10 → v0.35 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
+> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.36.0 "Persistent providers & diagnostics"** · 212 test / 32 suite · mypy 0 lỗi · 39 files · bandit Medium+ 0
+> Lịch sử v0.10 → v0.36 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
 
 ---
 
@@ -25,7 +25,8 @@
 | **v0.32.0** | `3e754aa` | **Autonomy nâng cao**: sub-agent nền + Notification `agent_completed`, repo map + `/repomap`, thêm 4 hook events; đóng A4/A5/C1 |
 | **v0.33.0** | `994beda` | **Shared-server security**: sanitized subprocess env, terminal setup OpenRouter/Google/custom, provider secret store + PBKDF2 release auth, Settings lock, CORS same-origin, auth/LLM rate-limit. 179 test tại mốc này |
 | **v0.34.0** | `908683c` | **Private team + multi-provider**: per-user cookie auth + CSRF, email/password + Google OIDC, Team admin, owner ACL toàn bộ dữ liệu, canonical model theo session, provider-aware demo/cost/fallback/sub-agent, migration CLI và first-run bootstrap. 17 regression mới; toàn bộ 196 test PASS |
-| **v0.35.0** | main (release) | **Opt-in public signup + auth UX**: form đăng ký member, auto-login, admin toggle bền vững, CSRF + rate-limit IP/email, role injection guard, Google self-signup theo policy, trạng thái Google chưa cấu hình rõ ràng. 8 regression mới; toàn bộ 204 test PASS |
+| **v0.35.0** | `7d1250a` | **Opt-in public signup + auth UX**: form đăng ký member, auto-login, admin toggle bền vững, CSRF + rate-limit IP/email, role injection guard, Google self-signup theo policy, trạng thái Google chưa cấu hình rõ ràng. 8 regression mới; toàn bộ 204 test PASS |
+| **v0.36.0** | main (release) | **Persistent providers & diagnostics**: trạng thái key đúng từng provider, một key/provider cùng tồn tại, model session lưu trước prompt, Save setting không reset model, HTTP/SSE error có chi tiết redact, provider 501 actionable. 8 regression mới; toàn bộ 212 test PASS |
 
 ---
 
@@ -63,7 +64,7 @@
 | **Demo mode** | Không cần key vẫn chạy tool thật (kịch bản mẫu) — người mới bật là chạy |
 
 ### 🌐 Server API (nhóm chính)
-`/api/health` · `/api/auth/{me,register,login,logout,users,password,registration/*,google/*}` · `/api/settings` (GET/POST: key, model, mode, web_search, allow/deny, max_tokens) · `/api/keycheck` · `/api/models` (canonical multi-provider; live OpenRouter + Gemini direct) · `/api/sessions` CRUD · `/api/sessions/{sid}/chat` (SSE) · `/undo` `/compact` `/init` `/fork` `/export` · `/api/batch` · `/api/battle` (SSE) · `/api/approvals/{aid}` · `/api/elicitations` + `/api/elicitation/{eid}` · `/api/workspace/{exec,open,close,tree,file,upload,export}` · `/api/mcp` CRUD
+`/api/health` · `/api/auth/{me,register,login,logout,users,password,registration/*,google/*}` · `/api/settings` (GET/POST: key, model, mode, web_search, allow/deny, max_tokens) · `/api/keycheck` · `/api/models` (canonical multi-provider; live OpenRouter + Gemini direct) · `/api/sessions` CRUD · `/api/sessions/{sid}/model` (PATCH, owner + CSRF) · `/api/sessions/{sid}/chat` (SSE) · `/undo` `/compact` `/init` `/fork` `/export` · `/api/batch` · `/api/battle` (SSE) · `/api/approvals/{aid}` · `/api/elicitations` + `/api/elicitation/{eid}` · `/api/workspace/{exec,open,close,tree,file,upload,export}` · `/api/mcp` CRUD
 
 ---
 
@@ -71,21 +72,24 @@
 
 | Gate | Phạm vi | Kết quả |
 |---|---|:-:|
-| Full clean regression | 31 suite `scripts/test_*.py`, sau khi xoá `__pycache__` | **204/204 PASS** ✅ |
+| Full clean regression | 32 suite `scripts/test_*.py`, sau khi xoá `__pycache__` | **212/212 PASS** ✅ |
 | `scripts/test_v033.py` | Secret store/hash, 3 providers, sanitized subprocess env, API redaction, cookie login/public health, release lock, CORS/preflight, rate-limit, terminal setup | **12/12** ✅ |
 | `scripts/test_v034.py` | AuthStore, anonymous/CSRF, email login/logout, Team, owner ACL, audit/usage/inbox/approval/elicitation, migration, registry/routing, concurrent providers, background owner, OIDC + RS256/JWKS local, image fail-closed, setup CLI/Web bundle, provider-specific demo/cost, member MCP/skills, first-run launcher | **17/17** ✅ |
 | `scripts/test_v035.py` | Bootstrap guard, admin-only policy, signup disabled/CSRF, validation/member-only/auto-login/duplicate/role injection, toggle/disable, IP+email rate-limit, Google policy, production bundle, owner isolation giữa hai public member | **8/8** ✅ |
+| `scripts/test_v036.py` | Ba provider key persist/reload + redaction, model session trước prompt + CSRF/owner ACL, Web-shaped chat vs image 501, provider 501 mock actionable, SSE error/done, concurrent routing, production bundle | **8/8** ✅ |
 | HTTP smoke thật | v0.34 · Uvicorn :8765 + release mode + fake users/data tạm: cookie Secure/HttpOnly, CSRF, login/logout, SSE demo, Team/owner ACL, model theo session | **22/22 PASS** ✅ |
-| Browser smoke thật | Chromium trên v0.35: signup form/validation/201/auto-login/logout/login/member role **15/15**; admin/member/model/ACL regression **14/14** | **29/29 PASS** ✅ |
+| Browser smoke thật | Chromium trên v0.36: audit key/model/empty-501/truncated-SSE **20/20** + model-race **1/1**; signup **15/15** + admin/member/model/ACL regression **14/14** | **50/50 PASS** ✅ |
 | Static checks | mypy `server/main.py` + `engine/`; TypeScript noEmit; Vite production build 42 modules | **PASS** ✅ |
 | Security lint | bandit Medium+ trên engine/server/setup/migration/launcher | **0 finding** ✅ |
 | Ruff | Full cho new files; changed-core gate ngoại trừ legacy `BLE001/S110/S112/RUF100`; không tuyên bố toàn repo sạch | **PASS theo phạm vi** ✅ |
 
-Bundle cuối: `server/static/assets/index-BAbh243A.js` + `index-C9Qx8Obd.css`.
+Bundle cuối: `server/static/assets/index-DHH92dHj.js` + `index-C2SAW--4.css`.
 
 Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global thay vì provider của model; battle dùng chung một demo boolean; background sub-agent mất router/owner default; architect đổi semantics TUI; demo bỏ ảnh vẫn đòi vision; `ScopedSessionStore` thiếu `allow_mcp`; launcher thiếu Authlib và còn kiểm tra shared release password. Các failure do fixture response shape/logout 204 được sửa ở test/smoke client, không nới product ACL.
 
-**Chưa kiểm chứng:** Docker/container smoke (sandbox không có Docker CLI) và Google OAuth thật bằng client production. OIDC đã kiểm bằng flow giả + JWT RS256/JWKS local; không dùng credential thật trong regression.
+Bug v0.36 bị repro bắt: Settings dùng mask của active provider cho mọi provider; đổi provider có thể mang draft key sang Save nhầm; model session chỉ ghi khi chat; Save setting khác reset model về default; empty/non-JSON HTTP error chỉ còn status; SSE cụt được coi là thành công; synthetic command thiếu `done`. Controlled test trên v0.35 tái hiện banner trần `HTTP 501` bằng response 501 body rỗng; v0.36 giữ status + endpoint + diagnostic. Provider 501 cũng được mock riêng để kiểm redaction và hướng xử lý tools/streaming/reasoning.
+
+**Chưa kiểm chứng:** Docker/container smoke (sandbox không có Docker CLI), Google OAuth thật bằng client production, và **nguồn HTTP 501 cụ thể trên máy Windows của user**. Empty-501 browser test và provider-501 mock kiểm cách hiển thị/xử lý, không chứng minh đó là nguồn ngoài máy user; cần banner chi tiết mới hoặc dòng log request để kết luận. OIDC đã kiểm bằng flow giả + JWT RS256/JWKS local; không dùng credential thật trong regression.
 
 ---
 
@@ -120,9 +124,9 @@ Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global th
 
 ## 6. Trạng thái bàn giao
 
-- **Release:** v0.35.0, Web production build sẵn; ZIP `forge-agent-v0.35.0.zip`.
-- **Git:** nhánh main, release commit tạo từ working tree đã kiểm; baseline v0.34 `908683c` và tag/ZIP cũ giữ nguyên.
-- **Kiểm thử:** 204/204 test · 31 suite · browser 29/29 · mypy 0 lỗi · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
-- **Preview smoke:** uvicorn :8765, health 0.35.0, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
+- **Release:** v0.36.0, Web production build sẵn; ZIP `forge-agent-v0.36.0.zip`.
+- **Git:** nhánh main, release commit tạo từ working tree đã kiểm; v0.35 `7d1250a` và tag/ZIP cũ giữ nguyên.
+- **Kiểm thử:** 212/212 test · 32 suite · browser 50/50 · mypy 0 lỗi / 39 files · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
+- **Preview smoke:** uvicorn :8766, health 0.36.0, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
 - **Yêu cầu hệ thống:** Python 3.10+ · dependencies trong requirements (gồm Authlib) · OpenRouter/Google Gemini/custom provider hoặc demo không cần key.
 - **Giới hạn đã ghi rõ:** single process/VPS; owner ACL không phải OS sandbox; public signup chưa có SMTP verification/CAPTCHA; chưa có image-generation adapter; real Google OAuth và Docker smoke còn lại.

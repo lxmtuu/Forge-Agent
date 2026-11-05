@@ -142,6 +142,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sid, setSid] = useState<string | null>(null)
+  const sidRef = useRef<string | null>(null)
+  sidRef.current = sid
   const [items, setItems] = useState<Item[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -592,10 +594,40 @@ export default function App() {
   }
 
   // ------------------------------------------------------------- settings
+  async function persistSessionModel(modelArg?: string) {
+    const sessionId = sid
+    if (!sessionId) return
+    const selected = (modelArg ?? activeModel).trim()
+    if (!selected) return
+    try {
+      const saved = await api.setSessionModel(sessionId, selected)
+      setSessions((prev) => prev.map((row) => row.id === sessionId ? { ...row, model: saved.model } : row))
+      if (sidRef.current === sessionId) {
+        setActiveModel(saved.model)
+        setInfo(`✓ Model của phiên đã lưu: ${saved.model}`)
+      }
+    } catch (e) {
+      if (sidRef.current !== sessionId) return
+      setErrorBanner((e as Error).message)
+      try {
+        const current = await api.getSession(sessionId)
+        if (sidRef.current === sessionId) setActiveModel(current.model)
+      } catch { /* giữ error ban đầu; không khôi phục bằng request của session khác */ }
+    }
+  }
+
   async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) {
+    const sessionId = sid
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
-    setActiveModel(s.model)
+    // Save key/setting khác không được reset model session về default.
+    if (model?.trim() && sessionId) {
+      const saved = await api.setSessionModel(sessionId, s.model)
+      setSessions((prev) => prev.map((row) => row.id === sessionId ? { ...row, model: saved.model } : row))
+      if (sidRef.current === sessionId) setActiveModel(saved.model)
+    } else if (model?.trim()) {
+      setActiveModel(s.model)
+    }
   }
 
   // --------------------------------------------------------------- render
@@ -840,7 +872,10 @@ export default function App() {
               title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ trên)"
               onClick={() => setParallel(!parallel)}>⚡ Song song</button>
             <input className="session-model" list="session-models" value={activeModel}
-              onChange={(e) => setActiveModel(e.target.value)} title="Model cho phiên này — server tự route provider"
+              onChange={(e) => setActiveModel(e.target.value)}
+              onBlur={() => { void persistSessionModel() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+              title="Model cho phiên này — lưu ngay khi Enter/rồi ô; server tự route provider"
               aria-label="Model cho phiên này" />
             <datalist id="session-models">
               {availableModels.map((m) => <option key={m.id} value={m.id}>{m.provider ?? ''}</option>)}

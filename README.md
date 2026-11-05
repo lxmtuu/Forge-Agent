@@ -193,6 +193,13 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
+### 🔑 Persistent provider keys/models + error diagnostics (v0.36)
+
+- **Một key cho mỗi provider**, cả ba có thể cùng tồn tại: OpenRouter, Google Gemini direct và Custom OpenAI-compatible. Settings hiển thị trạng thái `đã lưu/chưa lưu` của đúng provider; ô password luôn trống khi mở lại vì server không trả secret thô. Đổi provider xoá draft key để tránh lưu nhầm.
+- **Model theo session được lưu ngay** khi Enter/rồi ô, kể cả trước prompt đầu tiên. Đổi Model trong Settings lưu default + session hiện tại; Save key hoặc setting khác không reset model session. Phạm vi này không phải nhiều key cùng một provider.
+- **Lỗi không còn bị nuốt:** HTTP error giữ status + endpoint + chi tiết đã redact; response rỗng được nói rõ; SSE kết thúc trước `done` báo mất kết nối thay vì im lặng. Các synthetic command cũng gửi `done`.
+- Provider trả **501** được giải thích là model/endpoint có thể không hỗ trợ tool calling, streaming hoặc reasoning; thử model khác cho Agent, hoặc Direct/tắt Effort để chẩn đoán. Đây là chẩn đoán có kiểm soát, không khẳng định mọi HTTP 501 đã có cùng root cause.
+
 ### 🔐 Account, public signup tùy chọn + multi-provider routing (v0.35)
 
 | Tính năng | Hành vi |
@@ -217,7 +224,7 @@ Các account vẫn chạy cùng OS account và provider quota; public signup kh�
 | **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
 | **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
 
-### 🚀 Chạy nhanh (v0.35)
+### 🚀 Chạy nhanh (v0.36)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 

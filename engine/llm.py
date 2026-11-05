@@ -244,6 +244,13 @@ async def stream_chat(
                                 "(3) giảm 'Max tokens' trong ⚙ Cài đặt để giảm số credit cần đặt cọc. "
                                 f"Chi tiết: {body[:250]}")
                         raise LLMError(f"{label} 402 — hết hạn mức/credit. Chi tiết đã redact: {body[:250]}")
+                    if resp.status_code == 501:
+                        raise LLMError(
+                            f"{label} HTTP 501 — provider/model không hỗ trợ request hiện tại. "
+                            "Nguyên nhân thường gặp: tool calling, streaming hoặc reasoning chưa được "
+                            "model/endpoint hỗ trợ. Hãy chọn model khác cho Agent; có thể thử chế độ "
+                            "Direct (không tools) hoặc tắt Effort suy luận để chẩn đoán. "
+                            f"Chi tiết đã redact: {body[:500]}")
                     raise LLMError(f"{label} HTTP {resp.status_code}: {body}")
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):

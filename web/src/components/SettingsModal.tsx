@@ -34,7 +34,11 @@ export function SettingsModal(props: {
 }) {
   const locked = props.settings.settings_locked ?? false
   const initialProvider = props.settings.provider ?? 'openrouter'
-  const [keyProvider, setKeyProvider] = useState(initialProvider)
+  type KeyProvider = 'openrouter' | 'google' | 'custom'
+  const [keyProvider, setKeyProvider] = useState<KeyProvider>(() => {
+    const saved = localStorage.getItem('forge-key-provider')
+    return saved === 'openrouter' || saved === 'google' || saved === 'custom' ? saved : initialProvider
+  })
   const providerLabel = keyProvider === 'google' ? 'Google / Gemini' : keyProvider === 'custom' ? 'Custom OpenAI-compatible' : 'OpenRouter'
   const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
@@ -60,6 +64,17 @@ export function SettingsModal(props: {
   const [totals, setTotals] = useState<UsageTotals | null>(null)
   const [keyCheck, setKeyCheck] = useState<KeyCheckResult | null>(null)
   const [checking, setChecking] = useState(false)
+  const selectedKeySaved = props.settings.provider_keys
+    ? Boolean(props.settings.provider_keys[keyProvider])
+    : keyProvider === initialProvider && Boolean(props.settings.key_masked)
+  const selectedKeyMask = selectedKeySaved ? '••••••••' : ''
+  const chooseKeyProvider = (next: KeyProvider) => {
+    setKeyProvider(next)
+    localStorage.setItem('forge-key-provider', next)
+    // Không bao giờ mang draft secret từ provider này sang Save cho provider khác.
+    setKey('')
+    setKeyCheck(null)
+  }
   const [theme, setTheme] = useState(localStorage.getItem('forge-theme') || 'dark')
   const [doctorRep, setDoctorRep] = useState<DoctorReport | null>(null)
   const [doctoring, setDoctoring] = useState(false)
@@ -217,7 +232,7 @@ export function SettingsModal(props: {
     setSaving(true); setSaveErr(null)
     try {
       const mt = parseInt(maxTokens, 10)
-      await props.onSave(key || undefined, model || undefined, {
+      await props.onSave(key || undefined, model !== initial.model ? (model || undefined) : undefined, {
         approval_mode: approval,
         docker_sandbox: docker,
         web_search: webSearch,
@@ -296,26 +311,41 @@ export function SettingsModal(props: {
             </div>
             {props.isAdmin && <div className="field">
               <span>Provider của API key <em>(không đổi default routing)</em></span>
-              <select value={keyProvider} onChange={(e) => setKeyProvider(e.target.value as typeof keyProvider)} disabled={locked}>
+              <select aria-label="Provider của API key" value={keyProvider}
+                onChange={(e) => chooseKeyProvider(e.target.value as KeyProvider)} disabled={locked}>
                 <option value="openrouter">OpenRouter</option>
                 <option value="google">Google Gemini direct</option>
                 <option value="custom">Custom OpenAI-compatible</option>
               </select>
-              <small>Key được ghi vào secret store phía server cho provider đã chọn. Model theo session vẫn có thể dùng provider khác.</small>
+              <div className="provider-key-status" aria-label="Trạng thái API key các provider">
+                {([
+                  ['openrouter', 'OpenRouter'],
+                  ['google', 'Google'],
+                  ['custom', 'Custom'],
+                ] as const).map(([id, label]) => {
+                  const saved = Boolean(props.settings.provider_keys?.[id])
+                  return <button type="button" key={id} className={id === keyProvider ? 'on' : ''}
+                    aria-pressed={id === keyProvider} onClick={() => chooseKeyProvider(id)} disabled={locked}>
+                    {label}: {saved ? '✓ đã lưu' : '— chưa lưu'}
+                  </button>
+                })}
+              </div>
+              <small>Key được ghi độc lập vào secret store phía server; có thể lưu cả 3 provider rồi chọn model theo từng session. Khi đổi provider, draft key được xoá để tránh lưu nhầm.</small>
             </div>}
             {props.settings.web_key_input === false ? (
               <div className="field release-key-status">
                 <span>🔐 {providerLabel} credentials</span>
                 <small>
-                  Trạng thái: <b>{props.settings.key_masked || 'chưa có key'}</b>.
+                  Trạng thái: <b>{selectedKeyMask || 'chưa có key'}</b>.
                   Key chỉ được nhập bằng terminal trên server: <code>python scripts/setup_keys.py</code>.
                 </small>
               </div>
             ) : (
               <label className="field">
-                <span>{providerLabel} API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
+                <span>{providerLabel} API Key {selectedKeyMask && <em>(đã lưu: {selectedKeyMask})</em>}</span>
                 <div className="key-row">
-                  <input type="password" placeholder={keyProvider === 'google' ? 'AIza...' : keyProvider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
+                  <input type="password" aria-label={`${providerLabel} API Key`}
+                    placeholder={selectedKeySaved ? 'Đã lưu key — nhập key mới để thay thế' : keyProvider === 'google' ? 'AIza...' : keyProvider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
                     onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
                   {keyProvider !== 'custom' && (
                     <button className="btn-ghost btn-sm" disabled={checking}
@@ -331,6 +361,7 @@ export function SettingsModal(props: {
                 ) : (
                   <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy, để trống nếu không đổi.</small>
                 )}
+                <small className="key-privacy-note">Ô nhập luôn trống khi mở lại Settings vì Forge không trả/đọc lại secret thô. Trạng thái “đã lưu” ở trên áp dụng cho đúng provider đang chọn; để trống rồi Save sẽ giữ nguyên key.</small>
                 {keyCheck && (keyCheck.valid ? (
                   <div className="key-result ok">
                     ✅ Key hợp lệ — «{keyCheck.label}»

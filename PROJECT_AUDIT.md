@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 hiện hành **204 test / 31 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 hiện hành **212 test / 32 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -289,6 +289,25 @@ User yêu cầu mở self-registration sau khi preview v0.34 chỉ có invite-on
 | Giới hạn | Chưa có SMTP email verification hoặc CAPTCHA tích hợp; owner ACL vẫn không phải OS sandbox |
 
 **Release gate:** 204/204 test (31 suite), v0.35 8/8; Chromium signup 15/15 + admin/member regression 14/14; mypy server/main.py + engine/ 38 files; TypeScript + Web build 42 modules; bandit Medium+ 0. Ruff theo scoped gate, không tuyên bố toàn repo sạch. Real Google OAuth và Docker/container smoke vẫn chưa chạy.
+
+## 3m. Vòng 20 (v0.36) — Persistent provider keys/models + error diagnostics
+
+User báo trên Windows/localhost v0.35: key dường như biến mất khi mở lại Settings, banner `HTTP 501` chặn prompt tiếp theo sau chuỗi background tools, và cần nhiều provider/model cùng được lưu. Audit tách riêng persistence thật, UI state và nguồn lỗi; không suy root cause từ screenshot.
+
+| Hạng mục | Repro / kết quả |
+|---|---|
+| Key persistence | Trước vá, suite mới đã PASS phần lưu tuần tự OpenRouter → Google → Custom: cả ba secret tồn tại sau reload, blank Save không xoá, response/config không rò secret. Không có bằng chứng backend tự xoá key |
+| Settings UX | Root cause hiển thị: mask chỉ thuộc active provider nhưng bị dùng cho mọi `keyProvider`; modal cũng mở lại theo active provider. v0.36 dùng `provider_keys[provider]`, overview cả ba trạng thái, nhớ provider đã chọn bằng preference không-secret, ô password trống có giải thích |
+| Draft isolation | Đổi provider xoá draft key + keycheck để không lưu secret của A sang B. Browser test điền Google → Custom → Google xác nhận draft không đi qua provider khác |
+| Multi-provider | Phạm vi là **một key cho mỗi provider**, cả ba cùng tồn tại; không phải key rotation/nhiều key cùng provider. Mock ba call đồng thờI đúng URL/model/Authorization, không mutate global provider |
+| Model persistence | Trước vá `PATCH /api/sessions/{sid}/model` trả 405; model chỉ được Agent ghi khi chat. Endpoint mới canonicalize/validate, lưu ngay qua ScopedSessionStore + CSRF. Reload trước prompt giữ model; invalid không ghi đè; user khác 404. Response PATCH chậm của session A không được đè model UI của session B vừa chọn (browser race test) |
+| Save semantics | Trước đây Settings luôn đẩy active model về default. v0.36 chỉ đổi session khi ô Model thật sự dirty; Save key/max tokens giữ model hiện tại. Đổi Model explicit lưu default + current session |
+| HTTP 501 | Sole explicit internal 501 vẫn là `image_generation`; Web chat thường không gửi capability này. Web-shaped request trả SSE 200. Controlled Playwright trên v0.35 với empty 501 tái hiện đúng banner trần `HTTP 501`; v0.36 hiện status + endpoint + empty-body diagnostic, non-JSON/JSON detail đã redact |
+| Provider 501 | Mock provider 501 cho thấy lỗi trong lượt Agent là SSE `error + done`, không phải pre-stream 501. Thông báo mới nêu tool calling/streaming/reasoning và model khác/Direct/tắt Effort để chẩn đoán; credential bị redact |
+| SSE ẩn | Trước đây stream cụt không `done` được coi là thành công và exception của event callback nằm trong catch JSON. v0.36 tách parse/dispatch, báo stream kết thúc sớm; synthetic command được sửa để gửi `done`, tránh lỗi giả |
+| Chưa kết luận | Chưa nhận response/log từ request 501 thật trên Windows nên **không tuyên bố đã xác định hoặc loại bỏ root cause ngoài máy user**. Query `google_state` chỉ là dấu hiệu OAuth cần xem thêm, không phải nguyên nhân chat đã chứng minh |
+
+**Release gate:** 212/212 test (32 suite), v0.36 8/8; Chromium audit 20/20 + model-race 1/1 + signup 15/15 + admin/member regression 14/14 = 50/50; mypy `engine/` + `server/` 39 files; TypeScript + Web build 42 modules; bandit Medium+ 0. Ruff theo scoped gate. Real Google OAuth, Docker/container smoke và nguồn 501 ngoài máy Windows vẫn chưa kiểm chứng.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

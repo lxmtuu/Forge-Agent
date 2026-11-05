@@ -35,7 +35,7 @@ from engine.session import ScopedSessionStore, SessionStore
 from server import auth as auth_web
 from server.auth import require_admin, require_user
 
-app = FastAPI(title="Forge Agent", version="0.35.0")
+app = FastAPI(title="Forge Agent", version="0.36.0")
 app.include_router(auth_web.router)
 # Development giữ CORS mở cho tooling; release mặc định same-origin. Muốn mở
 # cross-origin phải liệt kê rõ FORGE_CORS_ORIGINS=https://app.example,...
@@ -451,6 +451,10 @@ class RenameBody(BaseModel):
     title: str
 
 
+class SessionModelBody(BaseModel):
+    model: str
+
+
 @app.post("/api/sessions/{sid}/rename")
 async def rename_session(sid: str, body: RenameBody, user: User = Depends(require_user)):
     db = _db(user)
@@ -480,6 +484,29 @@ async def get_session(sid: str, user: User = Depends(require_user)):
     if not s:
         raise HTTPException(404, "Session not found")
     return {"session": s.to_dict()}
+
+
+@app.patch("/api/sessions/{sid}/model")
+async def set_session_model(sid: str, body: SessionModelBody,
+                            user: User = Depends(require_user)):
+    """Lưu lựa chọn model ngay, không chờ prompt đầu tiên; vẫn qua owner ACL + CSRF."""
+    db = _db(user)
+    s = db.get(sid)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    requested = body.model.strip()
+    if not requested or len(requested) > 300:
+        raise HTTPException(400, "Model ID rỗng hoặc dài quá 300 ký tự")
+    try:
+        canonical = model_router.canonical(requested)
+        model_registry.route("code", canonical)
+    except (ValueError, ModelCapabilityError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    s.model = canonical
+    db.save(s)
+    return {"ok": True, "model": s.model,
+            "session": {"id": s.id, "title": s.title, "model": s.model,
+                        "message_count": len(s.messages), "updated_at": s.updated_at}}
 
 
 @app.get("/api/usage")
@@ -1183,6 +1210,8 @@ async def chat(sid: str, body: ChatBody, request: Request, user: User = Depends(
                     if await request.is_disconnected():
                         return
                     yield sse(ev)
+                # Client dùng done để phân biệt stream hoàn tất với kết nối bị cắt.
+                yield sse({"type": "done"})
                 return
             agent = Agent(db, sid, model=model, router=model_router)
             if demo:

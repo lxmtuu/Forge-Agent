@@ -43,6 +43,8 @@ python scripts/setup_keys.py --check
 
 Key nằm ở `data/provider-secrets.json` (không trong `config.json`, git hay ZIP). Ở bản local, bạn vẫn có thể nhập key qua **⚙ Cài đặt** hoặc CLI `/key`; không dùng cách đó trên shared release.
 
+Từ v0.36, lưu lần lượt OpenRouter/Google/Custom để dùng **một key cho mỗi provider cùng lúc**. Settings có bảng trạng thái từng provider; ô password trống sau khi mở lại là hành vi bảo mật, hãy nhìn trạng thái **đã lưu** thay vì nhập lại. Model ở thanh trên được lưu theo session ngay khi **Enter hoặc rồi ô**, không cần gửi prompt.
+
 Model mặc định: OpenRouter `anthropic/claude-sonnet-5.5`; Google `gemini-3.8-flash`. Gửi thử: *“Viết game rắn bằng HTML/JS vào 1 file rồi chạy test”*.
 
 ## 5. Một server dùng chung (release mode)

@@ -1,4 +1,4 @@
-# 🚀 DEPLOY — Forge Agent v0.35 account & access
+# 🚀 DEPLOY — Forge Agent v0.36 account & access
 
 > Đọc **SECURITY.md** trước. Một process/VPS, account do admin tạo hoặc public signup opt-in, owner ACL cho session/workspace. Provider key và Auth DB chỉ nằm ở persistent data, không trong git/image/ZIP.
 

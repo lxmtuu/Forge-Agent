@@ -73,15 +73,48 @@ async function register(email: string, password: string, name: string): Promise<
   return data.user
 }
 
-async function j<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`
-    try {
-      const b = await res.json()
-      if (b?.detail) msg = b.detail
-    } catch { /* ignore */ }
-    throw new Error(msg)
+function redactErrorText(text: string): string {
+  return text
+    .replace(/sk-or-v1-[a-z0-9_-]+/gi, '<redacted>')
+    .replace(/AIza[a-z0-9_-]+/gi, '<redacted>')
+    .replace(/Bearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer <redacted>')
+}
+
+/** Đọc error body một lần; giữ status + endpoint và không nuốt non-JSON/empty 501. */
+async function responseError(res: Response): Promise<Error> {
+  let path = ''
+  try { path = new URL(res.url).pathname } catch { /* response từ test/proxy có thể không có URL */ }
+  const prefix = `HTTP ${res.status}${path ? ` · ${path}` : ''}`
+  let raw = ''
+  try { raw = await res.text() } catch { /* body có thể đã bị proxy huỷ */ }
+  if (!raw.trim()) {
+    return new Error(`${prefix} — Server không trả nội dung lỗi. Kiểm tra terminal đang chạy Forge và thử lại.`)
   }
+  let detail = ''
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown; error?: unknown; message?: unknown }
+    const value = parsed.detail ?? parsed.error ?? parsed.message
+    if (typeof value === 'string') detail = value
+    else if (Array.isArray(value)) {
+      // FastAPI 422: chỉ lấy location/message, tuyệt đối không echo field `input` (có thể là secret).
+      detail = value.map((row) => {
+        const item = row as { loc?: unknown[]; msg?: unknown }
+        const loc = Array.isArray(item?.loc) ? item.loc.join('.') : 'request'
+        return `${loc}: ${typeof item?.msg === 'string' ? item.msg : 'không hợp lệ'}`
+      }).join('; ')
+    } else if (value && typeof value === 'object') {
+      const message = (value as { message?: unknown }).message
+      detail = typeof message === 'string' ? message : 'Yêu cầu không hợp lệ'
+    }
+  } catch {
+    detail = raw
+  }
+  detail = redactErrorText(detail).replace(/\s+/g, ' ').trim().slice(0, 1000)
+  return new Error(detail ? `${prefix} — ${detail}` : `${prefix} — Server không trả nội dung lỗi.`)
+}
+
+async function j<T>(res: Response): Promise<T> {
+  if (!res.ok) throw await responseError(res)
   return res.json() as Promise<T>
 }
 
@@ -93,17 +126,12 @@ async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => voi
     body: JSON.stringify(body),
     signal,
   })
-  if (!res.ok || !res.body) {
-    let msg = `HTTP ${res.status}`
-    try {
-      const b = await res.json()
-      if (b?.detail) msg = b.detail
-    } catch { /* ignore */ }
-    throw new Error(msg)
-  }
+  if (!res.ok) throw await responseError(res)
+  if (!res.body) throw new Error(`HTTP ${res.status} · ${url} — Response không có body SSE`)
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+  let sawDone = false
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -114,13 +142,18 @@ async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => voi
       buf = buf.slice(idx + 2)
       for (const line of raw.split('\n')) {
         const t = line.trim()
-        if (t.startsWith('data:')) {
-          try {
-            onEvent(JSON.parse(t.slice(5)) as T)
-          } catch { /* skip malformed */ }
-        }
+        if (!t.startsWith('data:')) continue
+        let parsed: T
+        try {
+          parsed = JSON.parse(t.slice(5)) as T
+        } catch { continue }  // chỉ bỏ frame malformed; không nuốt exception của onEvent
+        if ((parsed as { type?: unknown })?.type === 'done') sawDone = true
+        onEvent(parsed)
       }
     }
+  }
+  if (!sawDone && !signal.aborted) {
+    throw new Error(`SSE ${url} kết thúc trước event done — kết nối/server có thể đã ngắt giữa chừng. Kiểm tra terminal Forge rồi thử lại.`)
   }
 }
 
@@ -193,6 +226,11 @@ export const api = {
 
   getSession: (sid: string) =>
     req(`/api/sessions/${sid}`).then((r) => j<{ session: SessionFull }>(r)).then((d) => d.session),
+
+  setSessionModel: (sid: string, model: string) =>
+    req(`/api/sessions/${sid}/model`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }),
+    }).then((r) => j<{ ok: boolean; model: string; session: SessionSummary }>(r)),
 
   deleteSession: (sid: string) => req(`/api/sessions/${sid}`, { method: 'DELETE' }),
 
