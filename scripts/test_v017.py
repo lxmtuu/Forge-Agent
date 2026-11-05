@@ -43,18 +43,21 @@ def check(name):
 @check("T1 presets: endpoint chính thức đúng, auth type hợp lệ")
 async def t1():
     from engine.connectors import PRESETS, AUTH_LABEL
-    must = {"github", "linear", "supabase", "notion", "composio-hub", "playwright",
-            "context7", "figma-desktop"}
+    must = {"github", "linear", "postgres", "notion", "composio-hub", "playwright",
+            "context7", "figma-desktop", "filesystem", "sequential-thinking"}
     assert must <= set(PRESETS), set(PRESETS)
     gh = PRESETS["github"]
     assert gh["url"] == "https://api.githubcopilot.com/mcp/" and gh["auth"] == "pat", gh
     assert gh["headers"]["Authorization"] == "Bearer {token}"
     ln = PRESETS["linear"]
     assert ln["url"] == "https://mcp.linear.app/mcp" and ln["auth"] == "api-key"
-    sb = PRESETS["supabase"]
-    assert "read_only=true" in sb["url"], "Supabase phải mặc định read_only"
+    pg = PRESETS["postgres"]
+    assert pg["transport"] == "stdio" and any("$DATABASE_URL" in str(a) for a in pg["args"])
+    assert pg["auth"] == "env"
     pw = PRESETS["playwright"]
     assert pw["transport"] == "stdio" and pw["command"] == "npx"
+    st = PRESETS["sequential-thinking"]
+    assert st["auth"] == "none" and st["transport"] == "stdio"
     for k, p in PRESETS.items():
         assert p["auth"] in AUTH_LABEL, (k, p["auth"])
         assert p["label"] and p["auth_hint"]
@@ -88,11 +91,12 @@ async def t2():
     assert fc.mask_token(tok) in ls and "GitHub" in ls, ls[:400]
     # auth rỗng / connector lạ
     assert "❌" in fc.auth("khong-co", "x")
-    # supabase --write gỡ read_only
-    ok3 = fc.add("supabase", "", True)
-    assert "❌" not in ok3
-    sb = [c for c in load_servers() if c.get("preset") == "supabase"][0]
-    assert "read_only" not in sb["url"], sb["url"]
+    # postgres preset: add lưu template $DATABASE_URL (resolve lúc spawn), msg cảnh báo env
+    ok3 = fc.add("postgres")
+    assert "❌" not in ok3 and "DATABASE_URL" in ok3, ok3
+    pgc = [c for c in load_servers() if c.get("preset") == "postgres"][0]
+    assert any("$DATABASE_URL" in str(a) for a in pgc["args"]), pgc["args"]
+    assert "⚠" in ok3, "phải cảnh báo đặt biến môi trường trước"
     # remove
     ok4 = fc.remove("github")
     assert "🗑" in ok4

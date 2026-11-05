@@ -189,6 +189,10 @@ Bảo sub-agent làm việc trong **bản sao an toàn**: yêu cầu agent "dùn
 
 Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ tự thi công (đặt role trong `data/config.json`: `model_roles: {"strong": "...", "cheap": "..."}` — mặc định strong=model chính, cheap=openrouter/free). Hover tin nhắn của bạn → **✏️** sửa rồi Enter để chạy lại từ đó. Tab 🔗 Dịch vụ giờ cài/gỡ preset trực tiếp.
 
+### 🔌 6 gói MCP phổ biến (v0.28)
+
+Playwright (điều khiển browser, 25 tool) · File System (`FORGE_FS_DIR`=<thư mục>) · Postgres (`DATABASE_URL`=connection string, chỉ-đọc) · Github (`/connectors auth github <PAT>`) · Context7 · Sequential Thinking — thêm nhanh bằng `/connectors add <tên>`, xem tool bằng `/mcp`. Biến môi trường được resolve lúc server spawn — đổi env xong gõ `/mcp refresh`.
+
 ### 🔐 OAuth 2.1 cho connectors (v0.20)
 
 Notion/Sentry/Linear giờ đăng nhập bằng tài khoản thật: tạo ứng dụng OAuth của nhà cung cấp (redirect `http://127.0.0.1:8765/callback`) → `/connectors add notion` → `/connectors oauth notion <client_id> <client_secret>` — trình duyệt mở, duyệt xong token tự lưu (PKCE + state chống CSRF, refresh ngầm). Trên web: ⚙ → tab **🔗 Dịch vụ**. Toàn bộ token chỉ nằm trong `data/secrets.json` (chmod 600), không bao giờ vào context LLM.

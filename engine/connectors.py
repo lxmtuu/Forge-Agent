@@ -45,14 +45,15 @@ PRESETS: dict[str, dict] = {
                      "hoặc OAuth: /connectors oauth linear <client_id> <client_secret>",
         "headers": {"Authorization": "Bearer {token}"},
     },
-    "supabase": {
-        "label": "Supabase — Postgres, SQL, logs (chính thức · mặc định read_only)",
-        "transport": "http",
-        "url": "https://mcp.supabase.com/mcp?read_only=true",
-        "auth": "oauth-pending",
-        "auth_hint": "Remote chính thức dùng OAuth theo resource mỗi tổ chức — dùng hub Composio "
-                     "(managed OAuth) hoặc API key supabase.com/dashboard/account/keys; '--write' gỡ read_only (cẩn thận)",
-        "headers": {},
+    "postgres": {
+        "label": "PostgreSQL — SQL chỉ-đọc trên DB của BẠN (npx @modelcontextprotocol/server-postgres)",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-postgres", "$DATABASE_URL"],
+        "auth": "env",
+        "auth_hint": "Đặt biến môi trường DATABASE_URL (vd postgresql://user:pass@host:5432/db) "
+                     "trước khi thêm. Chỉ READ-ONLY theo thiết kế — truy vấn SELECT/EXPLAIN thôi. "
+                     "Xoá connector + đặt DATABASE_URL khác để đổi DB.",
     },
     "notion": {
         "label": "Notion — pages, databases (chính thức · chỉ OAuth)",
@@ -110,6 +111,24 @@ PRESETS: dict[str, dict] = {
         "auth": "none",
         "auth_hint": "Cần Node.js trong PATH",
     },
+    "filesystem": {
+        "label": "File System — đọc/ghi file THƯ MỤC TÙY CHỌN ngoài workspace (npx @modelcontextprotocol/server-filesystem)",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "$FORGE_FS_DIR"],
+        "auth": "env",
+        "auth_hint": "Đặt FORGE_FS_DIR=<đường-dẫn-thư-mục> được phép truy cập trước khi thêm "
+                     "(mặc định nếu thiếu: thư mục hiện hành). Cẩn thận: tool ghi ngoài workspace "
+                     "sẽ KHÔNG có checkpoint/undo của Forge.",
+    },
+    "sequential-thinking": {
+        "label": "Sequential Thinking — suy luận từng bước có sửa/lại nhánh (npx @modelcontextprotocol/server-sequential-thinking)",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        "auth": "none",
+        "auth_hint": "Không cần cấu hình — tool 'sequentialthinking' xuất hiện sau /mcp refresh.",
+    },
     "composio-hub": {
         "label": "Composio Hub — Gmail, Slack, Vercel… 500+ app, managed OAuth (free 20k calls/tháng)",
         "transport": "http",
@@ -125,6 +144,7 @@ AUTH_LABEL = {
     "api-key": "API key (Bearer)",
     "oauth": "OAuth 2.1 (browser + PKCE)",
     "oauth-pending": "OAuth (qua hub — xem auth_hint)",
+    "env": "env-var (đặt biến môi trường trước)",
     "hub": "qua hub (dán URL)",
     "none": "không cần",
 }
@@ -210,6 +230,11 @@ def add(name: str, url: str = "", write: bool = False) -> str:
         nxt = f"\n   Tiếp: /connectors auth {cfg['name']} <token>"
     elif p["auth"] == "hub":
         nxt = "\n   (URL hub đã lưu — kiểm tra tool: gõ /mcp trong CLI hoặc xem /connectors)"
+    elif p["auth"] == "env":
+        var = next((a for a in p.get("args", []) if str(a).startswith("$")), "")
+        var = var[1:] if var else "biến môi trường theo auth_hint"
+        nxt = (f"\n   ⚠ Phải đặt biến môi trường {var} TRƯỚC — connector khởi động server lúc "
+               f"refresh; thiếu biến → server lỗi, xem /mcp.")
     elif p.get("oauth"):
         nxt = f"\n   Tiếp: /connectors oauth {name} <client_id> [client_secret] — mở trình duyệt đăng nhập (OAuth 2.1 + PKCE)"
     elif p["auth"] == "oauth-pending":

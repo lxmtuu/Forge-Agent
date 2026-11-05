@@ -293,6 +293,19 @@ Test: **4/4 suite v0.27 (frontmatter surgery đủ trường hợp + REST roundt
 | Bắt thêm 1 bug thật | tools.py ghi vào `proc.returncode` (property read-only của asyncio.Process) — runtime im lặng, mypy chỉ ra; thay bằng biến `hook_rc` |
 | Bài học | Baseline type **trượt khi thêm module mới mà không chạy gate** (75 → 96): từ nay mỗi vòng phải chạy cả `mypy engine/` — đã chuẩn hoá config vào pyproject.toml |
 
+## 🔌 v0.28 "6 gói MCP phổ biến" — rà soát theo yêu cầu
+
+| Gói MCP | Trạng thái trong Forge | Cách dùng |
+|---|---|---|
+| **Playwright** | ✅ stdio npx (E2E thật: 25 tools) | `/connectors add playwright` |
+| **File System** | ✅ mới thêm — thư mục qua `$FORGE_FS_DIR` | đặt env → `/connectors add filesystem` |
+| **Postgres** | ✅ mới thêm — `$DATABASE_URL`, chỉ-đọc | đặt env → `/connectors add postgres` |
+| **Github** | ✅ preset `github` — remote chính thức (stdio cũ đã deprecated upstream) | `/connectors add github` + `auth <PAT>` |
+| **Context7** | ✅ HTTP remote (E2E: 2 tools) | `/connectors add context7` |
+| **Sequential Thinking** | ✅ mới thêm (E2E thật: tool `sequentialthinking`) | `/connectors add sequential-thinking` |
+
+Cộng OAuth 2.1 (Notion/Sentry/Linear) + hub Composio (500+ app). `$VAR` trong args được resolve lúc spawn — đổi env chỉ cần refresh.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

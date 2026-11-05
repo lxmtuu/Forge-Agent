@@ -32,7 +32,7 @@ def _config_path() -> Path:
 def load_servers() -> list[dict]:
     try:
         return json.loads(_config_path().read_text(encoding="utf-8")).get("servers", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
         return []
 
 
@@ -93,12 +93,12 @@ class McpServer:
                 body["content"] = res["content"]
             try:
                 await self._send({"jsonrpc": "2.0", "id": msg.get("id"), "result": body})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
                 print(f"[mcp] elicitation reply lỗi: {e}")
 
         try:
             asyncio.get_event_loop().create_task(_responder())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
             print(f"[mcp] elicitation dispatch lỗi: {e}")
         return True
 
@@ -156,7 +156,7 @@ class McpServer:
                 self.error = None
                 self.started_at = time.time()
                 print(f"[mcp] '{self.name}' ready ({srv}): {len(self.tools)} tools")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
                 self.status = "error"
                 self.error = str(e)
                 await self.stop_quiet()
@@ -166,7 +166,7 @@ class McpServer:
         if self.proc:
             try:
                 self.proc.kill()
-            except Exception:
+            except Exception:  # noqa: S110, BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
                 pass
             self.proc = None
         if self.status != "error":
@@ -262,7 +262,7 @@ class McpHttpServer:
             self.error = None
             self.started_at = time.time()
             print(f"[mcp-http] '{self.name}' ready ({srv}): {len(self.tools)} tools")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — biên MCP never-raise (lỗi transport không được làm sập chat)
             self.status = "error"
             self.error = str(e)
             print(f"[mcp-http] '{self.name}' error: {e}")
@@ -300,13 +300,32 @@ class McpManager:
         self._servers: dict[str, McpServer | McpHttpServer] = {}
         self._lock = asyncio.Lock()
 
+    @staticmethod
+    def _expand_args(args: list) -> list[str]:
+        """Resolve $VAR trong args của preset stdio (vd $DATABASE_URL, $FORGE_FS_DIR).
+
+        $VAR đứng một mình mà thiếu → chuỗi rỗng (server phản hồi lỗi rõ ràng hơn
+        chữ '$DATABASE_URL' literal). Biến nhúng trong chuỗi → os.path.expandvars.
+        """
+        import os as _os
+        out: list[str] = []
+        for a in args:
+            a = str(a)
+            if a.startswith("$") and len(a) > 1 and "$" not in a[1:]:
+                out.append(_os.environ.get(a[1:], ""))
+            else:
+                out.append(_os.path.expandvars(a))
+        return out
+
     def _build(self, cfg: dict):
         key = _sanitize_name(cfg["name"])
         if key not in self._servers:
             if cfg.get("url"):  # HTTP transport
                 self._servers[key] = McpHttpServer(cfg["name"], cfg["url"], cfg.get("headers"))
-            else:               # stdio transport
-                self._servers[key] = McpServer(cfg["name"], cfg["command"], cfg.get("args", []), cfg.get("env"))
+            else:               # stdio transport — resolve $VAR lúc spawn (đổi env → refresh là ăn)
+                self._servers[key] = McpServer(cfg["name"], cfg["command"],
+                                               self._expand_args(cfg.get("args", [])),
+                                               cfg.get("env"))
         return self._servers[key]
 
     async def get_tool_specs(self) -> tuple[list[dict], dict[str, tuple[McpServer, str]]]:

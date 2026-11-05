@@ -161,6 +161,25 @@
 
 **Kết quả vòng 11: 139/139 test (23 suite) · mypy 0 · bandit Medium+ 0 — 3 gate đều xanh.**
 
+## 3l. Vòng 12 (v0.28) — Rà soát 6 gói MCP theo yêu cầu
+
+Yêu cầu: kiểm tra đã có **MCP Playwright · File System · Postgres · Github · Context7 · Sequential Thinking** chưa — kiểm tra bằng code + research chuẩn trước khi sửa.
+
+| Gói | Trước | Sau |
+|---|---|---|
+| MCP Playwright | ✅ có sẵn (stdio npx, E2E thật: **25 tools**) | giữ — E2E xác nhận |
+| Context7 | ✅ có sẵn (HTTP remote, E2E thật: 2 tools resolve-library-id/query-docs) | giữ — E2E xác nhận |
+| Sequential Thinking | ❌ | **thêm preset** stdio npx @modelcontextprotocol/server-sequential-thinking — E2E thật: tool `sequentialthinking` vào specs |
+| File System | ❌ | **thêm preset** stdio npx @modelcontextprotocol/server-filesystem, thư mục qua `$FORGE_FS_DIR` (cảnh báo: ghi ngoài workspace không có checkpoint/undo) |
+| Postgres | chỉ có Supabase remote (OAuth org) | **thay bằng preset `postgres`** stdio npx @modelcontextprotocol/server-postgres qua `$DATABASE_URL` — CHỈ ĐỌC theo thiết kế server; E2E thiếu env → status `error` rõ ràng |
+| Github | ✅ preset `github` (remote chính thức api.githubcopilot.com + PAT) | research: @modelcontextprotocol/server-github đã **deprecated** → KHÔNG thêm bản stdio trùng; ghi rõ ánh xạ |
+
+**Khoảng hở thật được vá:** `mcp.py` KHÔNG resolve `$VAR` trong args → postgres/filesystem sẽ chết với chữ literal `$DATABASE_URL`. Đã thêm `McpManager._expand_args()` (biến đứng một mình thiếu → rỗng cho lỗi rõ; biến nhúng → expandvars) chạy lúc spawn — đổi env chỉ cần refresh.
+
+**Bài học vòng 12:** (1) status "stopped"/error None khi xem TRƯỚC khi start — test phải đi đúng flow thật (get_tool_specs/refresh gọi start); (2) status hiển thị template `$VAR` nguyên bản là ĐÚNG (resolve lúc spawn), assert test phải tách bạch template vs lỗi.
+
+**Kết quả vòng 12: 144/144 test (24 suite) · mypy 0 · bandit Medium+ 0 · ruff connectors/mcp sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
