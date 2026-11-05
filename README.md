@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🔁 /loop + ⤓ Xuất audit (v0.23)
+
+`/loop 30m <tác vụ>` — agent tự chạy lại tác vụ mỗi 30 phút (dõi PR, chạy test định kỳ…): CLI/TUI gõ trực tiếp, web gõ trong ô chat; `/loop off` để dừng. Mỗi nhịp là 1 lượt agent thật (tool + audit log + lưu phiên). Loop sống trong tiến trình — restart là dừng. Tab 📘 Audit có nút **⤓ Xuất CSV**.
+
 ### 📦 Auto-commit + 🧠 Reasoning effort (v0.22)
 
 ⚙ → **An toàn** → bật **Auto-commit mỗi lượt**: workspace tự `git init` ngầm, sau mỗi lượt agent có thay đổi sẽ commit với message Conventional Commits do model rẻ sinh (pattern Aider) — `git log` trong workspace thành lịch sử công việc. `/commit` commit thủ công; `/autocommit on|off` bật/tắt nhanh. ⚙ → **Kết nối** → **Effort suy luận** (Low/Medium/High) đặt budget reasoning cho model (chỉ qua OpenRouter).

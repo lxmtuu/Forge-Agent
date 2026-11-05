@@ -429,6 +429,56 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- F1: /loop — chạy định kỳ
+class LoopBody(BaseModel):
+    text: str
+    every: str = "30m"  # "45s" | "30m" | "2h" | số = phút
+    mode: str = "agent"
+    max_runs: int = 0  # 0 = tới khi /loop stop hoặc restart server
+
+
+async def _loop_turn(sid: str, text: str, mode: str) -> str:
+    """Chạy 1 lượt agent cho loop (không stream — kết quả persist vào session)."""
+    st = store.get(sid)
+    if not st:
+        return "(phiên đã xoá)"
+    demo = config.get_api_key() is None
+    agent = Agent(store, sid)
+    source = send_demo(agent, text) if demo else agent.send(text, chat_mode=mode)
+    last = ""
+    async for ev in source:
+        if ev.get("type") == "assistant_message" and ev.get("content"):
+            last = str(ev["content"])
+    return last
+
+
+@app.post("/api/sessions/{sid}/loop")
+async def loop_start(sid: str, body: LoopBody):
+    from engine import scheduler as fsched
+    if not store.get(sid):
+        raise HTTPException(404, "Session not found")
+    if not body.text.strip():
+        raise HTTPException(400, "Loop cần nội dung tác vụ")
+    every_s = fsched.parse_interval(body.every, default_minutes=30)
+    mode = body.mode if body.mode in ("direct", "agent", "plan", "architect") else "agent"
+    max_runs = max(0, min(int(body.max_runs), 10000))
+    status = fsched.manager.start(sid, every_s, body.text.strip(), mode, _loop_turn, max_runs)
+    return {"ok": True, "status": status,
+            "note": "Loop sống trong tiến trình server — restart là dừng"}
+
+
+@app.get("/api/sessions/{sid}/loop")
+async def loop_status(sid: str):
+    from engine import scheduler as fsched
+    return fsched.manager.status(sid)
+
+
+@app.delete("/api/sessions/{sid}/loop")
+async def loop_stop(sid: str):
+    from engine import scheduler as fsched
+    return {"ok": fsched.manager.stop(sid)}
+
+
 # ----------------------------------------------------- E5: chỉnh sửa tin & chạy lại
 class RerunBody(BaseModel):
     index: int
@@ -516,6 +566,26 @@ async def audit_tail(n: int = 120):
     return {"entries": auditlog.tail(max(1, min(n, 500)))}
 
 
+@app.get("/api/audit/export")
+async def audit_export():
+    """Xuất audit log CSV (tối đa 2000 mục mới nhất) — Excel/Sheets đọc trực tiếp."""
+    import csv as _csv
+    import io as _io
+    from fastapi.responses import Response
+    from engine import auditlog
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["ts", "session", "tool", "source", "ok", "ms", "args", "note"])
+    for e in auditlog.tail(2000):
+        w.writerow([e.get("ts", ""), e.get("session", ""), e.get("tool", ""),
+                    e.get("source", ""), "1" if e.get("ok") else "0",
+                    "" if e.get("ms") is None else e.get("ms"),
+                    json.dumps(e.get("args") or {}, ensure_ascii=False),
+                    e.get("note", "")])
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="forge-audit.csv"'})
+
+
 @app.get("/api/doctor")
 async def doctor_endpoint():
     """🩺 Chẩn đoán toàn hệ thống (python/git/key/model/MCP/LSP/dữ liệu…)."""
@@ -574,6 +644,37 @@ async def chat(sid: str, body: ChatBody, request: Request):
         a_n = int(a_arg) if a_arg.isdigit() else 20
         audit_synthetic = [{"type": "assistant_message",
                             "content": auditlog.format_listing(a_n)}]
+    # /loop [interval] [off|status] — lịch chạy định kỳ trong tiến trình (F1)
+    loop_synthetic: list[dict] | None = None
+    if text == "/loop" or text.startswith("/loop "):
+        from engine import scheduler as fsched
+        l_arg = text[5:].strip()
+        if l_arg.lower() in ("off", "stop", "x"):
+            was = fsched.manager.stop(sid)
+            loop_synthetic = [{"type": "assistant_message",
+                               "content": "⚪ Đã dừng loop." if was else "(không có loop nào đang chạy)"}]
+        elif not l_arg:
+            st_loop = fsched.manager.status(sid)
+            loop_synthetic = [{"type": "assistant_message",
+                               "content": ("🔁 Đang chạy: mỗi `" + fsched.fmt_interval(st_loop["every"])
+                                           + "` — «" + st_loop["text"] + "» ("
+                                           + str(st_loop["runs"]) + " lượt)"
+                                           if st_loop["running"] else
+                                           "Không có loop nào. Cú pháp: `/loop <30m|1h> <tác vụ>` · `/loop off`")}]
+        else:
+            parts = l_arg.split(None, 1)
+            every_s = fsched.parse_interval(parts[0], default_minutes=30)
+            task_text = parts[1].strip() if len(parts) > 1 else ""
+            if not task_text:
+                loop_synthetic = [{"type": "assistant_message",
+                                   "content": "❌ Thiếu tác vụ: `/loop <30m|1h> <tác vụ>`"}]
+            else:
+                mode_l = chat_mode if chat_mode != "plan" else "agent"
+                status_l = fsched.manager.start(sid, every_s, task_text, mode_l, _loop_turn)
+                loop_synthetic = [{"type": "assistant_message",
+                                   "content": f"🔁 Loop BẬT — mỗi `{fsched.fmt_interval(status_l['every'])}` chạy «{task_text}» "
+                                              "(tool + audit như chat thường; sống trong tiến trình server, restart là dừng; `/loop off` để tắt)"}]
+        loop_synthetic = loop_synthetic  # noqa: F841 — dùng khối dưới
     # /connectors [add|auth|allow|deny|remove] — quản lý connector MCP, không cần LLM
     connectors_synthetic: list[dict] | None = None
     if text == "/connectors" or text.startswith("/connectors "):
@@ -627,8 +728,9 @@ async def chat(sid: str, body: ChatBody, request: Request):
                 text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
     synthetic: list[dict] | None = (audit_synthetic if audit_synthetic is not None else
-                                    (connectors_synthetic
-                                     if connectors_synthetic is not None else skills_synthetic))
+                                    (loop_synthetic if loop_synthetic is not None else
+                                     (connectors_synthetic
+                                      if connectors_synthetic is not None else skills_synthetic)))
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

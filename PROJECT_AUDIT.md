@@ -110,6 +110,17 @@
 
 **Kết quả vòng 6: 125/125 test (19 suite) · bandit Medium+ 0 · ruff module mới sạch.**
 
+## 3g. Vòng 7 (v0.23) — Nhịp lặp & Xuất audit
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **F1** | **/loop — lịch định kỳ** | `engine/scheduler.py`: parse_interval (45s/30m/2h/1d/số=phút, clamp 10s..7d) + LoopManager (1 phiên 1 loop; max_runs tự dừng; lượt hỏng không chết loop). Server: POST/GET/DELETE `/api/sessions/{sid}/loop` — mỗi nhịp chạy ĐỦ lượt agent (tool + audit + session persist, web tải lại là thấy). CLI: asyncio task. TUI: `set_interval` (nhịp bỏ qua nếu đang busy). Lệnh `/loop`, `/loop off` đủ 3 UI (web qua chat `/loop`) |
+| **P3** | **Xuất audit CSV** | `GET /api/audit/export` (csv chuẩn, escape đúng giá trị có dấu phẩy — test parse ngược bằng csv.reader) + nút ⤓ trong tab Audit |
+
+**Bài học vòng 7:** (1) loop hoàn tất tự nhiên mà pop entry → status mất thống kê `runs/last_ok` — test bắt được; giữ entry finished làm báo cáo; (2) dùng lại pattern test chat cho shape API mà không đọc route → KeyError `message_count` (endpoint trả `messages`) — lại là bài học "đọc handler trước khi viết test".
+
+**Kết quả vòng 7: 129/129 test (20 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

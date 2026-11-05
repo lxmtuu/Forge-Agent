@@ -450,6 +450,7 @@ export function SettingsModal(props: {
                   onChange={(e) => setAuditFilter(e.target.value)}
                 />
                 <button className="btn-ghost btn-sm" onClick={() => { setAuditRows(null); loadAudit() }}>⟳ Nạp lại</button>
+                <a className="btn-ghost btn-sm" href="/api/audit/export" download title="Tải tối đa 2000 mục mới nhất (CSV)">⤓ Xuất CSV</a>
               </div>
               <div className="audit-list">
                 {!auditRows && <div className="empty" style={{ padding: 10 }}>Đang nạp…</div>}

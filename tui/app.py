@@ -346,7 +346,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit "
+                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -420,6 +420,38 @@ class ForgeTUI(App):
             for r in rows:
                 self.add_line(f"  {r['id']}  {r['title'][:40]} · {r['message_count']} tin",
                               cls="sys-line")
+        elif cmd == "/loop":
+            from engine import scheduler as fsched
+            l_arg = arg.strip()
+            if l_arg.lower() in ("off", "stop", "x"):
+                iv = getattr(self, "_loop_interval", None)
+                if iv:
+                    iv.stop()
+                    self._loop_interval = None
+                self.add_line("⚪ Đã dừng loop." if iv else "(không có loop nào)", cls="sys-line")
+            elif not l_arg:
+                iv = getattr(self, "_loop_interval", None)
+                self.add_line(f"🔁 Đang chạy mỗi {fsched.fmt_interval(int(getattr(iv, 'interval', 0)))} — «{getattr(self, '_loop_text', '')}»"
+                              if iv else "Không có loop nào. Cú pháp: /loop <30m|1h> <tác vụ> · /loop off",
+                              cls="sys-line")
+            else:
+                parts = l_arg.split(None, 1)
+                every_s = fsched.parse_interval(parts[0])
+                task_text = parts[1].strip() if len(parts) > 1 else ""
+                if not task_text:
+                    self.add_line("❌ Thiếu tác vụ: /loop <30m|1h> <tác vụ>", cls="sys-line")
+                else:
+                    old_iv = getattr(self, "_loop_interval", None)
+                    if old_iv:
+                        old_iv.stop()
+
+                    def _tick(task_text=task_text) -> None:
+                        if not self.busy:
+                            self.run_turn(task_text)
+                    self._loop_interval = self.set_interval(every_s, _tick)
+                    self._loop_text = task_text
+                    self.add_line(f"🔁 Loop BẬT — mỗi {fsched.fmt_interval(every_s)} chạy «{task_text}» · /loop off để tắt",
+                                  cls="sys-line")
         elif cmd == "/commit":
             import threading as _th
             ws = self.agent.workspace if self.agent else Path.cwd()

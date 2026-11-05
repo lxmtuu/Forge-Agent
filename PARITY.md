@@ -250,6 +250,15 @@ Test: **4/4 suite v0.22 (stub chứng minh strong/cheap + đủ/không tool đú
 
 Test: **5/5 suite v0.23 (git thật: log/-1 chứa subject+attribution; fallback; payload chụp qua fake-OpenRouter) — tổng 125/125 / 19 suite · bandit Medium+ 0.**
 
+## 🔁 v0.23 "Nhịp lặp & Xuất audit"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🔁 /loop (F1)** | `/loop 30m dõi PR và báo cáo` — chạy định kỳ trong tiến trình; CLI (asyncio), TUI (set_interval, bỏ nhịp khi busy), server (endpoint + session persist); `/loop off`; `max_runs` tuỳ chọn; lượt lỗi không chết loop |
+| 2 | **⤓ Xuất audit CSV (P3)** | Nút trong tab Audit + `/api/audit/export` — 2000 mục mới nhất, mở thẳng bằng Excel/Sheets |
+
+Test: **4/4 suite v0.24 (unit manager + E2E server 2 lượt demo thật persist vào session + CSV parse ngược) — tổng 129/129 / 20 suite · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

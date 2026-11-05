@@ -65,7 +65,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 
 | # | Tính năng | Ai có | Forge | Ưu tiên |
 |---|---|---|---|---|
-| F1 | **/loop — lịch định kỳ** (cron: dõi PR, chạy test mỗi giờ) | Claude (/loop, cron) | ❌ | P2 |
+| F1 | **✅ ĐÃ LÀM v0.23** /loop — lịch định kỳ trong tiến trình (CLI asyncio + TUI set_interval + server endpoint/session-persist) | Claude (/loop, cron) | server restart là dừng (ghi rõ) | P2 |
 | F2 | Cross-session messaging (ListAgents/SendMessage) | Claude v2.1.224 | ❌ | P2 |
 
 ### ⛔ Cố tình không theo (giữ nguyên tắc no-cloud/BYOK — không đổi)

@@ -31,6 +31,7 @@ from engine.session import SessionStore              # noqa: E402
 
 console = Console()
 store = SessionStore()
+cli_loops: dict[str, asyncio.Task] = {}  # session → loop task (F1, sống theo tiến trình CLI)
 
 BANNER = r"""
    __             _
@@ -53,6 +54,7 @@ HELP = """[bold]Lệnh[/bold]
   /audit [n]           nhật ký tool call (JSONL data/audit/)
   /rename <tên>        đổi tên phiên        /find <từ-khóa>  tìm phiên (tiêu đề+nội dung)
   /commit              commit thay đổi workspace (message conventional)   /autocommit [on|off]
+  /loop <30m|1h> <tác vụ>  chạy định kỳ trong tiến trình · /loop off · /loop xem trạng thái
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -500,6 +502,46 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows[:20]:
                 console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} "
                               f"[dim]· {r['message_count']} tin[/dim]")
+            continue
+        if text == "/loop" or text.startswith("/loop "):
+            from engine import scheduler as fsched
+            l_arg = text[5:].strip()
+            if l_arg.lower() in ("off", "stop", "x"):
+                t = cli_loops.pop(session_id, None)
+                if t:
+                    t.cancel()
+                console.print("⚪ Đã dừng loop." if t else "(không có loop nào)")
+                continue
+            if not l_arg:
+                t = cli_loops.get(session_id)
+                console.print(f"🔁 Đang chạy: mỗi {fsched.fmt_interval(t['every'])} — «{t['text']}» "
+                              f"({t['runs']} lượt)" if t else
+                              "Không có loop nào. Cú pháp: /loop <30m|1h> <tác vụ> · /loop off")
+                continue
+            parts = l_arg.split(None, 1)
+            every_s = fsched.parse_interval(parts[0])
+            task_text = parts[1].strip() if len(parts) > 1 else ""
+            if not task_text:
+                console.print("❌ Thiếu tác vụ: /loop <30m|1h> <tác vụ>")
+                continue
+            old_t = cli_loops.pop(session_id, None)
+            if old_t:
+                old_t.cancel()
+
+            async def _cli_loop(every_s=every_s, task_text=task_text):
+                n = 0
+                while True:
+                    n += 1
+                    console.print(f"[dim]🔁 loop #{n}: {task_text[:60]}…[/dim]")
+                    try:
+                        await run_turn(session_id, task_text, model, "agent")
+                    except Exception as e:  # noqa: BLE001 — lượt hỏng không chết loop
+                        console.print(f"[red]loop lượt #{n} lỗi (tiếp tục): {e}[/red]")
+                    await asyncio.sleep(every_s)
+
+            t = asyncio.create_task(_cli_loop())
+            cli_loops[session_id] = t
+            console.print(f"🔁 Loop BẬT — mỗi {fsched.fmt_interval(every_s)} chạy «{task_text}» · /loop off để tắt")
             continue
         if text == "/commit":
             from engine import autocommit as fac
