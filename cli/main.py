@@ -62,6 +62,7 @@ HELP = """[bold]Lệnh[/bold]
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
   /review [file|A...B]  code review diff (P0–P3 + verdict, đọc-only)
   /diff [file]        xem diff (git hoặc checkpoint phiên)
+  /repomap [budget]   bản đồ file + symbol, budget 500–20000 ký tự
   /memory [clear]     xem bộ nhớ đang nạp / xoá MEMORY.md dự án
   /quit               thoát
 
@@ -470,6 +471,15 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             from rich.syntax import Syntax
             console.print(Syntax(diff_text[:12000], "diff", theme="ansi_dark",
                                  word_wrap=True, background_color="default"))
+            continue
+        if text == "/repomap" or text.startswith("/repomap "):
+            from engine import repomap as frm
+            b = text[9:].strip()
+            try:
+                budget = min(max(int(b), 500), 20000) if b else frm.BUDGET_CHARS
+            except ValueError:
+                budget = frm.BUDGET_CHARS
+            console.print(f"[dim]{frm.build(store.workspace(session_id), budget=budget)['map']}[/dim]")
             continue
         if text == "/doctor":
             from engine.diagnostics import doctor

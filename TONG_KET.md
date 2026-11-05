@@ -1,7 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 (tổng-kiểm tài liệu) · Commit mới nhất: `055cd1b` (**v0.31.0**) · 48 commits từ v0.1 → v0.31.0
-> Lịch sử v0.10 → v0.31 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART.
+> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.32.0 "Autonomy nâng cao"** · 167 test / 28 suite · mypy 0/33 file · bandit Medium+ 0
+> Lịch sử v0.10 → v0.32 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART.
 
 ---
 
@@ -22,6 +22,7 @@
 | **v0.7.0** | `24304f6` | **Comfort Sprint** — xóa sổ 5 P0: diff view, checkpoints/undo, /compact+auto, /init, TUI Ctrl+M (+ CLAUDE.md fallback, global rules) |
 | **v0.8.0** | `7a12ab9` | **Extensibility**: @file refs, custom slash commands, fork phiên, /export Markdown, ảnh vision, web search `:online`, permission patterns |
 | **v0.9.0** | `bb62c9c` | **Intelligence**: LSP diagnostics (tự sửa lỗi sau khi ghi file), MCP elicitation đầy đủ (spec 2026-07-28), profiles kiểu config.toml |
+| **v0.32.0** | bản hiện tại | **Autonomy nâng cao**: sub-agent nền + Notification `agent_completed`, repo map + `/repomap`, thêm 4 hook events; đóng A4/A5/C1. Các bản v0.10–v0.31: xem PROJECT_AUDIT.md |
 
 ---
 
@@ -30,8 +31,9 @@
 ### 🧠 Engine (`engine/`)
 | Module | Chức năng |
 |---|---|
-| `agent.py` | Vòng lặp agent đầy đủ: stream, tool calls, 3 chat mode, auto-compact, @file, content-parts (ảnh), elicitation events, demo mode |
-| `tools.py` | 6 tool (list/read/write/edit/search/run) + diff unified + snapshot checkpoint + LSP diagnostics sau ghi file |
+| `agent.py` | Vòng lặp agent đầy đủ: stream, tool calls, chat modes, auto-compact, @file, content-parts, sub-agent nền + hook events |
+| `tools.py` | Bộ tool lõi + diff/checkpoint + LSP + repo map + quản lý sub-agent nền |
+| `repomap.py` | Bản đồ file/symbol nén gọn, rank tham chiếu chéo, budget + cache, auto-nạp workspace nhỏ |
 | `guard.py` | Phân loại lệnh safe/warn/danger + allow/deny patterns + Docker sandbox tùy chọn |
 | `approvals.py` | Hỏi duyệt lệnh tương tác (ask mode), auto-deny timeout |
 | `checkpoints.py` | Checkpoint git-inner repo riêng, undo theo từng hành động |
@@ -103,7 +105,8 @@ Bug thật đã bị test bắt trước khi ship (tiêu biểu): `git init` kh�
 
 ## 6. Trạng thái bàn giao
 
-- **Zip phát hành:** `forge-agent-v0.9.0.zip` (78 files, 216KB, kèm web build sẵn)
-- **Git:** 15 commits, nhánh main, sạch working tree
-- **Server demo:** uvicorn :8000 đang chạy, health OK, LSP python available
+- **Zip phát hành:** `forge-agent-v0.32.0.zip` (kèm web build sẵn)
+- **Git:** nhánh main, release v0.32.0, working tree sạch tại thời điểm đóng gói
+- **Kiểm thử:** 167/167 test · 28 suite · mypy 0/33 file · bandit Medium+ 0
+- **Server demo:** uvicorn :8000, health OK (không cần key ở demo mode)
 - **Yêu cầu hệ thống:** Python 3.10+ · `pip install -r` theo README · API key OpenRouter (hoặc chạy demo không cần key)

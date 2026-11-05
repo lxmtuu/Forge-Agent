@@ -33,7 +33,7 @@ def _hook_cfgs(workspace: Path, event: str) -> list[dict]:
     try:
         if ws_cfg.is_file():
             cfg = json.loads(ws_cfg.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception:  # noqa: BLE001 — config lỗi → không có hook, không chết tool
         cfg = {}
     hooks = cfg.get("hooks") or config.load_config().get("hooks") or {}
     items = hooks.get(event) or []
@@ -51,6 +51,22 @@ def _hook_cfgs(workspace: Path, event: str) -> list[dict]:
         if legacy:
             out.append({"command": legacy, "matcher": "write_file|edit_file", "_legacy_env": True})
     return out
+
+
+async def run_event(workspace: Path, sid: str, event: str,
+                    extra: dict | None = None) -> list[dict]:
+    """C1 (v0.32): chạy mọi hook của event TỔNG QUÁT (user_prompt_submit/stop/
+    pre_compact/notification). Trả [{command, rc, out, err}] — CALLER quyết nghĩa
+    exit 2 (user_prompt_submit/pre_compact = chặn; stop/notification = bỏ qua rc)."""
+    results = []
+    payload = {"session_id": sid, "hook_event_name": event,
+               "workspace": str(workspace), **(extra or {})}
+    for entry in _hook_cfgs(workspace, event):
+        res = await _run_cmd(str(entry.get("command")), payload, workspace)
+        results.append({"command": str(entry.get("command")),
+                        "rc": res.get("code", 1),
+                        "out": res.get("out", ""), "err": res.get("err", "")})
+    return results
 
 
 def _matched(entry: dict, tool_name: str) -> bool:
@@ -81,7 +97,7 @@ async def _run_cmd(command: str, payload: dict, workspace: Path, env_extra: dict
         return {"code": proc.returncode or 0,
                 "out": out.decode("utf-8", "replace").strip()[:1200],
                 "err": err.decode("utf-8", "replace").strip()[:600]}
-    except Exception as e:  # hook lỗi không được làm hỏng tool
+    except Exception as e:  # noqa: BLE001 — hook lỗi không được làm hỏng tool
         return {"code": 1, "out": "", "err": f"hook error: {e}"}
 
 

@@ -347,7 +347,7 @@ class ForgeTUI(App):
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
                           "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit /loop /worktree /msg /inbox "
-                          "/usage /files /review [file|A...B] /diff [file] /quit · "
+                          "/usage /files /review [file|A...B] /diff [file] /repomap [budget] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
                           cls="sys-line")
@@ -603,6 +603,15 @@ class ForgeTUI(App):
             else:
                 self.add_line(f"📄 Diff — {label}:", cls="sys-line")
                 self.add_line(_diff_rich(diff_text, max_lines=60))
+        elif cmd == "/repomap":
+            from engine import repomap as frm
+            ws = self.agent.workspace if self.agent else (
+                store.workspace(self.sid) if self.sid else Path.cwd())
+            try:
+                budget = min(max(int(arg), 500), 20000) if arg.strip() else frm.BUDGET_CHARS
+            except ValueError:
+                budget = frm.BUDGET_CHARS
+            self.add_line(frm.build(ws, budget=budget)["map"], cls="sys-line")
         elif cmd == "/doctor":
             from engine.diagnostics import doctor
             self.add_line("🩺 Đang chẩn đoán…", cls="sys-line")

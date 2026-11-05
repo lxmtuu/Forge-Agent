@@ -318,6 +318,18 @@ Tab 📘 Audit (từ v0.18) nâng cấp chuẩn log-viewer: quick-filter **Tất
 
 `run_forge.bat` (Windows, double-click): tự .venv → tự cài → tự mở trình duyệt; banner tiếng Việt UTF-8 chuẩn mọi máy (theo research codepage-bat: logic chữ nằm ở Python helper, bat thuần ASCII). `--check` khám phá môi trường trước khi cài. **USER_GUIDE.md** tiếng Việt 11 mục cho người mới, có test bảo đảm mọi lệnh trong guide tồn tại thật trong code. Đối thủ cần bước `npm install -g` / install script; Forge: giải nén + double-click.
 
+## 🌙 v0.32 "Autonomy nâng cao" — đóng A4/A5/C1
+
+Research trước khi code: Claude Code background session gửi Notification `agent_completed` kèm tóm tắt; Aider RepoMap dùng symbol + đồ thị tham chiếu và budget context. Forge triển khai theo nguyên tắc đó nhưng giữ kiến trúc tự host gọn:
+
+- **A4:** `spawn_background_agent` + `check_background_agents`; lead không bị chặn, tối đa 3 tác vụ đang chạy/phiên. Sub-agent nền có session/model riêng, tuỳ chọn worktree; xong gửi tóm tắt qua cross-session inbox, ghi audit và bắn Notification `agent_completed`.
+- **A5:** `engine/repomap.py` + tool `repo_map` + `/repomap` CLI/TUI. Regex symbol theo ngôn ngữ, rank số file tham chiếu chéo, budget và cache có chữ ký đầy đủ. Tự nạp chỉ ở workspace nhỏ để không đốt token; sub-agent không nạp map chồng.
+- **C1:** `user_prompt_submit` (exit 2 chặn trước LLM), `pre_compact` (exit 2 chặn nén), `stop`, `notification` (approval + agent_completed).
+
+Test hồi quy bắt được lỗi thật trước khi giao: cache repo map chéo workspace, cache không phân biệt budget, thiếu import asyncio khi spawn nền, và một lỗi nối chuỗi LSP do chính bản dọn lint gây ra (`test_v011` bắt). Thêm guard cho workspace rỗng và file sau phần tử 200 của cache.
+
+**Gate: 167/167 test · 28 suite · mypy 0 lỗi/33 file · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

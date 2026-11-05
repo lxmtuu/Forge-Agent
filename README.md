@@ -193,7 +193,15 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
-### 🚀 Chạy nhanh (v0.31)
+### 🌙 Autonomy nâng cao (v0.32)
+
+| Tính năng | Cách dùng và giới hạn |
+|---|---|
+| **Sub-agent chạy nền** | Trong Agent mode, yêu cầu agent dùng `spawn_background_agent(task)` — lead làm tiếp ngay; khi xong, tóm tắt tự vào hộp thư lead và hook `notification` nhận `agent_completed`. Theo dõi bằng `check_background_agents`. Tối đa 3 tác vụ đang chạy/phiên; `isolation=worktree` không tự merge. Registry trong tiến trình, restart là sạch |
+| **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
+| **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
+
+### 🚀 Chạy nhanh (v0.32)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 
@@ -349,7 +357,8 @@ forge-agent/
 ├── engine/               # lõi dùng chung — không phụ thuộc UI
 │   ├── agent.py          # vòng lặp: LLM → tool_calls → thực thi → lặp (tối đa 30 vòng)
 │   ├── llm.py            # OpenRouter SSE streaming, tích luỹ tool_calls từng delta
-│   ├── tools.py          # 6 tool + schema OpenAI + sandbox đường dẫn/timeout
+│   ├── tools.py          # tool lõi + schema OpenAI + sandbox đường dẫn/timeout
+│   ├── repomap.py        # repo map nén gọn, rank refs chéo + cache (v0.32)
 │   ├── guard.py          # phân loại lệnh shell + Docker sandbox wrapper
 │   ├── mcp.py            # MCP client (stdio JSON-RPC) + manager
 │   ├── session.py        # phiên JSON: messages chuẩn OpenAI, workspace riêng

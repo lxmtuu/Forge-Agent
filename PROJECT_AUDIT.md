@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **162 test / 27 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). Backlog thật còn mở: GAP_ANALYSIS §2b (A4, A5, C1).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **167 test / 28 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog.
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -221,6 +221,20 @@ Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Researc
 **E2E thật của launcher (sandbox):** venv tạo thật → pip install thật → server :8010 lên thật → health ok · demo true → banner UTF-8 chuẩn.
 
 **Kết quả vòng 15: 162/162 test (27 suite) · mypy 0 · bandit Medium+ 0.**
+
+## 3i. Vòng 16 (v0.32) — Autonomy nâng cao: A4 + A5 + C1
+
+Đúng quy trình research → đọc code/contract → implementation → test hồi quy. Research Claude Code background subagents (Notification `agent_completed` + tóm tắt về lead) và Aider RepoMap (symbol + rank tham chiếu + budget); không chép tree-sitter/PageRank nguyên bản vì mục tiêu là map gọn, dependency không đổi.
+
+| Hạng mục | Implementation kiểm chứng |
+|---|---|
+| A4 sub-agent nền | Registry in-process, cap 3 running/lead, session/model riêng, shared/worktree; lead nhận summary qua bus + audit + Notification `agent_completed`; `check_background_agents` đọc trạng thái |
+| A5 repo map | Module mới `repomap.py`: symbol regex py/js/ts/go/rs, rank refs chéo, budget, cache theo full path+mtime+size+budget; auto-nạp ≤60 file/≤4KB/không cắt; tool + `/repomap` CLI/TUI |
+| C1 hook events | `run_event` dùng đúng contract `_run_cmd` `{code,out,err}`; prompt/pre_compact chặn bằng exit 2, stop/notification không chặn; bỏ hook nội bộ cho bg-child |
+
+**Lỗi test bắt trước khi ship:** cache chéo workspace và thiếu budget trong key (T1) · thiếu import asyncio (T5) · sửa lint ISC004 sai làm hỏng 3 thông báo LSP (test_v011) · thêm test workspace rỗng + thay đổi file sau phần tử 200. Không “sửa test để qua”: mock LLM chỉ thay đường gọi mạng; vòng đời agent, hooks, bus và registry chạy thật.
+
+**Kết quả vòng 16: 167/167 test (28 suite) · mypy 0/33 file · bandit Medium+ 0 · ruff sạch cho `repomap.py`/`tools.py`/`hooks.py`; `agent.py`/CLI/TUI không phát sinh lỗi lint mới so với baseline đã ghi nhận.**
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

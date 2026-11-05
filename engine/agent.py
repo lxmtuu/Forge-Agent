@@ -20,6 +20,10 @@ MAX_ITERATIONS = 30
 MAX_SUBAGENTS_PER_TURN = 6   # chống phình (Anthropic: lead từng spawn 50 subagent vô ích)
 MAX_PARALLEL_SUBAGENTS = 3   # fan-out song song tối đa cùng lúc
 
+# A4 — registry bg-agent (sống trong tiến trình; restart là sạch — ghi rõ cho LLM)
+MAX_BG_AGENTS_PER_LEAD = 3
+_BG_AGENTS: dict[str, dict] = {}
+
 SYSTEM_PROMPT = """You are Forge, an expert AI coding agent running inside the user's \
 workspace (similar to Claude Code / Codex CLI). Today is {date}. Platform: {platform}.
 Workspace directory: {workspace}
@@ -76,7 +80,7 @@ ARCHITECT_EXEC_PROMPT = (
 )
 READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols",
                    "lsp_definition", "lsp_references", "lsp_search_symbols",
-                   "fetch_url", "check_background"}
+                   "fetch_url", "check_background", "repo_map", "check_background_agents"}
 CHAT_MODES = ("direct", "agent", "plan", "architect")
 
 
@@ -112,6 +116,7 @@ class Agent:
     def __init__(self, store: SessionStore, session_id: str, model: str | None = None,
                  depth: int = 0):
         self.depth = depth
+        self._bg_child = False   # A4: sub-agent nền — tắt hook user_prompt_submit/stop
         self.store = store
         s0 = store.get(session_id)
         if s0 is None:
@@ -354,6 +359,109 @@ class Agent:
         from .skills import skills_block
         return skills_block(self.workspace)
 
+    def _repomap_block(self) -> str:
+        """A5: repo map tự nạp vào system prompt cho workspace NHỎ (kiểu Aider);
+        workspace lớn dùng tool repo_map chủ động."""
+        if self.depth > 0:   # sub-agent không cần map chồng lên context cha
+            return ""
+        try:
+            from . import repomap as frm
+            return frm.auto_context(self.workspace)
+        except Exception:  # noqa: BLE001 — map lỗi không được chết system prompt
+            return ""
+
+    async def _notify(self, ntype: str, message: str, **extra) -> None:
+        """C1: fire Notification hook (approval/agent_completed…). Lỗi bỏ qua."""
+        try:
+            from . import hooks as _hooks
+            await _hooks.run_event(self.workspace, self.session.id, "notification",
+                                   {"notification_type": ntype, "message": message[:500], **extra})
+        except Exception as _ne:  # noqa: BLE001
+            print(f"[hooks] notification lỗi (bỏ qua): {_ne}")
+
+    async def spawn_background(self, task: str, sub_model: str | None = None,
+                               isolation: str = "shared") -> dict:
+        """A4: tạo sub-agent NỀN — trả ngay, _bg_agent_run tự chạy trong task asyncio."""
+        import uuid as _uuid
+        task = (task or "").strip()
+        if not task:
+            return {"ok": False, "output": "Error: thiếu task cho bg-agent"}
+        running = sum(1 for v in _BG_AGENTS.values()
+                      if v["lead_sid"] == self.session.id and v["status"] == "running")
+        if running >= MAX_BG_AGENTS_PER_LEAD:
+            return {"ok": False,
+                    "output": f"Đã có {running}/{MAX_BG_AGENTS_PER_LEAD} bg-agent đang chạy — "
+                              "dùng check_background_agents, chờ xong rồi giao tiếp."}
+        resolved = llm.resolve_sub_model(sub_model or "", self.model)
+        sub_sid = self.store.create(model=resolved or "", title=f"🌙 {task[:46]}").id
+        if isolation == "worktree":
+            from . import worktree as fwt
+            wt = await fwt.make(self.session.id, sub_sid)
+            if wt:
+                try:
+                    (config.WORKSPACES_DIR / f"{sub_sid}.path").write_text(wt, encoding="utf-8")
+                except OSError:
+                    isolation = "shared"   # không có checkpoint → fallback an toàn
+            else:
+                isolation = "shared"
+        bg_id = f"bga-{_uuid.uuid4().hex[:6]}"
+        _BG_AGENTS[bg_id] = {"bg_id": bg_id, "lead_sid": self.session.id, "sub_sid": sub_sid,
+                             "task": task[:200], "model": resolved or "inherit",
+                             "isolation": isolation, "status": "running",
+                             "started": time.strftime("%H:%M:%S"), "finished": None,
+                             "tools": 0, "summary": ""}
+        import asyncio as _aio_bg
+        _aio_bg.create_task(self._bg_agent_run(bg_id, sub_sid, task, resolved))
+        return {"ok": True, "bg_id": bg_id, "sub_sid": sub_sid,
+                "output": (f"🌙 Đã khởi động bg-agent `{bg_id}` (phiên `{sub_sid}`, isolation={isolation}). "
+                           "Lead làm tiếp được — khi xong tóm tắt tự vào hộp thư phiên này; "
+                           "theo dõi: check_background_agents.")}
+
+    async def _bg_agent_run(self, bg_id: str, sub_sid: str, task: str,
+                            sub_model: str | None) -> None:
+        from . import bus as fbus
+        entry = _BG_AGENTS.get(bg_id)
+        if entry is None:
+            return
+        try:
+            sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
+        except ValueError as _ve:
+            entry.update(status="error", summary=f"không tạo được phiên phụ: {_ve}",
+                         finished=time.strftime("%H:%M:%S"))
+            return
+        sub._bg_child = True   # không fire user_prompt_submit cho turn nội bộ
+        summary = ""
+        tools = 0
+        ok = True
+        try:
+            async for ev in sub.send(task, chat_mode="agent", append_user=True):
+                t = ev.get("type")
+                if t == "assistant_message":
+                    summary = ev.get("content") or summary
+                elif t == "tool_result":
+                    tools += 1
+                elif t == "error":
+                    ok = False
+                    summary = ev.get("message", "")
+        except Exception as e:  # noqa: BLE001 — nền không được làm sập tiến trình
+            ok = False
+            summary = f"lỗi nền: {e}"
+        entry["status"] = "done" if ok else "error"
+        entry["finished"] = time.strftime("%H:%M:%S")
+        entry["tools"] = tools
+        entry["summary"] = (summary or "(không có text)")[:500]
+        fbus.send(self.session.id, sub_sid,
+                  f"🌙 bg-agent `{bg_id}` «{task[:80]}» {'XONG' if ok else 'LỖI'}: {entry['summary'][:300]}")
+        log_tool(self.session.id, "spawn_background_agent",
+                 {"bg_id": bg_id, "task": task[:80], "sub_sid": sub_sid}, ok,
+                 source="background", note=f"{entry['status']} tools={tools}")
+        await self._notify("agent_completed",
+                           f"{bg_id} {entry['status']}: {entry['summary'][:200]}",
+                           bg_id=bg_id, lead_session=self.session.id)
+
+    def bg_status(self) -> list[dict]:
+        return [v for v in _BG_AGENTS.values() if v["lead_sid"] == self.session.id]
+
     def _system_message(self, session_extra: str = "") -> dict:
         return {
             "role": "system",
@@ -362,7 +470,7 @@ class Agent:
                 platform=f"{platform.system()} {platform.release()} ({platform.machine()}) / Python {platform.python_version()}",
                 workspace=str(self.workspace),
                 agents_md=_agents_md_block(self.workspace),
-            ) + self._memory_block() + self._skills_block() + (session_extra or ""),
+            ) + self._memory_block() + self._skills_block() + self._repomap_block() + (session_extra or ""),
         }
 
     async def send(self, user_text: str, chat_mode: str = "agent", content=None,
@@ -383,6 +491,22 @@ class Agent:
             if s.title == "New session":
                 s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
             self.store.save(s)
+
+        # hooks C1: user_prompt_submit — exit 2 = CHẶN prompt (chuẩn Claude Code)
+        if append_user and not getattr(self, "_bg_child", False):
+            try:
+                from . import hooks as _hooks
+                _ups = await _hooks.run_event(self.workspace, s.id, "user_prompt_submit",
+                                              {"prompt": user_text[:2000]})
+                for _r in _ups:
+                    if _r["rc"] == 2:
+                        yield {"type": "assistant_message",
+                               "content": ("⛔ Prompt bị hook user_prompt_submit chặn: "
+                                           + (_r["err"] or "exit 2").strip()[:200])}
+                        yield {"type": "turn_end", "usage": None, "message_count": len(s.messages)}
+                        return
+            except Exception as _upe:  # noqa: BLE001
+                print(f"[hooks] user_prompt_submit lỗi (bỏ qua): {_upe}")
 
         # '# <nội dung>' → quick-memory (chuẩn Claude Code): ghi MEMORY.md, không tốn LLM
         if user_text.startswith("# ") and len(user_text.strip()) > 2:
@@ -582,6 +706,7 @@ class Agent:
                         if (mode == "ask" and verdict["level"] in ("warn", "danger")
                                 and cmd not in self.session.allowed_commands):
                             aid = approvals.create(cmd, verdict["level"], verdict["reasons"])
+                            await self._notify("approval_request", str(cmd)[:200])
                             yield {"type": "approval_request", "id": aid, "command": cmd,
                                    "level": verdict["level"], "reasons": verdict["reasons"]}
                             decision = await approvals.wait(aid)
@@ -616,6 +741,7 @@ class Agent:
                             _disp = f"mcp:{_srv.name}:{_tool}"
                             aid = _ap.create(_disp, "warn",
                                              ["Tool MCP — hành động thật trên dịch vụ ngoài"])
+                            await self._notify("approval_request", str(_disp)[:200])
                             yield {"type": "approval_request", "id": aid, "command": _disp,
                                    "level": "warn",
                                    "reasons": [f"Tool MCP chưa allowlist — "
@@ -652,6 +778,34 @@ class Agent:
                             result = task.result()
                             if seen:
                                 self.store.save(s)
+                    elif name == "repo_map":
+                        from . import repomap as frm
+                        _b = args.get("budget")
+                        try:
+                            _b = min(max(int(_b), 500), 20000) if _b else frm.BUDGET_CHARS
+                        except (TypeError, ValueError):
+                            _b = frm.BUDGET_CHARS
+                        _rm = frm.build(self.workspace, budget=_b)
+                        result = {"ok": True, "output": _rm["map"]}
+
+                    elif name == "spawn_background_agent" and chat_mode == "agent":
+                        _bg = await self.spawn_background(
+                            str(args.get("task", "")).strip(),
+                            (str(args.get("model")) if args.get("model") else None),
+                            str(args.get("isolation") or "shared"))
+                        result = {"ok": _bg["ok"], "output": _bg["output"]}
+
+                    elif name == "check_background_agents":
+                        _rows = self.bg_status()
+                        if not _rows:
+                            result = {"ok": True,
+                                      "output": "Chưa có bg-agent nào (registry sống trong tiến trình — restart là sạch)."}
+                        else:
+                            result = {"ok": True, "output": "\n".join(
+                                f"{r['bg_id']} [{r['status']}] «{r['task'][:60]}» tools={r['tools']}"
+                                + (f" — {r['summary'][:160]}" if r["summary"] else "")
+                                for r in _rows)}
+
                     elif name in ("send_message", "check_inbox"):
                         # F2 cross-session messaging — cần store/own sid nên xử lý ở agent
                         from . import bus as fbus
@@ -743,6 +897,14 @@ class Agent:
         self.store.save(s)
         yield {"type": "turn_end", "usage": total_usage, "session_usage": s.usage,
                "cost_usd": cost_usd, "message_count": len(s.messages)}
+        # hooks C1: stop — hết lượt (rc bỏ qua, chỉ chạy đủ vòng đời)
+        if not getattr(self, "_bg_child", False):
+            try:
+                from . import hooks as _hooks
+                await _hooks.run_event(self.workspace, s.id, "stop",
+                                       {"mode": chat_mode, "message_count": len(s.messages)})
+            except Exception as _ste:  # noqa: BLE001
+                print(f"[hooks] stop lỗi (bỏ qua): {_ste}")
 
 
 def _accumulate(session_usage: dict, turn_usage: dict | None) -> dict:
@@ -803,6 +965,14 @@ async def compact_session(agent: "Agent", instructions: str = "") -> dict:
     if not s.messages:
         return {"ok": False, "message": "Phiên trống — không có gì để nén"}
     before = len(s.messages)
+    try:
+        from . import hooks as _hooks
+        _pc = await _hooks.run_event(agent.workspace, s.id, "pre_compact",
+                                     {"before_messages": before})
+        if any(r["rc"] == 2 for r in _pc):
+            return {"ok": False, "message": "Nén bị hook pre_compact chặn (exit 2)"}
+    except Exception as _pce:  # noqa: BLE001
+        print(f"[hooks] pre_compact lỗi (bỏ qua): {_pce}")
     transcript = _transcript(s.messages)
     prompt = ("Summarize the following agent conversation transcript.\n\n"
               + (f"User focus instructions: {instructions}\n" if instructions else "")

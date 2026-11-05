@@ -307,6 +307,49 @@ TOOL_SPECS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "repo_map",
+            "description": "Bản đồ workspace nén gọn (A5, kiểu Aider): cây file + symbol "
+                           "chính theo ngôn ngữ, rank theo số tham chiếu chéo. Dùng để định "
+                           "hướng nhanh trước khi đọc file rời rạc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "budget": {"type": "number", "description": "(tuỳ chọn) giới hạn ký tự, mặc định 6000"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_background_agent",
+            "description": "Giao việc cho sub-agent CHẠY NỀN (A4): trả ngay, lead làm tiếp; "
+                           "khi xong tóm tắt TỰ ĐỘNG vào hộp thư phiên này (như tin nhắn) — "
+                           "dùng check_background_agents để theo dõi. Chỉ agent mode.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "Việc cần sub-agent tự làm hết"},
+                    "model": {"type": "string", "description": "(tuỳ chọn) model phụ — 'cheap'/'strong'/tên"},
+                    "isolation": {"type": "string", "enum": ["shared", "worktree"],
+                                  "description": "worktree = nhánh git riêng, chưa tự merge"},
+                },
+                "required": ["task"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_background_agents",
+            "description": "Xem trạng thái các bg-agent của phiên (running/done/error + tóm tắt). "
+                           "Registry sống trong tiến trình — restart là sạch.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "todo_write",
             "description": "GHI LẠI danh sách việc của nhiệm vụ hiện tại (checklist người dùng "
                            "nhìn thấy tiến độ realtime). Gọi ĐẦU nhiệm vụ để lập kế hoạch, rồi "
@@ -484,7 +527,7 @@ def _search_files(workspace: Path, args: dict) -> str:
                     if len(matches) >= MAX_SEARCH_MATCHES:
                         matches.append(f"… (stopped at {MAX_SEARCH_MATCHES} matches)")
                         return "\n".join(matches)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 — search không được chết vì 1 file lỗi
             continue
     return "\n".join(matches) if matches else f"No matches for '{args['query']}'"
 
@@ -533,7 +576,7 @@ async def _run_command(workspace: Path, args: dict, override: bool = False) -> s
                     "`python` not `python3`, use dir/type instead of ls/cat)."
                 )
         return body
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — lỗi process/OS phải thành output, không nổ tool call
         return f"Error running command: {e}"
 
 
@@ -605,8 +648,9 @@ def _strip_html(html: str) -> str:
 
 
 async def _fetch_url(workspace: Path, args: dict) -> str:
-    import httpx
     from urllib.parse import urlparse
+
+    import httpx
     url = str(args.get("url") or "").strip()
     if not url:
         return "Error: thiếu url"
@@ -729,7 +773,7 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
             ok = not output.startswith(("Error", "BLOCKED"))
         else:
             output, ok = f"Error: unknown tool '{name}'", False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — tool lỗi trả text cho LLM, không nổ vòng agent
         output, ok = f"Error: {e}", False
 
     # ---- LSP diagnostics sau khi ghi/sửa file code (Claude-Code-style) ----
@@ -742,7 +786,7 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
                 diags = await _lsp.diagnostics_for(workspace, p)
                 if diags:
                     output = output + "\n\n" + _lsp.format_diags(diags)
-        except Exception as _e:  # LSP không bao giờ được làm hỏng tool call
+        except Exception as _e:  # noqa: BLE001 — LSP không bao giờ được làm hỏng tool call
             print(f"[lsp] bỏ qua lỗi: {_e}")
 
     # ---- hook on_file_change (kiểu Claude Code hooks — chạy formatter/lint tự đặt) ----
@@ -768,7 +812,7 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
                     hook_rc = proc.returncode or 0
                 output += (f"\n🔗 Hook on_file_change (exit {hook_rc}): "
                            + (hook_out or "(không output)"))
-        except Exception as _e:
+        except Exception as _e:  # noqa: BLE001 — hook lỗi không được làm hỏng tool call
             output += f"\n🔗 Hook on_file_change lỗi: {_e}"
 
     result = {"ok": ok, "output": output}
@@ -795,8 +839,8 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
         return f"Bỏ qua: {p.suffix} không phải file code có language server", True, None
     if not _lsp.server_cmd(lang):
         return (f"LSP cho {lang} chưa cài trên máy. Hướng dẫn: pip install "
-                f'\"python-lsp-server[pyflakes,pycodestyle]\" (Python) hoặc '
-                f"npm i -g typescript typescript-language-server (TS/JS).", True, None)
+                + "python-lsp-server[pyflakes,pycodestyle] (Python) hoặc "
+                + "npm i -g typescript typescript-language-server (TS/JS).", True, None)
     if name == "lsp_diagnostics":
         diags = await _lsp.diagnostics_for(workspace, p)
         if not diags:
@@ -818,11 +862,11 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
         try:
             locs = (await sess.definition(p, line, char) if name == "lsp_definition"
                     else await sess.references(p, line, char))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — LSP không bao giờ được làm hỏng tool call
             return f"Error: LSP {name} lỗi: {e}", False, None
         if not locs:
             return (f"Không tìm thấy {name.replace('lsp_', '')} cho vị trí {rel}:{line} "
-                    "(kiểm tra lại line/cột — dùng lsp_symbols để định vị trước)", True, None)
+                    + "(kiểm tra lại line/cột — dùng lsp_symbols để định vị trước)", True, None)
         ws_str = str(workspace)
         rows = []
         for ln in locs:
@@ -854,12 +898,12 @@ async def _run_lsp_search_symbols(workspace: Path, args: dict) -> tuple[str, boo
             results = await sess.workspace_symbols(q)
             if results:
                 break
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 — symbol scan không được chết vì 1 file lỗi
             continue
     if not results:
         if no_support:
             return (f"Language server ({', '.join(no_support)}) không hỗ trợ tìm symbol toàn "
-                    f"workspace — dùng tool search_files thay thế", True, None)
+                    + "workspace — dùng tool search_files thay thế", True, None)
         return f"Không tìm thấy symbol nào khớp «{q}» (hoặc máy chưa có language server)", True, None
     ws_str = str(workspace)
     rows = [f"  {x['kind']} {x['name']} — {x['file'].replace(ws_str + '/', '')}:{x['line']}"

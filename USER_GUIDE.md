@@ -88,6 +88,8 @@ Lưu ý BYOK: tiền API trả thẳng cho OpenRouter theo dùng; lỗi `402/429
 - **Skills** (🧩): thư mục `.forge/skills/` — mỗi skill là 1 `SKILL.md` có frontmatter `name` + `description`. Agent tự dùng khi hợp việc. Bật/tắt trong tab 🧩 (nó sửa frontmatter, hiệu lực ngay). 13 skill mẫu có sẵn.
 - **Lệnh riêng**: file `.forge/commands/<tên>.md` → gõ `/<tên>` trong chat là chạy prompt đó.
 - **Subagents**: `/run <agent-alias> <việc>` — chạy agent phụ (có thể dùng model rẻ), isolation `shared` hoặc `worktree` (nhánh git riêng, merge khi xong).
+- **Sub-agent nền** (v0.32): ở Agent mode, yêu cầu “dùng `spawn_background_agent` để kiểm tra …” — bạn tiếp tục chat trong lúc agent phụ làm. Khi xong, kết quả tự vào `/inbox`; tối đa 3 tác vụ đang chạy/phiên và danh sách nền được xoá khi restart server.
+- **Repo map**: `/repomap` để xem bản đồ file + hàm/lớp chính; `/repomap 10000` nếu muốn bản dài hơn. Workspace nhỏ được tự nạp map để agent định hướng nhanh hơn.
 
 ## 8. Kết nối thế giới ngoài (MCP + connectors)
 
@@ -135,4 +137,4 @@ Mỗi tool MCP lần đầu chạy đều **hỏi duyệt** (allowlist) — khô
 
 ## Phụ lục — Lệnh slash hay dùng
 
-`/help` · `/new` · `/sessions` · `/use <sid>` · `/model <tên>` · `/key <key>` · `/mode <agent|plan|direct>` · `/undo` · `/fork` · `/init` · `/review` · `/diff` · `/doctor` · `/audit [n]` · `/export` · `/mcp [refresh]` · `/connectors add|auth|remove|oauth` · `/loop <giây> <việc>` · `/loop stop` · `/run <alias> <việc>` · `/msg <sid> <nội dung>` · `/inbox` · `/memory`
+`/help` · `/new` · `/sessions` · `/use <sid>` · `/model <tên>` · `/key <key>` · `/mode <agent|plan|direct>` · `/undo` · `/fork` · `/init` · `/review` · `/diff` · `/repomap [budget]` · `/doctor` · `/audit [n]` · `/export` · `/mcp [refresh]` · `/connectors add|auth|remove|oauth` · `/loop <giây> <việc>` · `/loop stop` · `/run <alias> <việc>` · `/msg <sid> <nội dung>` · `/inbox` · `/memory`
