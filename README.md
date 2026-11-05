@@ -174,9 +174,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 /commit-vn fix lỗi login     # gọi skill như slash command ($ARGUMENTS)
 ```
 
-Nơi quét (project đè user): `.forge/skills/` · `.agents/skills/` · `.claude/skills/` · `~/.forge/skills/`.
+Nơi quét (project đè user): `.forge/skills/` · `.agents/skills/` · `.claude/skills/` · `~/.forge/skills/` · built-in `bundled-skills/` (skill-creator).
 Skill có thể kèm `scripts/` `references/` `assets/` — agent chạy script qua shell (vẫn qua guard danger).
-Skill mẫu: `skills-samples/commit-vn/`.
+**An toàn**: skill nằm trong repo dự án phải được tin trước mới nạp cho model — `/skills trust` xem, `/skills trust <tên>` hoặc `/skills trust all` để chấp nhận (chống prompt injection từ repo lạ).
+Skill mẫu: `skills-samples/commit-vn/`. Tạo skill mới: bảo agent *"tạo skill ..."* — nó theo skill-creator built-in.
 
 ### 🤖 Autonomy & Cost (v0.14)
 

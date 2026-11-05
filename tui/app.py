@@ -420,6 +420,8 @@ class ForgeTUI(App):
                     parts[1] if len(parts) > 1 else ""), cls="sys-line")
             elif arg.startswith("remove "):
                 self.add_line(skillmgr.remove(ws, arg[7:].strip()), cls="sys-line")
+            elif arg.startswith("trust"):
+                self.add_line(skillmgr.trust(ws, arg[5:].strip()), cls="sys-line")
             else:
                 self.add_line(skillmgr.format_listing(ws), cls="sys-line")
         elif cmd == "/memory":
@@ -508,8 +510,12 @@ class ForgeTUI(App):
                 self.add_line(f"⌨ Lệnh custom: {cmd} → chạy", cls="sys-line")
                 self.run_turn(expanded)
             else:
-                self.add_line(f"Lệnh không rõ: {cmd} — /help (custom: .forge/commands/{cmd[1:]}.md)",
-                              cls="sys-line")
+                reason = fcmd.blocked_reason(ws, text)
+                if reason:
+                    self.add_line(reason, cls="sys-line")
+                else:
+                    self.add_line(f"Lệnh không rõ: {cmd} — /help (custom: .forge/commands/{cmd[1:]}.md)",
+                                  cls="sys-line")
         self.update_status()
 
     # ------------------------------------------------------- comfort cmds

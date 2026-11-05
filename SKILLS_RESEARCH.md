@@ -166,13 +166,13 @@ Code: `engine/skills.py` (84 dòng) + alias trong `engine/commands.py` + `skills
 | **P0 ✅ ĐÃ LÀM** | **S1 · Chuẩn hoá format** | Quét `<tên>/SKILL.md` + tương thích ngược `<tên>.md`; frontmatter **pyyaml** + fallback tự-quote; fields name/license/compatibility/metadata; lenient validate + diagnostics | ~1 ngày |
 | **P0 ✅ ĐÃ LÀM** | **S2 · Đa vị trí quét** | `.forge/skills` + `.agents/skills` + `.claude/skills` (project, walk-up tới git root) + `~/.forge/skills` (user); precedence + cảnh báo shadow; bounds depth≤6/≤2000 dir | ~1 ngày |
 | **P0 ✅ ĐÃ LÀM** | **S3 · Tooling** | Lệnh `/skills` (liệt kê nguồn+nqués trùng); `/skills add <thư mục git>` = clone về user scope + validate + hỏi trust; skill mẫu `commit-vn` kèm repo; cập nhật README | ~1 ngày |
-| **P1** | **S4 · Resources** | Catalog nêu scripts/references/assets + hướng dẫn chạy script qua shell (qua guard danger); test skill có script thật | ~0.5 ngày |
-| **P1** | **S5 · Trust gating** | Lần đầu nạp skill project-level mới → cảnh báo + cần đồng ý (ghi nhớ theo workspace); danh sách skill đã tin trong `/skills` | ~0.5 ngày |
-| **P1** | **S6 · skill-creator** | Skill built-in chuẩn Anthropic (viết lại tiếng Việt hoà blend): agent tự dựng skill mới theo spec khi được yêu cầu | ~0.5 ngày |
+| **P1 ✅ ĐÃ LÀM** | **S4 · Resources** | Catalog nêu scripts/references/assets + hướng dẫn chạy script qua shell (qua guard danger); test skill có script thật | ~0.5 ngày |
+| **P1 ✅ ĐÃ LÀM** | **S5 · Trust gating** | Lần đầu nạp skill project-level mới → cảnh báo + cần đồng ý (ghi nhớ theo workspace); danh sách skill đã tin trong `/skills` | ~0.5 ngày |
+| **P1 ✅ ĐÃ LÀM** | **S6 · skill-creator** | Skill built-in chuẩn Anthropic (viết lại tiếng Việt hoà blend): agent tự dựng skill mới theo spec khi được yêu cầu | ~0.5 ngày |
 | **P2** | S7 · allowed-tools hiển thị | Đọc + hiển thị trong /skills (chưa thực thi) | nhỏ |
 | **P2** | S8 · Tab Skills trong Settings web | Xem catalog, bật/tắt per-skill (đã có disable-model-invocation) | ~1 ngày |
 
-**Đã giao (P0):** smoke 6/6 ×2 + regression 67 xanh; `/skills add anthropics/skills` cài thật 13 skill Anthropic 13/13 pass validate. Kỳ vọng ban đầu: skill viết cho Claude Code/Codex/OpenCode **chạy thẳng** trong forge-agent; cài được từ bất kỳ repo git nào; tính reachability với hệ sinh thái ~90k skill có sẵn.
+**Đã giao (P0):** smoke 6/6 ×2 + regression 67 xanh. **Đã giao (P1, v0.16):** smoke 6/6 ×2 + regression 79 xanh — catalog nêu tài nguyên + thư mục gốc, trust gating (blocked_reason + bịt bypass alias), skill-creator built-in.; `/skills add anthropics/skills` cài thật 13 skill Anthropic 13/13 pass validate. Kỳ vọng ban đầu: skill viết cho Claude Code/Codex/OpenCode **chạy thẳng** trong forge-agent; cài được từ bất kỳ repo git nào; tính reachability với hệ sinh thái ~90k skill có sẵn.
 
 ---
 

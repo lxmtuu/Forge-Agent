@@ -489,15 +489,17 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             from rich.text import Text
             arg = text[7:].strip()
             if arg.startswith("add "):
-                out = skillmgr.add(agent0_ws(store, session_id, model), arg[4:].strip())
+                out = skillmgr.add(agent0_ws(store, session_id), arg[4:].strip())
             elif arg.startswith("new "):
                 parts = arg[4:].strip().split(None, 1)
-                out = skillmgr.new_skill(agent0_ws(store, session_id, model),
+                out = skillmgr.new_skill(agent0_ws(store, session_id),
                                          parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
             elif arg.startswith("remove "):
-                out = skillmgr.remove(agent0_ws(store, session_id, model), arg[7:].strip())
+                out = skillmgr.remove(agent0_ws(store, session_id), arg[7:].strip())
+            elif arg.startswith("trust"):
+                out = skillmgr.trust(agent0_ws(store, session_id), arg[5:].strip())
             else:
-                out = skillmgr.format_listing(agent0_ws(store, session_id, model))
+                out = skillmgr.format_listing(agent0_ws(store, session_id))
             console.print(Text(out))
             continue
         if text.startswith("/run "):
@@ -530,8 +532,12 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             if expanded is not None:
                 await run_turn(session_id, expanded, model=model)
                 continue
-            console.print(f"[red]Lệnh không rõ:[/red] {text.split()[0]} — /help "
-                          f"(custom: .forge/commands/<tên>.md)")
+            reason = fcmd.blocked_reason(agent0_ws(store, session_id), text)
+            if reason:
+                console.print(f"[yellow]{reason}[/yellow]")
+            else:
+                console.print(f"[red]Lệnh không rõ:[/red] {text.split()[0]} — /help "
+                              f"(custom: .forge/commands/<tên>.md)")
             continue
 
         await run_turn(session_id, text, model=model)

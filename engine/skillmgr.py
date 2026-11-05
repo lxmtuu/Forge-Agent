@@ -159,6 +159,42 @@ def new_skill(workspace: Path, name: str, desc: str = "") -> str:
             f"\"đọc .forge/skills/{name}/SKILL.md và hoàn thiện nó\".")
 
 
+def trust(workspace: Path, arg: str) -> str:
+    """Quản trị trust cho skill PROJECT: /skills trust (liệt kê) · trust <tên> · trust all.
+
+    Skill project chưa tin KHÔNG nạp vào catalog model (chống prompt injection
+    từ repo lạ — khuyến nghị của chuẩn agentskills.io).
+    """
+    from .skills import list_skills, save_trusted
+    arg = (arg or "").strip()
+    skills, _ = list_skills(workspace)
+    untrusted = [s for s in skills if s["source"] == "project" and not s.get("trusted", True)]
+    if not arg:
+        if not untrusted:
+            return ("✅ Mọi skill project đều đã được tin — không có gì cần chấp nhận.\n"
+                    "(Skill user/built-in luôn được tin sẵn.)")
+        lines = [f"🔒 {len(untrusted)} skill project CHƯA được tin (không nạp vào model):"]
+        for s_ in untrusted:
+            lines.append(f"  - {s_['name']} — {s_['description'][:80]}")
+            lines.append(f"    {s_['path']}")
+        lines.append("Chấp nhận 1 skill:  /skills trust <tên>   ·   Chấp nhận tất cả:  /skills trust all")
+        return "\n".join(lines)
+    if arg == "all":
+        if not untrusted:
+            return "Không có skill nào cần chấp nhận."
+        save_trusted(workspace, {s_["name"] for s_ in untrusted})
+        return (f"✅ Đã tin {len(untrusted)} skill: "
+                + ", ".join(s_["name"] for s_ in untrusted)
+                + "\n(Catalog model nạp từ lượt chat kế tiếp.)")
+    target = next((s_ for s_ in untrusted if s_["name"] == arg), None)
+    if target is None:
+        return (f"❌ Không có skill project CHƯA tin tên '{arg}'. "
+                "Xem danh sách: /skills (dòng có 🔒)")
+    save_trusted(workspace, {arg})
+    return (f"✅ Đã tin skill '{arg}' — model nạp từ lượt chat kế tiếp.\n"
+            f"   {target['path']}")
+
+
 def remove(workspace: Path, name: str) -> str:
     """Gỡ skill khỏi USER scope (~/.forge/skills) — skill project thì tự xoá file trong repo."""
     name = (name or "").strip().strip("/")
@@ -185,13 +221,14 @@ def format_listing(workspace: Path) -> str:
         "project": "📁 Project",
         "user": "🏠 User (~/.forge/skills)",
         "global-legacy": "🗄 Global cũ (data/forge/skills)",
+        "built-in": "🧷 Built-in (đi kèm app)",
     }
     blocks: list[str] = []
     by_src: dict[str, list[dict]] = {}
     for s in skills:
         by_src.setdefault(s["source"], []).append(s)
     total = 0
-    for src in ("project", "user", "global-legacy"):
+    for src in ("project", "user", "global-legacy", "built-in"):
         rows = by_src.get(src, [])
         if not rows:
             continue
@@ -199,6 +236,8 @@ def format_listing(workspace: Path) -> str:
         for s in rows:
             total += 1
             icon = "📦" if s["fmt"] == "standard" else "📄"
+            if src == "project" and not s.get("trusted", True):
+                icon = "🔒"
             inv = "" if s["model_invocable"] else " · 🔕 chỉ gọi tay"
             res = []
             for k in ("scripts", "references", "assets"):
@@ -210,11 +249,15 @@ def format_listing(workspace: Path) -> str:
             lines.append(f"- {icon} **{s['name']}**{inv}{res_s} — {desc}{warn}")
             lines.append(f"  `{s['path']}`")
         blocks.append("\n".join(lines))
+    n_lock = sum(1 for s in skills if s["source"] == "project" and not s.get("trusted", True))
     head = f"### 🧩 Skills ({total})\n" if total else "### 🧩 Skills\n"
+    if n_lock:
+        head += f"\n⚠ {n_lock} skill project có 🔒 chưa được tin — KHÔNG nạp vào model. Xem: /skills trust\n"
     tail = ""
     if diags:
         tail = "\n### ⚠ Chẩn đoán\n" + "\n".join(f"- {d}" for d in diags[:15])
         if len(diags) > 15:
             tail += f"\n- … và {len(diags) - 15} cảnh báo nữa"
     return (head + "\n\n".join(blocks) + tail
-            + "\n\nLệnh: `/skills add <git-url|thư-mục>` · `/skills new <tên> [mô tả]` · `/skills remove <tên>`")
+            + "\n\nLệnh: `/skills add <git-url|thư-mục>` · `/skills new <tên> [mô tả]` · "
+              "`/skills trust [all|<tên>]` · `/skills remove <tên>`")

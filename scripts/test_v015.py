@@ -136,6 +136,8 @@ async def t2():
     blob = "\n".join(diags)
     assert "bị che" in blob, blob
 
+    from engine.skills import save_trusted
+    save_trusted(w, {"trung-ten", "co-script", "tu-agents", "tu-claude"})
     blk = skills_block(w)
     assert "trung-ten" in blk and "co-script" in blk and "kèm scripts/" in blk, blk[:400]
     assert "tay-only" not in blk, "skill tắt model-invocation phải ẩn khỏi catalog"
@@ -149,7 +151,8 @@ async def t2():
     Path.home = lambda: empty_home
     fconfig.DATA_DIR = TMP / "data-empty"
     try:
-        assert skills_block(w0) == "", "không có skill vẫn render catalog"
+        blk0 = skills_block(w0)
+        assert "skill-creator" in blk0, "built-in skill-creator phải luôn sẵn sàng"
     finally:
         Path.home = orig_home
         fconfig.DATA_DIR = orig_data
@@ -163,6 +166,10 @@ async def t3():
     _skill(w / ".agents" / "skills", "deploy-staging",
            'name: deploy-staging\ndescription: deploy lên staging',
            body="Deploy lên môi trường $ARGUMENTS theo checklist.")
+    # v0.16: skill project chưa trust → expand bị chặn, phải trust trước
+    from engine.skills import save_trusted
+    assert expand("/deploy-staging sáng thứ 2", w) is None
+    save_trusted(w, {"deploy-staging"})
     out = expand("/deploy-staging sáng thứ 2", w)
     assert out is not None and "sáng thứ 2" in out and "Deploy lên" in out, out
     assert expand("/khong-ton-tai", w) is None
@@ -225,6 +232,8 @@ async def t5():
     _skill(w / ".forge" / "skills", "nhiem-vu-mau",
            'name: nhiem-vu-mau\ndescription: demo skill cho system prompt')
     agent = Agent(store, sid)
+    from engine.skills import save_trusted
+    save_trusted(w, {"nhiem-vu-mau"})  # v0.16: cần trust mới vào catalog
 
     seen = {}
 

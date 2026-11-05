@@ -187,6 +187,16 @@ Theo SKILLS_RESEARCH.md (chuẩn agentskills.io — 70+ nền tảng, quyên cho
 **Bằng chứng hệ sinh thái:** `/skills add anthropics/skills` cài 1 phát được 13 skill chính thức của Anthropic (docx, pdf, pptx, xlsx, skill-creator, mcp-builder…), 13/13 pass validate.
 Test: **6/6 smoke v0.15 (×2) + regression 67 xanh (tổng 73)**.
 
+## 🔒 v0.16 "Skills P1 — Trust & Creator"
+
+| # | Mục | Chi tiết |
+|---|---|---|
+| 1 | **S4 · Tài nguyên skill** | Catalog nêu scripts/references/assets + **thư mục gốc skill** để model giải path tuyệt đối; test E2E: agent đọc SKILL.md → chạy script thật qua shell → nhận output |
+| 2 | **S5 · Trust gating** | Skill **project** (kể cả file dẹt) chưa tin → KHÔNG nạp catalog, KHÔNG expand được (`blocked_reason` hướng dẫn, không lộ nội dung cho model); `/skills trust [all\|<tên>]`; lưu theo workspace; đã bịt lỗ hổng bypass qua alias lệnh cũ — chống prompt injection từ repo lạ (khuyến nghị của chuẩn agentskills.io) |
+| 3 | **S6 · skill-creator built-in** | Skill chuẩn đi kèm app (`bundled-skills/`, ưu tiên thấp nhất — bản cài từ ngoài đè được): agent tự tạo skill đúng spec khi được yêu cầu |
+
+Test: **6/6 smoke v0.16 ×2 + toàn bộ regression (tổng 79 test xanh)**.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

@@ -184,7 +184,8 @@ async def t6():
     store.save(sess)
     ctx = Agent(store, sid).context_stats()
     assert ctx["messages"] == 6 and ctx["chars"] > 500 and ctx["est_tokens"] > 100, ctx
-    assert ctx["limit"] == 150000 and ctx["percent"] is not None and 0 < ctx["percent"] < 5, ctx
+    # v0.16: catalog có thêm skill built-in → nới biên (mục tiêu: context vẫn nhỏ)
+    assert ctx["limit"] == 150000 and ctx["percent"] is not None and 0 < ctx["percent"] < 10, ctx
     # server
     from fastapi.testclient import TestClient
     from server.main import app

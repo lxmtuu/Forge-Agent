@@ -9,12 +9,19 @@ Nơi quét (thứ tự ưu tiên — project đè user):
   3. <workspace>/.claude/skills/     (project — tương thích Claude Code, kho skill lớn nhất)
   4. ~/.forge/skills/                (user — cài bằng /skills add)
   5. <DATA_DIR>/forge/skills/        (global-legacy — vị trí cũ v0.11)
+  6. <repo>/bundled-skills/          (built-in — đi kèm app, ưu tiên thấp nhất)
+
+Trust gating (khuyến nghị của chuẩn): skill PROJECT đến từ repo (có thể là repo lạ
+vừa clone) → CHƯA tin thì KHÔNG nạp vào catalog model; người dùng chấp nhận bằng
+/skills trust <tên>. User/legacy/built-in luôn tin. Lưu theo workspace trong
+<DATA_DIR>/trusted-skills.json.
 
 Progressive disclosure 3 tầng theo spec: catalog (name+description ~50-100 tokens)
 → body SKILL.md (LLM tự đọc khi khớp) → scripts/references (đọc/chạy khi body dẫn tới).
 Lenient validation theo khuyến nghị chuẩn: cảnh báo vẫn nạp, chỉ bỏ khi thiếu description
 hoặc YAML vỡ hoàn toàn. Diagnostics trả về cho /skills.
 """
+import json
 import re
 from pathlib import Path
 
@@ -34,6 +41,7 @@ def _sources(workspace: Path):
     yield "project", ws / ".claude" / "skills"
     yield "user", _user_skills_dir()
     yield "global-legacy", config.DATA_DIR / "forge" / "skills"
+    yield "built-in", Path(__file__).resolve().parent.parent / "bundled-skills"
 
 
 def _user_skills_dir() -> Path:
@@ -164,6 +172,49 @@ def _iter_skill_files(base: Path, source: str):
         yield p.stem, p, "flat", source
 
 
+def _trust_file() -> Path:
+    return config.DATA_DIR / "trusted-skills.json"
+
+
+def _ws_key(workspace: Path) -> str:
+    try:
+        return str(Path(workspace).resolve())
+    except OSError:
+        return str(workspace)
+
+
+def load_trusted(workspace: Path) -> set[str]:
+    """Tên các skill PROJECT đã được người dùng chấp nhận cho workspace này."""
+    try:
+        raw = json.loads(_trust_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(raw, dict):
+        return set()
+    val = raw.get(_ws_key(workspace))
+    return {str(x) for x in val} if isinstance(val, list) else set()
+
+
+def save_trusted(workspace: Path, names: set[str]) -> None:
+    """Ghi nhận thêm các skill project được tin (gộp với danh sách cũ)."""
+    f = _trust_file()
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    except (OSError, ValueError):
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    key = _ws_key(workspace)
+    cur = {str(x) for x in (raw.get(key) or []) if isinstance(x, str)}
+    cur |= set(names)
+    raw[key] = sorted(cur)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def list_skills(workspace: Path) -> tuple[list[dict], list[str]]:
     """Danh sách skills theo precedence (trước đè sau) + diagnostics.
 
@@ -174,6 +225,7 @@ def list_skills(workspace: Path) -> tuple[list[dict], list[str]]:
     diags: list[str] = []
     seen: dict[str, dict] = {}
     total = 0
+    trusted = load_trusted(workspace)
     for source, base in _sources(workspace):
         for name, path, fmt, src in _iter_skill_files(base, source):
             total += 1
@@ -210,6 +262,7 @@ def list_skills(workspace: Path) -> tuple[list[dict], list[str]]:
                 "scripts": (bd / "scripts").is_dir(),
                 "references": (bd / "references").is_dir(),
                 "assets": (bd / "assets").is_dir(),
+                "trusted": (src != "project") or (name in trusted),
                 "diags": d,
             }
             out.append(seen[name])
@@ -234,7 +287,7 @@ def validate_skill_text(text: str, name: str) -> list[str]:
 def skills_block(workspace: Path) -> str:
     """Tầng 1 catalog chèn system prompt — chỉ name + description (+ gợi ý tài nguyên)."""
     skills, _ = list_skills(workspace)
-    skills = [s for s in skills if s["model_invocable"]]
+    skills = [s for s in skills if s["model_invocable"] and s.get("trusted", True)]
     if not skills:
         return ""
     lines = [
@@ -256,4 +309,6 @@ def skills_block(workspace: Path) -> str:
         suffix = f" ({', '.join(extra)})" if extra else ""
         lines.append(f"- /{s['name']} — {s['description'][:MAX_DESC_CATALOG]}{suffix}")
         lines.append(f"  (đọc: {s['path']})")
+        if extra:
+            lines.append(f"  (thư mục gốc skill: {s['base_dir']})")
     return "\n".join(lines) + "\n"

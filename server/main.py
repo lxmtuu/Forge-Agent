@@ -441,15 +441,21 @@ async def chat(sid: str, body: ChatBody, request: Request):
                                        parts[1] if len(parts) > 1 else "")
         elif s_arg.startswith("remove "):
             s_out = skillmgr.remove(ws, s_arg[7:].strip())
+        elif s_arg.startswith("trust"):
+            s_out = skillmgr.trust(ws, s_arg[5:].strip())
         else:
             s_out = skillmgr.format_listing(ws)
         skills_synthetic = [{"type": "assistant_message", "content": s_out}]
     else:
         # /<tên-lệnh> từ .forge/commands & skills chuẩn SKILL.md — expand trước mọi nhánh khác
         from engine import commands as fcmd
-        expanded = fcmd.expand(text, ws)
-        if expanded is not None:
-            text = expanded
+        blocked = fcmd.blocked_reason(ws, text)
+        if blocked is not None:
+            skills_synthetic = [{"type": "assistant_message", "content": blocked}]
+        else:
+            expanded = fcmd.expand(text, ws)
+            if expanded is not None:
+                text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
     synthetic: list[dict] | None = skills_synthetic
     from engine import memory as fmem

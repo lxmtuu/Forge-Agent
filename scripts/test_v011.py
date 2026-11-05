@@ -52,8 +52,12 @@ async def t1():
     (d / "deploy.md").write_text(
         "---\ndescription: Triển khai production\ndisable-model-invocation: true\n---\n"
         "Deploy cẩn thận!", encoding="utf-8")
+    # v0.16: skill project phải được trust mới vào catalog/expand (chống prompt injection)
+    from engine.skills import save_trusted
+    save_trusted(ws, {"pr-review"})
     rows, _diags = list_skills(ws)  # v0.15: trả (skills, diagnostics)
-    assert {r["name"] for r in rows} == {"pr-review", "deploy"}, rows
+    names = {r["name"] for r in rows}
+    assert {"pr-review", "deploy"} <= names, names  # v0.16: còn skill-creator built-in
     rev = [r for r in rows if r["name"] == "pr-review"][0]
     assert rev["model_invocable"] is True
     dep = [r for r in rows if r["name"] == "deploy"][0]
@@ -70,7 +74,6 @@ async def t1():
     agent = Agent(store, sid)
     agent.workspace = ws
     assert "SKILLS" in agent._system_message()["content"]
-    # /pr-review expand (qua commands engine — skills dir là alias)
     out = expand("/pr-review kiểm tra #12", ws)
     assert out and "Kiểm tra secret" in out and "kiểm tra #12" in out, out
 
