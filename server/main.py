@@ -177,6 +177,59 @@ async def set_settings(body: SettingsBody):
 
 
 # ---------------------------------------------------------------------------
+# Connectors OAuth 2.1 (C6) — flow chạy nền, web poll /status
+# ---------------------------------------------------------------------------
+class OAuthStartBody(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+
+
+@app.get("/api/connectors/presets")
+async def connector_presets():
+    from engine import connectors as fc
+    from engine import oauth as fo
+    installed = {fc._sanitize_name(c.get("preset", "")) for c in fc.load_servers()}
+    out = []
+    for pid, p in fc.PRESETS.items():
+        out.append({
+            "id": pid, "label": p["label"], "auth": p["auth"],
+            "auth_hint": p["auth_hint"], "installed": pid in installed,
+            "oauth": bool(p.get("oauth")),
+            "connected": fo.has_oauth(pid), "masked": fo.masked(pid),
+        })
+    return {"presets": out}
+
+
+@app.post("/api/connectors/{name}/oauth/start")
+async def oauth_start(name: str, body: OAuthStartBody):
+    from engine import connectors as fc
+    from engine import oauth as fo
+    pid = (name or "").strip().lower()
+    if pid not in fc.PRESETS or not fc.PRESETS[pid].get("oauth"):
+        raise HTTPException(404, f"Preset '{name}' không hỗ trợ OAuth")
+    if body.client_id:
+        fo.save_creds(pid, body.client_id, body.client_secret or "")
+    import threading
+    threading.Thread(target=fo.connect, args=(pid,), daemon=True).start()
+    return {"ok": True, "note": "Đang chờ duyệt trong trình duyệt — hỏi /status cho tới connected/error"}
+
+
+@app.get("/api/connectors/{name}/oauth/status")
+async def oauth_status(name: str):
+    from engine import connectors as fc
+    from engine import oauth as fo
+    if (name or "").strip().lower() not in fc.PRESETS:
+        raise HTTPException(404, "Unknown preset")
+    return fo.flow_status(name.strip().lower())
+
+
+@app.delete("/api/connectors/{name}/oauth")
+async def oauth_disconnect(name: str):
+    from engine import oauth as fo
+    return {"ok": fo.forget(name)}
+
+
+# ---------------------------------------------------------------------------
 # MCP servers management
 # ---------------------------------------------------------------------------
 @app.get("/api/mcp")

@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🔐 OAuth 2.1 cho connectors (v0.20)
+
+Notion/Sentry/Linear giờ đăng nhập bằng tài khoản thật: tạo ứng dụng OAuth của nhà cung cấp (redirect `http://127.0.0.1:8765/callback`) → `/connectors add notion` → `/connectors oauth notion <client_id> <client_secret>` — trình duyệt mở, duyệt xong token tự lưu (PKCE + state chống CSRF, refresh ngầm). Trên web: ⚙ → tab **🔗 Dịch vụ**. Toàn bộ token chỉ nằm trong `data/secrets.json` (chmod 600), không bao giờ vào context LLM.
+
 ### 🖥 Model cục bộ (v0.19) — Ollama/LM Studio không cần key
 
 ⚙ Cài đặt → **Base URL tuỳ chỉnh**: `http://localhost:11434/v1` → Model: `llama3.2` (tên model cục bộ) → chat như OpenRouter. Xoá URL để quay lại OpenRouter. Tiện ích kèm theo: `/rename <tên>`, `/find <từ-khóa>` (tìm trong cả nội dung tin nhắn), ô 🔍 trên sidebar, thông báo desktop khi agent xong (tab ẩn).

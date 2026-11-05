@@ -77,6 +77,18 @@
 
 **Kết quả vòng 3: 105/105 test (15 suite) · ruff F/E7/E9/B/ASYNC chỉ còn 3 mục đã-chấp-nhận-ghi-rõ · bandit 0.**
 
+## 3d. Vòng 4 (v0.20) — Connectors P1: OAuth 2.1 + tab Dịch vụ
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **C6** | **OAuth 2.1 (engine/oauth.py)** | authorization-code + PKCE S256 (test vector RFC 7636 App.B) · loopback 127.0.0.1 (port ngẫu nhiên hoặc ghim theo preset — RFC 8252 §7.3) · state chống CSRF (sai state = TỪ CHỐI, không gọi token endpoint — test chứng minh) · DCR RFC 7591 khi có registration_endpoint · Basic/post auth-style (Notion=Basic) · refresh ngầm khi hết hạn · token lưu secrets.json chmod 600, chỉ mask khi hiển thị |
+| **C7** | **Tab "🔗 Dịch vụ" trong ⚙ Cài đặt** | GET /api/connectors/presets · POST …/oauth/start (chạy nền thread) · GET …/oauth/status (poll) · DELETE …/oauth; nhập client_id/secret ngay trong tab, nút Kết nối → chờ duyệt browser |
+| Presets | notion + sentry → `oauth` thật (loopback_port 8765), linear thêm oauth tuỳ chọn; supabase qua hub | CLI `/connectors oauth\|logout` · TUI chạy trong worker thread (không khoá UI) |
+
+**Bài học vòng 4:** (1) `Loopback` thiếu `serve_forever()` — socket bind nhưng không accept, test E2E bắt được; (2) bump version bằng sed khớp chuỗi cũ đã TRƯỢT qua 2 vòng (zip 0.18/0.19 mang metadata 0.17) — từ nay: bump xong luôn `grep -n version pyproject.toml engine/lsp.py` xác nhận; (3) bandit B107 nhặt đúng mặc định `client_secret=""` → chuyển `None`.
+
+**Kết quả vòng 4: 116/116 test (17 suite) · bandit Medium+ = 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

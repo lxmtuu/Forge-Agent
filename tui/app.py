@@ -435,6 +435,29 @@ class ForgeTUI(App):
                 parts = arg[5:].strip().split(None, 1)
                 self.add_line(fconn.auth(parts[0], parts[1] if len(parts) > 1 else ""),
                               cls="sys-line")
+            elif arg.startswith("oauth "):
+                from engine import oauth as fo
+                parts = arg[6:].strip().split()
+                if len(parts) >= 2:
+                    fo.save_creds(parts[0], parts[1], parts[2] if len(parts) > 2 else "")
+                self.add_line("🌐 Đang mở trình duyệt OAuth — hoàn tất đăng nhập rồi quay lại đây (tối đa 5 phút)…",
+                              cls="sys-line")
+
+                def _oauth_worker(pname: str = parts[0]) -> None:
+                    msg = fo.connect(pname)
+
+                    def _show() -> None:
+                        self.add_line(msg, cls="sys-line")
+                    try:
+                        self.call_from_thread(_show)
+                    except Exception:
+                        pass  # app đã thoát giữa flow
+                self.run_worker(_oauth_worker, thread=True)
+            elif arg.startswith("logout "):
+                from engine import oauth as fo
+                nm = arg[7:].strip()
+                self.add_line("🗑 Đã xoá token OAuth." if fo.forget(nm)
+                              else f"❌ '{nm}' chưa có token OAuth.", cls="sys-line")
             elif arg.startswith("allow "):
                 parts = arg[6:].strip().split()
                 self.add_line(fconn.allow(parts[0], parts[1] if len(parts) > 1 else "*"),

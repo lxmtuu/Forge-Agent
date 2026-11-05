@@ -729,3 +729,12 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 /* ── v0.19: tìm kiếm phiên ── */
 .session-search { margin: 0 12px 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, #2a2b33); background: var(--bg-in, #1b1c21); color: inherit; font-size: 12.5px; outline: none; width: calc(100% - 24px); }
 .session-search:focus { border-color: var(--accent, #d97757); }
+
+/* ── v0.20: tab Dịch vụ (connectors OAuth) ── */
+.svc-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border, #2a2b33); border-radius: 8px; }
+.svc-row { padding: 9px 12px; border-bottom: 1px solid var(--border, #232428); }
+.svc-row:last-child { border-bottom: none; }
+.svc-head { display: flex; align-items: center; gap: 10px; }
+.svc-head b { flex: 1; }
+.svc-oauth { margin-top: 7px; display: flex; flex-direction: column; gap: 6px; }
+.svc-oauth input { width: 100%; }

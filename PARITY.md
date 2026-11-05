@@ -221,6 +221,16 @@ Test: **6/6 smoke v0.17 ×2 + regression 79 (tổng 85 test xanh)** · E2E: add 
 
 Test: **5/5 smoke v0.20×(E2E fake-Ollama: đúng path/không-Auth/model/stream/usage) + 110/110 toàn bộ 16 suite**.
 
+## 🔐 v0.20 "OAuth 2.1 + Dịch vụ" — connectors tự host chuẩn MCP
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **OAuth 2.1 (C6)** | Notion/Sentry/Linear đăng nhập trình duyệt: PKCE S256 + loopback 127.0.0.1:8765 + state chống CSRF + DCR (RFC 7591) + refresh ngầm; token trong secrets.json chmod 600, chỉ hiển thị mask; sai state → từ chối (test E2E fake-provider chứng minh) |
+| 2 | **Tab 🔗 Dịch vụ (C7)** | Trong ⚙ Cài đặt: danh sách preset + trạng thái + nhập client_id/secret + nút Kết nối (poll tới khi duyệt xong) + Đăng xuất |
+| 3 | **3 UI đồng bộ** | CLI/TUI: `/connectors oauth <tên> <client_id> [secret]`, `/connectors logout <tên>`; TUI chạy worker thread — không khoá giao diện |
+
+Test: **6/6 OAuth suite (gồm E2E flow với fake provider: loopback thật, fake token endpoint xác nhận code_verifier↔challenge khớp) — tổng 116/116 / 17 suite · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

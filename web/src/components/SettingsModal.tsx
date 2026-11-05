@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { AuditEntry, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+import type { AuditEntry, ConnectorPreset, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
 
 const THEMES = [
   { id: 'dark', label: '🌑 Tối (mặc định)' },
@@ -16,6 +16,7 @@ const TABS = [
   { id: 'conn', label: '📡 Kết nối' },
   { id: 'safe', label: '🛡 An toàn' },
   { id: 'mcp', label: '🔌 MCP' },
+  { id: 'svc', label: '🔗 Dịch vụ' },
   { id: 'audit', label: '📘 Audit' },
   { id: 'sys', label: '🩺 Hệ thống' },
 ] as const
@@ -89,14 +90,40 @@ export function SettingsModal(props: {
 
   const reloadMcp = () => api.mcpStatus().then(setMcp).catch(() => {})
 
+  // ── Connectors OAuth (tab Dịch vụ) ──
+  const [svcPresets, setSvcPresets] = useState<ConnectorPreset[] | null>(null)
+  const [svcCreds, setSvcCreds] = useState<Record<string, { cid: string; csec: string }>>({})
+  const [svcBusy, setSvcBusy] = useState<string | null>(null)
+
+  const loadSvc = () => api.connectorPresets().then(setSvcPresets).catch(() => setSvcPresets([]))
+
   // ── Audit log tab ──
   const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null)
   const [auditFilter, setAuditFilter] = useState('')
   const loadAudit = () => api.audit(200).then((rows) => setAuditRows(rows)).catch(() => setAuditRows([]))
   useEffect(() => {
     if (tab === 'audit' && auditRows === null) loadAudit()
+    if (tab === 'svc' && svcPresets === null) loadSvc()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
+
+  const svcConnect = async (id: string) => {
+    setSvcBusy(id)
+    const creds = svcCreds[id]
+    try {
+      await api.oauthStart(id, creds?.cid || undefined, creds?.csec || undefined)
+      let done = false
+      for (let i = 0; i < 60 && !done; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        try {
+          const st = await api.oauthStatus(id)
+          if (st.status === 'connected' || st.status === 'error') done = true
+        } catch { /* server restart… */ }
+      }
+    } catch { /* ignore */ }
+    await loadSvc()
+    setSvcBusy(null)
+  }
 
   useEffect(() => {
     reloadMcp()
@@ -346,6 +373,47 @@ export function SettingsModal(props: {
           </>
         )}
 
+        {tab === 'svc' && (
+          <>
+            <div className="field">
+              <span>Dịch vụ & connectors <em>(OAuth 2.1 — đăng nhập trong trình duyệt, token lưu secrets.json chmod 600)</em></span>
+              <div className="svc-list">
+                {!svcPresets && <div className="empty" style={{ padding: 10 }}>Đang nạp…</div>}
+                {svcPresets && svcPresets.map((p) => (
+                  <div key={p.id} className="svc-row">
+                    <div className="svc-head">
+                      <b>{p.label.split(' — ')[0]}</b>
+                      {p.connected ? <span className="st st-ok">đã kết nối {p.masked ? `· ${p.masked}` : ''}</span>
+                        : <span className={`st ${p.installed ? 'st-warn' : 'st-dim'}`}>{p.installed ? 'chưa đăng nhập' : 'chưa cài'}</span>}
+                      {p.oauth && p.connected && (
+                        <button className="btn-ghost btn-sm" onClick={() => api.oauthDisconnect(p.id).then(loadSvc)}>Đăng xuất</button>
+                      )}
+                    </div>
+                    {p.oauth && (
+                      <div className="svc-oauth">
+                        {!p.connected && (
+                          <>
+                            <input placeholder="client_id" value={svcCreds[p.id]?.cid ?? ''}
+                              onChange={(e) => setSvcCreds({ ...svcCreds, [p.id]: { cid: e.target.value, csec: svcCreds[p.id]?.csec ?? '' } })} />
+                            <input placeholder="client_secret (nếu có)" type="password" value={svcCreds[p.id]?.csec ?? ''}
+                              onChange={(e) => setSvcCreds({ ...svcCreds, [p.id]: { cid: svcCreds[p.id]?.cid ?? '', csec: e.target.value } })} />
+                            <button className="btn-primary btn-sm" disabled={svcBusy === p.id}
+                              onClick={() => { void svcConnect(p.id) }}>
+                              {svcBusy === p.id ? '⏳ Chờ duyệt trong trình duyệt…' : '🔗 Kết nối (OAuth)'}
+                            </button>
+                          </>
+                        )}
+                        <small>{p.auth_hint}</small>
+                      </div>
+                    )}
+                    {!p.oauth && <small>{p.auth_hint}</small>}
+                  </div>
+                ))}
+              </div>
+              <small>Flow chuẩn OAuth 2.1: PKCE S256 + loopback 127.0.0.1:8765/callback + state chống CSRF. Preset chưa OAuth: cài qua <code>/connectors add</code>.</small>
+            </div>
+          </>
+        )}
         {tab === 'audit' && (
           <>
             <div className="field">

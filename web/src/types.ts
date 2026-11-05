@@ -211,3 +211,14 @@ export interface AuditEntry {
   args?: Record<string, string>
   note?: string
 }
+
+export interface ConnectorPreset {
+  id: string
+  label: string
+  auth: string
+  auth_hint: string
+  installed: boolean
+  oauth: boolean
+  connected: boolean
+  masked: string | null
+}

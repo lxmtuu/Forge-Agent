@@ -2,7 +2,7 @@ import type {
   AgentEvent, BatchEvent, ContextStats, DoctorReport, FileNode,
   KeyCheckResult, McpServerStatus, ModelInfo,
   SessionFull, SessionSummary, Settings, UsageTotals,
-  AuditEntry,
+  AuditEntry, ConnectorPreset,
 } from './types'
 
 async function j<T>(res: Response): Promise<T> {
@@ -141,6 +141,18 @@ export const api = {
 
   audit: (n = 120) =>
     fetch(`/api/audit?n=${n}`).then((r) => j<{ entries: AuditEntry[] }>(r)).then((d) => d.entries),
+
+  connectorPresets: () =>
+    fetch('/api/connectors/presets').then((r) => j<{ presets: ConnectorPreset[] }>(r)).then((d) => d.presets),
+  oauthStart: (name: string, client_id?: string, client_secret?: string) =>
+    fetch(`/api/connectors/${encodeURIComponent(name)}/oauth/start`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id, client_secret }),
+    }).then((r) => j<{ ok: boolean }>(r)),
+  oauthStatus: (name: string) =>
+    fetch(`/api/connectors/${encodeURIComponent(name)}/oauth/status`).then((r) => j<{ status: string; detail: string; authorize_url?: string }>(r)),
+  oauthDisconnect: (name: string) =>
+    fetch(`/api/connectors/${encodeURIComponent(name)}/oauth`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
 
   fork: (sid: string) =>
     fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),

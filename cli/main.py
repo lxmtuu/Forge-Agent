@@ -49,7 +49,7 @@ HELP = """[bold]Lệnh[/bold]
   /mcp [refresh]      xem MCP servers        /mode [g|a]      guarded / auto (YOLO)
   /usage              tokens đã dùng         /keytest         kiểm tra API key
   /skills [add|new|remove …]  quản lý skill (chuẩn Agent Skills SKILL.md)
-  /connectors [add|auth|allow…] kết nối GitHub/Linear/Gmail… qua MCP
+  /connectors [add|auth|oauth|allow…]  GitHub/Linear/Notion… qua MCP · oauth <tên> <client_id> [secret] = đăng nhập browser (PKCE)
   /audit [n]           nhật ký tool call (JSONL data/audit/)
   /rename <tên>        đổi tên phiên        /find <từ-khóa>  tìm phiên (tiêu đề+nội dung)
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
@@ -516,6 +516,17 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             elif arg.startswith("auth "):
                 parts = arg[5:].strip().split(None, 1)
                 out = fconn.auth(parts[0], parts[1] if len(parts) > 1 else "")
+            elif arg.startswith("oauth "):
+                from engine import oauth as fo
+                parts = arg[6:].strip().split()
+                if len(parts) >= 2:
+                    fo.save_creds(parts[0], parts[1], parts[2] if len(parts) > 2 else "")
+                out = fo.connect(parts[0])
+            elif arg.startswith("logout "):
+                from engine import oauth as fo
+                out = ("🗑 Đã xoá token OAuth." if fo.forget(arg[7:].strip())
+                       else f"❌ '{arg[7:].strip()}' chưa có token OAuth.")
+
             elif arg.startswith("allow "):
                 parts = arg[6:].strip().split()
                 out = fconn.allow(parts[0], parts[1] if len(parts) > 1 else "*")

@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from . import config
-from .mcp import load_servers, save_servers, _sanitize_name
+from .mcp import _sanitize_name, load_servers, save_servers
 
 # ─────────────────────────────────────────── PRESETS (endpoint chính thức 2026) ──
 PRESETS: dict[str, dict] = {
@@ -34,7 +34,15 @@ PRESETS: dict[str, dict] = {
         "transport": "http",
         "url": "https://mcp.linear.app/mcp",
         "auth": "api-key",
-        "auth_hint": "API key: linear.app/settings/api (hoặc dùng /mcp/readonly để chỉ đọc)",
+        "oauth": {
+            "authorize": "https://linear.app/oauth/authorize",
+            "token": "https://api.linear.app/oauth/token",
+            "scope": "read",
+            "style": "post",
+            "loopback_port": 8765,
+        },
+        "auth_hint": "API key: linear.app/settings/api (hoặc dùng /mcp/readonly để chỉ đọc); "
+                     "hoặc OAuth: /connectors oauth linear <client_id> <client_secret>",
         "headers": {"Authorization": "Bearer {token}"},
     },
     "supabase": {
@@ -42,24 +50,40 @@ PRESETS: dict[str, dict] = {
         "transport": "http",
         "url": "https://mcp.supabase.com/mcp?read_only=true",
         "auth": "oauth-pending",
-        "auth_hint": "Remote chính thức dùng OAuth (kế hoạch P1) — cài được nhưng 401 cho tới khi có OAuth; "
-                     "'--write' gỡ read_only (cẩn thận với dữ liệu thật)",
+        "auth_hint": "Remote chính thức dùng OAuth theo resource mỗi tổ chức — dùng hub Composio "
+                     "(managed OAuth) hoặc API key supabase.com/dashboard/account/keys; '--write' gỡ read_only (cẩn thận)",
         "headers": {},
     },
     "notion": {
         "label": "Notion — pages, databases (chính thức · chỉ OAuth)",
         "transport": "http",
         "url": "https://mcp.notion.com/mcp",
-        "auth": "oauth-pending",
-        "auth_hint": "Chỉ OAuth — sẽ mở ở P1; hôm nay khuyên đi qua hub Composio",
+        "auth": "oauth",
+        "oauth": {
+            "authorize": "https://api.notion.com/v1/oauth/authorize",
+            "token": "https://api.notion.com/v1/oauth/token",
+            "scope": "",
+            "style": "basic",
+            "loopback_port": 8765,
+        },
+        "auth_hint": "Tạo integration PUBLIC: notion.so/profile/integrations → thêm redirect "
+                     "http://127.0.0.1:8765/callback → /connectors add notion rồi /connectors oauth notion <client_id> <client_secret>",
         "headers": {},
     },
     "sentry": {
         "label": "Sentry — lỗi, stacktrace (chính thức)",
         "transport": "http",
         "url": "https://mcp.sentry.dev/mcp",
-        "auth": "oauth-pending",
-        "auth_hint": "OAuth — P1; tạm thời qua hub Composio",
+        "auth": "oauth",
+        "oauth": {
+            "authorize": "https://sentry.io/oauth/authorize/",
+            "token": "https://sentry.io/oauth/token/",
+            "scope": "org:read project:read event:read",
+            "style": "post",
+            "loopback_port": 8765,
+        },
+        "auth_hint": "Tạo ứng dụng OAuth trong Sentry (Settings → Auth) → redirect "
+                     "http://127.0.0.1:8765/callback → /connectors add sentry rồi /connectors oauth sentry <client_id> <client_secret>",
         "headers": {},
     },
     "figma-desktop": {
@@ -99,7 +123,8 @@ PRESETS: dict[str, dict] = {
 AUTH_LABEL = {
     "pat": "PAT (Bearer)",
     "api-key": "API key (Bearer)",
-    "oauth-pending": "OAuth (chờ P1)",
+    "oauth": "OAuth 2.1 (browser + PKCE)",
+    "oauth-pending": "OAuth (qua hub — xem auth_hint)",
     "hub": "qua hub (dán URL)",
     "none": "không cần",
 }
@@ -136,7 +161,8 @@ def mask_token(t: str) -> str:
 
 
 def has_auth(name: str) -> bool:
-    return bool(_load_secrets().get(_sanitize_name(name), {}).get("token"))
+    ent = _load_secrets().get(_sanitize_name(name), {})
+    return bool(ent.get("token") or (ent.get("oauth") or {}).get("access_token"))
 
 
 # ─────────────────────────────────────────── cấu hình server ──────────────────
@@ -184,8 +210,10 @@ def add(name: str, url: str = "", write: bool = False) -> str:
         nxt = f"\n   Tiếp: /connectors auth {cfg['name']} <token>"
     elif p["auth"] == "hub":
         nxt = "\n   (URL hub đã lưu — kiểm tra tool: gõ /mcp trong CLI hoặc xem /connectors)"
+    elif p.get("oauth"):
+        nxt = f"\n   Tiếp: /connectors oauth {name} <client_id> [client_secret] — mở trình duyệt đăng nhập (OAuth 2.1 + PKCE)"
     elif p["auth"] == "oauth-pending":
-        nxt = "\n   ⚠ Service này dùng OAuth — sẽ 401 cho tới khi làm OAuth (P1); tạm dùng qua hub Composio."
+        nxt = "\n   ⚠ Service này dùng OAuth phía nhà cung cấp — dùng hub Composio (xem auth_hint)."
     return (f"✅ Đã thêm connector '{cfg['name']}' ({p['label']})\n"
             f"   {AUTH_LABEL[p['auth']]} — {p['auth_hint']}{nxt}")
 
@@ -282,9 +310,7 @@ def tool_allowed(server_name: str, tool: str) -> bool:
     if cfg is None:
         return False
     cur = cfg.get("allowed_tools") or []
-    if cur == "*" or tool in cur:
-        return True
-    return False
+    return cur == "*" or tool in cur
 
 
 # ─────────────────────────────────────────── hiển thị ──────────────────────────
@@ -324,8 +350,8 @@ def status_listing() -> str:
         lines.append("Cài: `/connectors add <tên>`")
         blocks.append("\n".join(lines))
     head = f"### 🔌 Connectors ({len(cfgs)} cài · {n_auth} có token)\n" if cfgs else "### 🔌 Connectors\n"
-    tail = ("\n\nLệnh: `add <preset> [url]` · `auth <tên> <token>` · `allow <tên> [tool|*]` · "
-            "`deny` · `remove` · `/mcp` xem tool chi tiết")
+    tail = ("\n\nLệnh: `add <preset> [url]` · `auth <tên> <token>` · `oauth <tên> <client_id> [secret]` (browser + PKCE) · "
+            "`logout <tên>` · `allow <tên> [tool|*]` · `deny` · `remove` · `/mcp` xem tool chi tiết")
     if not cfgs and not rest:
         return head + "(trống)" + tail
     return head + "\n\n".join(blocks) + tail
