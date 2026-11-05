@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import type { AuthUser, GoogleAuthConfig } from '../api'
 import type { AuditEntry, ConnectorPreset, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, SkillInfo, UsageTotals } from '../types'
@@ -15,6 +15,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 const TABS = [
   { id: 'conn', label: '📡 Kết nối' },
+  { id: 'ui', label: '🎨 Giao diện' },
   { id: 'team', label: '👥 Team' },
   { id: 'safe', label: '🛡 An toàn' },
   { id: 'mcp', label: '🔌 MCP' },
@@ -40,7 +41,7 @@ export function SettingsModal(props: {
     return saved === 'openrouter' || saved === 'google' || saved === 'custom' ? saved : initialProvider
   })
   const providerLabel = keyProvider === 'google' ? 'Google / Gemini' : keyProvider === 'custom' ? 'Custom OpenAI-compatible' : 'OpenRouter'
-  const [tab, setTab] = useState<TabId>('conn')
+  const [tab, setTab] = useState<TabId>(props.isAdmin ? 'conn' : 'ui')
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
   const [maxTokens, setMaxTokens] = useState(String(props.settings.max_tokens ?? 16384))
@@ -215,23 +216,59 @@ export function SettingsModal(props: {
     api.usage().then(setTotals).catch(() => {})
   }, [])
 
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const tryCloseRef = useRef<() => void>(() => {})
   const tryClose = () => {
     if (dirty && !confirm('Có thay đổi CHƯA LƯU — vẫn đóng?')) return
     props.onClose()
   }
+  tryCloseRef.current = tryClose
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') tryClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty])
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const dialog = dialogRef.current
+    dialog?.focus()
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        tryCloseRef.current()
+        return
+      }
+      if (e.key !== 'Tab' || !dialog) return
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter((el) => el.getClientRects().length > 0)
+      if (!focusable.length) { e.preventDefault(); dialog.focus(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        e.preventDefault(); last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus()
+      }
+    }
+    document.addEventListener('keydown', h)
+    return () => {
+      document.removeEventListener('keydown', h)
+      previous?.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    document.getElementById('settings-panel')?.scrollTo({ top: 0 })
+  }, [tab])
 
   async function doSave() {
     if (locked) { setSaveErr('Release mode: Settings chỉ được thay đổi qua terminal.'); return }
+    const mt = Number(maxTokens)
+    if (!Number.isInteger(mt) || mt < 256 || mt > 65536) {
+      setTab('conn')
+      setSaveErr('Max tokens phải là số nguyên từ 256 đến 65536.')
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.model-card input[type="number"]')?.focus())
+      return
+    }
     setSaving(true); setSaveErr(null)
     try {
-      const mt = parseInt(maxTokens, 10)
       await props.onSave(key || undefined, model !== initial.model ? (model || undefined) : undefined, {
         approval_mode: approval,
         docker_sandbox: docker,
@@ -257,172 +294,200 @@ export function SettingsModal(props: {
       ).slice(0, 40)
     : models.slice(0, 40)
 
+  const visibleTabs = TABS.filter((t) => props.isAdmin || ['ui', 'skl', 'audit'].includes(t.id))
+  const activeTab = visibleTabs.find((t) => t.id === tab) ?? visibleTabs[0]
+
   return (
     <div className="modal-backdrop" onClick={tryClose}>
-      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label="Cài đặt" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>⚙ Cài đặt{dirty && <span className="dirty-dot" title="Có thay đổi chưa lưu" />}</h3>
-          <button className="btn-ghost btn-sm" title="Đóng (Esc)" onClick={tryClose}>✕</button>
-        </div>
-
-        {totals && (
-          <div className="usage-line">
-            📊 Dữ liệu của bạn: <b>{totals.sessions}</b> phiên ·{' '}
-            <b>{(totals.total_tokens ?? 0).toLocaleString('vi-VN')}</b> tokens
-            (↑{totals.prompt_tokens} ↓{totals.completion_tokens})
-            {totals.cost > 0 && <> · ~${totals.cost.toFixed(4)}</>}
+      <div ref={dialogRef} className="modal modal-wide settings-modal" role="dialog" aria-modal="true"
+        aria-labelledby="settings-title" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head settings-head">
+          <div>
+            <h3><span aria-hidden="true">⚙</span> <span id="settings-title">Cài đặt</span>{dirty && <span className="dirty-dot" title="Có thay đổi chưa lưu" />}</h3>
+            {totals && (
+              <div className="usage-line">
+                📊 <b>{totals.sessions}</b> phiên · <b>{(totals.total_tokens ?? 0).toLocaleString('vi-VN')}</b> tokens
+                {totals.cost > 0 && <> · ~${totals.cost.toFixed(4)}</>}
+              </div>
+            )}
           </div>
-        )}
+          <button className="modal-close" title="Đóng (Esc)" aria-label="Đóng cài đặt" onClick={tryClose}>✕</button>
+        </header>
 
-        <div className="settings-tabs" role="tablist">
-          {TABS.filter((t) => props.isAdmin || !['team', 'mcp', 'svc', 'sys'].includes(t.id)).map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id}
-              className={`settings-tab ${tab === t.id ? 'on' : ''}`}
-              onClick={() => setTab(t.id)}>{t.label}</button>
-          ))}
-        </div>
+        <div className="settings-layout">
+          <nav className="settings-tabs" role="tablist" aria-label="Nhóm cài đặt"
+            onKeyDown={(e) => {
+              const current = visibleTabs.findIndex((t) => t.id === tab)
+              let next = current
+              if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (current + 1) % visibleTabs.length
+              else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (current - 1 + visibleTabs.length) % visibleTabs.length
+              else if (e.key === 'Home') next = 0
+              else if (e.key === 'End') next = visibleTabs.length - 1
+              else return
+              e.preventDefault()
+              const id = visibleTabs[next].id
+              setTab(id)
+              requestAnimationFrame(() => document.getElementById(`settings-tab-${id}`)?.focus())
+            }}>
+            {visibleTabs.map((t) => (
+              <button key={t.id} id={`settings-tab-${t.id}`} role="tab" aria-selected={tab === t.id}
+                aria-controls="settings-panel" tabIndex={tab === t.id ? 0 : -1}
+                className={`settings-tab ${tab === t.id ? 'on' : ''}`}
+                onClick={() => setTab(t.id)}>{t.label}</button>
+            ))}
+          </nav>
 
-        <div className="settings-body">
+          <div className="settings-body" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${activeTab.id}`}>
+            <div className="settings-body-head">
+              <h4>{activeTab.label}</h4>
+              <p>{tab === 'conn' ? 'Provider, credentials và cách model phản hồi.' : tab === 'ui' ? 'Tuỳ chỉnh hiển thị trên thiết bị này.' : tab === 'safe' ? 'Kiểm soát shell, quyền chạy lệnh và checkpoint.' : tab === 'team' ? 'Tài khoản team và đăng nhập Google.' : tab === 'sys' ? 'Chẩn đoán môi trường và ranh giới dữ liệu.' : 'Quản lý và theo dõi khả năng của Forge.'}</p>
+            </div>
         {tab === 'conn' && (
           <>
             {locked && (
               <div className="field release-lock-banner" role="status">
                 🔒 <b>Release mode</b> — cấu hình chỉ được sửa qua terminal trên server.
-                Người dùng không thể đọc hoặc thay API key từ trang này.
+                Không thể đọc hoặc thay API key từ trang này.
               </div>
             )}
-            {props.isAdmin && <div className="field">
-              <span>Base URL tuỳ chỉnh <em>(model cục bộ — Ollama/LM Studio/vLLM; để trống = OpenRouter)</em></span>
-              <input
-                placeholder="vd: http://localhost:11434/v1"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-              />
-              <small>Dán URL rồi đặt Model thành tên cục bộ (vd <code>llama3.2</code>, <code>qwen2.5-coder</code>). API key tuỳ chọn — điền ở ô key bên trên nếu server cần.</small>
-            </div>}
-            <div className="field">
-              <span>Effort suy luận <em>(reasoning budget — chỉ áp dụng qua OpenRouter)</em></span>
-              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
-                <option value="">Mặc định của model</option>
-                <option value="low">Low — nhanh, rẻ</option>
-                <option value="medium">Medium — cân bằng</option>
-                <option value="high">High — suy luận sâu, chậm hơn</option>
-              </select>
-            </div>
-            {props.isAdmin && <div className="field">
-              <span>Provider của API key <em>(không đổi default routing)</em></span>
-              <select aria-label="Provider của API key" value={keyProvider}
-                onChange={(e) => chooseKeyProvider(e.target.value as KeyProvider)} disabled={locked}>
-                <option value="openrouter">OpenRouter</option>
-                <option value="google">Google Gemini direct</option>
-                <option value="custom">Custom OpenAI-compatible</option>
-              </select>
-              <div className="provider-key-status" aria-label="Trạng thái API key các provider">
-                {([
-                  ['openrouter', 'OpenRouter'],
-                  ['google', 'Google'],
-                  ['custom', 'Custom'],
-                ] as const).map(([id, label]) => {
-                  const saved = Boolean(props.settings.provider_keys?.[id])
-                  return <button type="button" key={id} className={id === keyProvider ? 'on' : ''}
-                    aria-pressed={id === keyProvider} onClick={() => chooseKeyProvider(id)} disabled={locked}>
-                    {label}: {saved ? '✓ đã lưu' : '— chưa lưu'}
-                  </button>
-                })}
-              </div>
-              <small>Key được ghi độc lập vào secret store phía server; có thể lưu cả 3 provider rồi chọn model theo từng session. Khi đổi provider, draft key được xoá để tránh lưu nhầm.</small>
-            </div>}
-            {props.settings.web_key_input === false ? (
-              <div className="field release-key-status">
-                <span>🔐 {providerLabel} credentials</span>
-                <small>
-                  Trạng thái: <b>{selectedKeyMask || 'chưa có key'}</b>.
-                  Key chỉ được nhập bằng terminal trên server: <code>python scripts/setup_keys.py</code>.
-                </small>
-              </div>
-            ) : (
-              <label className="field">
-                <span>{providerLabel} API Key {selectedKeyMask && <em>(đã lưu: {selectedKeyMask})</em>}</span>
-                <div className="key-row">
-                  <input type="password" aria-label={`${providerLabel} API Key`}
-                    placeholder={selectedKeySaved ? 'Đã lưu key — nhập key mới để thay thế' : keyProvider === 'google' ? 'AIza...' : keyProvider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
-                    onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
-                  {keyProvider !== 'custom' && (
-                    <button className="btn-ghost btn-sm" disabled={checking}
-                      onClick={() => doKeyCheck(key || undefined)}>
-                      {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
-                    </button>
-                  )}
+            <div className="connection-grid">
+              <section className="settings-card provider-card" aria-labelledby="provider-card-title">
+                <div className="settings-card-head">
+                  <div><h5 id="provider-card-title">Provider &amp; credentials</h5><p>Key được giữ riêng cho từng provider.</p></div>
+                  <span className="card-icon" aria-hidden="true">🔐</span>
                 </div>
-                {keyProvider === 'google' ? (
-                  <small>Tạo key tại <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio</a>. Free Tier có thể dùng dữ liệu để cải thiện sản phẩm — không gửi code bí mật.</small>
-                ) : keyProvider === 'custom' ? (
-                  <small>Key cho server OpenAI-compatible hiện tại; để trống nếu không đổi. Ollama thường không cần key.</small>
+                {props.isAdmin && <div className="field">
+                  <span>Provider của API key <em>(không đổi default routing)</em></span>
+                  <select aria-label="Provider của API key" value={keyProvider}
+                    onChange={(e) => chooseKeyProvider(e.target.value as KeyProvider)} disabled={locked}>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="google">Google Gemini direct</option>
+                    <option value="custom">Custom OpenAI-compatible</option>
+                  </select>
+                  <div className="provider-key-status" aria-label="Trạng thái API key các provider">
+                    {([
+                      ['openrouter', 'OpenRouter'],
+                      ['google', 'Google'],
+                      ['custom', 'Custom'],
+                    ] as const).map(([id, label]) => {
+                      const saved = Boolean(props.settings.provider_keys?.[id])
+                      return <button type="button" key={id} className={id === keyProvider ? 'on' : ''}
+                        aria-pressed={id === keyProvider} onClick={() => chooseKeyProvider(id)} disabled={locked}>
+                        {label}: {saved ? '✓ đã lưu' : '— chưa lưu'}
+                      </button>
+                    })}
+                  </div>
+                  <small>Lưu độc lập trong secret store phía server. Đổi provider sẽ xoá draft key để tránh lưu nhầm.</small>
+                </div>}
+                {props.isAdmin && keyProvider === 'custom' && <label className="field">
+                  <span>Custom base URL <em>(Ollama/LM Studio/vLLM)</em></span>
+                  <input placeholder="vd: http://localhost:11434/v1" value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)} />
+                  <small>Dán URL rồi đặt Model thành tên cục bộ. Để trống nếu không dùng custom endpoint.</small>
+                </label>}
+                {props.settings.web_key_input === false ? (
+                  <div className="field release-key-status">
+                    <span>🔐 {providerLabel} credentials</span>
+                    <small>Trạng thái: <b>{selectedKeyMask || 'chưa có key'}</b>. Key chỉ được nhập bằng terminal: <code>python scripts/setup_keys.py</code>.</small>
+                  </div>
                 ) : (
-                  <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy, để trống nếu không đổi.</small>
+                  <label className="field">
+                    <span>{providerLabel} API Key {selectedKeyMask && <em>(đã lưu: {selectedKeyMask})</em>}</span>
+                    <div className="key-row">
+                      <input type="password" autoComplete="off" aria-label={`${providerLabel} API Key`}
+                        placeholder={selectedKeySaved ? 'Đã lưu key — nhập key mới để thay thế' : keyProvider === 'google' ? 'AIza...' : keyProvider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
+                        onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
+                      {keyProvider !== 'custom' && (
+                        <button className="btn-ghost btn-sm" disabled={checking}
+                          onClick={() => doKeyCheck(key || undefined)}>
+                          {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
+                        </button>
+                      )}
+                    </div>
+                    {keyProvider === 'google' ? (
+                      <small>Tạo key tại <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio</a>. Không gửi code bí mật khi dùng Free Tier.</small>
+                    ) : keyProvider === 'custom' ? (
+                      <small>Key cho server OpenAI-compatible; để trống nếu không đổi. Ollama thường không cần key.</small>
+                    ) : (
+                      <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — để trống nếu không đổi.</small>
+                    )}
+                    <small className="key-privacy-note">Forge không trả lại secret thô. “Đã lưu” áp dụng đúng provider đang chọn; Save với ô trống giữ nguyên key.</small>
+                    {keyCheck && (keyCheck.valid ? (
+                      <div className="key-result ok">✅ Key hợp lệ — «{keyCheck.label}»{keyCheck.usage != null && <> · đã dùng ${keyCheck.usage}</>}{keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ''}{keyCheck.is_free_tier && ' · free tier'}</div>
+                    ) : (
+                      <div className="key-result bad">❌ {keyCheck.error}{keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}</div>
+                    ))}
+                  </label>
                 )}
-                <small className="key-privacy-note">Ô nhập luôn trống khi mở lại Settings vì Forge không trả/đọc lại secret thô. Trạng thái “đã lưu” ở trên áp dụng cho đúng provider đang chọn; để trống rồi Save sẽ giữ nguyên key.</small>
-                {keyCheck && (keyCheck.valid ? (
-                  <div className="key-result ok">
-                    ✅ Key hợp lệ — «{keyCheck.label}»
-                    {keyCheck.usage != null && <> · đã dùng ${keyCheck.usage}</>}
-                    {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ''}
-                    {keyCheck.is_free_tier && ' · free tier'}
-                  </div>
-                ) : (
-                  <div className="key-result bad">
-                    ❌ {keyCheck.error}
-                    {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
-                  </div>
-                ))}
-              </label>
-            )}
+              </section>
 
-            <div className="field">
-              <span>Model <em>({models.length > 0 ? `${models.length} model từ registry nhiều provider` : 'đang đồng bộ…'})</em></span>
-              <input list="models" value={model} onChange={(e) => setModel(e.target.value)} />
-              <datalist id="models">
-                {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-              <div className="filter-presets">
-                <button className={`preset ${modelFilter === 'free' ? 'on' : ''}`} onClick={() => setModelFilter(modelFilter === 'free' ? '' : 'free')}>🆓 Miễn phí</button>
-                <button className={`preset ${modelFilter === 'claude' ? 'on' : ''}`} onClick={() => setModelFilter('claude')}>Claude</button>
-                <button className={`preset ${modelFilter === 'gpt' ? 'on' : ''}`} onClick={() => setModelFilter('gpt')}>GPT</button>
-                <button className={`preset ${modelFilter === 'coder' ? 'on' : ''}`} onClick={() => setModelFilter('coder')}>Coder</button>
-              </div>
-              <input
-                className="model-filter"
-                placeholder="Lọc danh sách model… (gõ 'free' để xem model miễn phí)"
-                value={modelFilter}
-                onChange={(e) => setModelFilter(e.target.value)}
-              />
-              <div className="model-suggest">
-                {filteredModels.map((m) => (
-                  <button key={m.id} className={`model-chip ${m.free ? 'free-chip' : ''}`}
-                    title={`${m.name} · context ${m.context ?? '?'} · ${m.free ? 'MIỄN PHÍ' : `$${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}`}
-                    onClick={() => { setModel(m.id); setModelFilter('') }}>
-                    {m.free ? '🆓 ' : ''}{m.id}
-                  </button>
-                ))}
-              </div>
-              <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter:openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
+              <section className="settings-card model-card" aria-labelledby="model-card-title">
+                <div className="settings-card-head">
+                  <div><h5 id="model-card-title">Model &amp; generation</h5><p>Model mặc định; áp dụng cho phiên hiện tại khi Save.</p></div>
+                  <span className="card-icon" aria-hidden="true">⚡</span>
+                </div>
+                <div className="field">
+                  <span>Model mặc định <em>({models.length > 0 ? `${models.length} model trong registry` : 'đang đồng bộ…'})</em></span>
+                  <input list="models" aria-label="Model mặc định" value={model} onChange={(e) => setModel(e.target.value)} />
+                  <datalist id="models">
+                    {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => <option key={m} value={m} />)}
+                  </datalist>
+                  <div className="filter-presets" aria-label="Bộ lọc model nhanh">
+                    <button className={`preset ${modelFilter === 'free' ? 'on' : ''}`} onClick={() => setModelFilter(modelFilter === 'free' ? '' : 'free')}>🆓 Miễn phí</button>
+                    <button className={`preset ${modelFilter === 'claude' ? 'on' : ''}`} onClick={() => setModelFilter('claude')}>Claude</button>
+                    <button className={`preset ${modelFilter === 'gpt' ? 'on' : ''}`} onClick={() => setModelFilter('gpt')}>GPT</button>
+                    <button className={`preset ${modelFilter === 'coder' ? 'on' : ''}`} onClick={() => setModelFilter('coder')}>Coder</button>
+                  </div>
+                  <input className="model-filter" aria-label="Lọc danh sách model"
+                    placeholder="Tìm theo tên hoặc gõ 'free'…" value={modelFilter}
+                    onChange={(e) => setModelFilter(e.target.value)} />
+                  <div className="model-suggest">
+                    {filteredModels.map((m) => (
+                      <button key={m.id} className={`model-chip ${m.free ? 'free-chip' : ''}`}
+                        title={`${m.name} · context ${m.context ?? '?'} · ${m.free ? 'MIỄN PHÍ' : `$${(m.prompt_price * 1e6).toFixed(2)}/M in · $${(m.completion_price * 1e6).toFixed(2)}/M out`}`}
+                        onClick={() => { setModel(m.id); setModelFilter('') }}>
+                        {m.free ? '🆓 ' : ''}{m.id}
+                      </button>
+                    ))}
+                  </div>
+                  <small>Chưa nạp credit? Chọn model 🆓 như <code>openrouter:openrouter/free</code>.</small>
+                </div>
+                <div className="field">
+                  <span>Effort suy luận <em>(reasoning budget qua OpenRouter)</em></span>
+                  <select aria-label="Effort suy luận" value={effort} onChange={(e) => setEffort(e.target.value)}>
+                    <option value="">Mặc định của model</option>
+                    <option value="low">Low — nhanh, rẻ</option>
+                    <option value="medium">Medium — cân bằng</option>
+                    <option value="high">High — suy luận sâu</option>
+                  </select>
+                </div>
+                <label className="field">
+                  <span>Max tokens mỗi phản hồi</span>
+                  <input type="number" min={256} max={65536} step={256} value={maxTokens}
+                    onChange={(e) => setMaxTokens(e.target.value)} />
+                  <small>Mặc định 16384. Giảm xuống 4096 nếu cần giới hạn credit đặt cọc.</small>
+                </label>
+                <label className="field check compact-check">
+                  <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
+                  <span>🌐 Web search <em>— thêm <code>:online</code>, phí theo provider</em></span>
+                </label>
+              </section>
             </div>
-
-            <label className="field">
-              <span>Max tokens mỗi lượt phản hồi <em>(thấp hơn = tốn ít credit đặt cọc hơn)</em></span>
-              <input
-                type="number"
-                min={256}
-                max={65536}
-                step={256}
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(e.target.value)}
-              />
-              <small>Mặc định 16384. Nếu bị lỗi 402 với model trả phí, thử giảm xuống 4096.</small>
-            </label>
           </>
+        )}
+
+        {tab === 'ui' && (
+          <section className="settings-card appearance-card" aria-labelledby="appearance-title">
+            <div className="settings-card-head">
+              <div><h5 id="appearance-title">Theme hiển thị</h5><p>Áp dụng ngay và lưu trên thiết bị này.</p></div>
+              <span className="card-icon" aria-hidden="true">🎨</span>
+            </div>
+            <div className="theme-options">
+              {THEMES.map((t) => <button key={t.id} className={`theme-option ${theme === t.id ? 'on' : ''}`}
+                aria-pressed={theme === t.id} onClick={() => applyTheme(t.id)}>{t.label}<span>{theme === t.id ? '✓' : ''}</span></button>)}
+            </div>
+            <div className="appearance-note">Theme là tuỳ chọn cá nhân, không thay đổi dữ liệu hoặc quyền truy cập.</div>
+          </section>
         )}
 
         {tab === 'safe' && (
@@ -455,11 +520,6 @@ export function SettingsModal(props: {
             <label className="field check">
               <input type="checkbox" checked={autoCommit} onChange={(e) => setAutoCommit(e.target.checked)} />
               <span>📦 Auto-commit mỗi lượt <em>— git init workspace (nếu chưa có) và commit thay đổi với message Conventional Commits do model rẻ sinh (theo pattern Aider). Xem <code>git log</code> trong workspace.</em></span>
-            </label>
-
-            <label className="field check">
-              <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
-              <span>🌐 Web search qua OpenRouter <code>:online</code> <em>— mọi lượt chat sẽ tìm web (tốn ~$0.005/lượt)</em></span>
             </label>
 
             <div className="field">
@@ -730,13 +790,6 @@ export function SettingsModal(props: {
         {tab === 'sys' && (
           <>
             <div className="field">
-              <span>Giao diện <em>(theme lưu trên máy bạn, áp dụng ngay)</em></span>
-              <select className="sel" value={theme} onChange={(e) => applyTheme(e.target.value)}>
-                {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
-            </div>
-
-            <div className="field">
               <span>Chẩn đoán hệ thống <em>(kiểm tra Python, git, key, model, LSP, MCP…)</em></span>
               <button className="btn-ghost" disabled={doctoring}
                 onClick={async () => {
@@ -769,19 +822,24 @@ export function SettingsModal(props: {
             </div>
           </>
         )}
+          </div>
         </div>
 
-        {saveErr && <div className="save-error">{saveErr}</div>}
-
-        <div className="modal-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button className="btn-ghost btn-sm" onClick={tryClose}>Đóng</button>
-          <button
-            className="btn-primary"
-            disabled={saving || !dirty || locked}
-            title={locked ? 'Release mode: cấu hình qua terminal' : dirty ? 'Áp dụng các thay đổi' : 'Chưa có thay đổi nào'}
-            onClick={doSave}
-          >{locked ? '🔒 Settings đã khóa' : saving ? 'Đang lưu…' : dirty ? '💾 Lưu thay đổi' : 'Lưu cài đặt'}</button>
-        </div>
+        <footer className="settings-footer">
+          {saveErr && <div className="save-error" role="alert">{saveErr}</div>}
+          <div className="modal-actions">
+            <span className="save-state-text">{props.isAdmin ? (dirty ? '● Có thay đổi chưa lưu' : 'Mọi thay đổi đã được lưu') : 'Tuỳ chọn theo quyền member'}</span>
+            <div>
+              <button className="btn-ghost btn-sm" onClick={tryClose}>Đóng</button>
+              {props.isAdmin && <button
+                className="btn-primary"
+                disabled={saving || !dirty || locked}
+                title={locked ? 'Release mode: cấu hình qua terminal' : dirty ? 'Áp dụng các thay đổi' : 'Chưa có thay đổi nào'}
+                onClick={doSave}
+              >{locked ? '🔒 Settings đã khóa' : saving ? 'Đang lưu…' : dirty ? '💾 Lưu thay đổi' : 'Lưu cài đặt'}</button>}
+            </div>
+          </div>
+        </footer>
       </div>
     </div>
   )

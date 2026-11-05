@@ -62,25 +62,28 @@ Lưu ý chi phí: BYOK trả trực tiếp cho provider; `402/429` thường là
 ## 4. Làm quen màn hình web
 
 - **Thanh chat dưới cùng**: gõ nhiệm vụ thường (tiếng Việt OK). Gõ `/` để hiện gợi ý lệnh; gõ `@` để chèn file.
-- **Chọn chế độ** cạnh ô chat: `agent` / `plan` / `direct` (mục 5).
+- **Top bar**: xem tên/ID phiên, mở **Workspace** hoặc Settings. Dưới 1100px Workspace là drawer; sidebar và Workspace đều đóng bằng nút ✕, chạm vùng nền hoặc Escape.
+- **Chọn chế độ** trong toolbar ô chat: `agent` / `plan` / `direct` / `architect` / `battle`; nút **Song song** và Model của phiên nằm cùng toolbar.
 - **Cần phê duyệt lệnh shell?** Agent sẽ hỏi: *Allow once* (cho 1 lần) / *Allow always* (ghi nhớ vào allowlist) / *Deny* (từ chối). Chế độ ASK/GUARDED mặc định.
-- **⚙ có 7 tab**: 📡 Kết nối (API/connector) · 🛡 An toàn (chế độ duyệt, allow/deny) · 🔌 MCP · 🔗 Dịch vụ (18 gói mẫu) · 🧩 Skills · 📘 Audit (bảng tool-call, lọc ✅/❌, xuất CSV) · 🩺 Hệ thống (doctor).
+- **⚙ Settings**: navigation bên trái (hoặc thanh ngang trên mobile), nội dung cuộn riêng và nút Save luôn ở footer. Admin có 9 nhóm: Kết nối · Giao diện · Team · An toàn · MCP · Dịch vụ · Skills · Audit · Hệ thống. Member thấy đúng ba nhóm usable: **Giao diện · Skills · Audit**; model theo phiên vẫn chọn ở composer.
 - Đa phiên: nút phiên mới trên thanh bên; đổi phiên không mất dữ liệu (lưu `data/sessions/`).
 
-## 5. Ba chế độ — dùng khi nào
+## 5. Năm chế độ — dùng khi nào
 
 | Chế độ | Hành vi | Dùng cho |
 |---|---|---|
 | `agent` | Tự đọc/viết file, chạy lệnh, tới khi xong (có hỏi khi cần duyệt) | Việc thật: "tạo trang X", "sửa bug Y" |
 | `plan` | Chỉ đưa kế hoạch từng bước, KHÔNG đụng file | Việc lớn, muốn duyệt trước |
 | `direct` | Chat thuần, không tool | Hỏi đáp, giải thích code |
+| `architect` | Model mạnh lập kế hoạch rồi model thực thi triển khai | Thay đổi cần tách thiết kế/thi công |
+| `battle` | Chạy cùng prompt trên nhiều model | So sánh và chọn kết quả phù hợp |
 
 ## 6. Việc thường ngày — ví dụ từng bước
 
 1. **Tạo thứ gì đó**: gõ `tạo file fizzbuzz.py in 1..100, chạy thử luôn` → agent viết + chạy + báo kết quả.
 2. **Cho agent ngữ cảnh**: `@src/app.py` chèn file vào câu hỏi; kéo-thả ảnh vào ô chat để nói về ảnh.
-3. **Hoàn tác**: lượt xong thấy sai → `/undo` (hoặc nút undo) quay về bản chụp trước; `/fork` tẽn nhánh làm song song.
-4. **Tìm web**: thêm `:online` cuối câu — agent tìm rồi tổng hợp (cần bật web search trong ⚙ → An toàn).
+3. **Hoàn tác**: lượt xong thấy sai → `/undo` (hoặc nút undo) quay về bản chụp trước; `/fork` tách nhánh làm song song.
+4. **Tìm web**: bật **Web search** trong ⚙ → Kết nối → Model & generation; Forge thêm `:online` cho các lượt chat (phí theo provider).
 5. **Khởi tạo dự án**: `/init` — agent tự viết `AGENTS.md` mô tả dự án cho các phiên sau.
 6. **Review code**: `/review` (xem diff + góp ý), `/diff` (xem thay đổi).
 7. **Tự động commit** (mặc định TẮT): ⚙ → bật *auto commit* — agent tự git-commit có tin nhắn chuẩn Conventional Commits + chữ ký 🤖.

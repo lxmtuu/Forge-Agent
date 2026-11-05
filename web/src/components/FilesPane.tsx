@@ -14,9 +14,10 @@ function TreeRow(props: {
   if (node.type === 'dir') {
     return (
       <div>
-        <div className="tree-row dir" style={{ paddingLeft: 8 + depth * 14 }} onClick={() => setOpen(!open)}>
+        <button type="button" className="tree-row dir" style={{ paddingLeft: 8 + depth * 14 }}
+          aria-expanded={open} onClick={() => setOpen(!open)}>
           <span className="chev-sm">{open ? '▾' : '▸'}</span> 📁 {node.name}
-        </div>
+        </button>
         {open && (node.children ?? []).map((c) => (
           <TreeRow key={c.name + (c.path ?? '')} node={c} depth={depth + 1}
             path={path ? `${path}/${c.name}` : c.name} selected={selected} onOpen={onOpen} />
@@ -26,10 +27,10 @@ function TreeRow(props: {
   }
   const full = path
   return (
-    <div className={`tree-row file ${selected === full ? 'active' : ''}`}
+    <button type="button" className={`tree-row file ${selected === full ? 'active' : ''}`}
       style={{ paddingLeft: 8 + depth * 14 + 14 }} onClick={() => onOpen(full)}>
       📄 {node.name}
-    </div>
+    </button>
   )
 }
 
@@ -69,6 +70,7 @@ function Terminal({ sid }: { sid: string }) {
         <span className="term-ps1">$</span>
         <input
           value={cmd}
+          aria-label="Lệnh terminal"
           disabled={busy}
           placeholder={busy ? 'đang chạy…' : 'lệnh…'}
           onChange={(e) => setCmd(e.target.value)}
@@ -102,21 +104,22 @@ export function FilesPane(props: {
   onNewFile: () => void
   onUpload: (fs: FileList | null) => void
   onExport: () => void
+  onClose?: () => void
 }) {
+  const uploadRef = useRef<HTMLInputElement>(null)
   return (
-    <div className="files-pane">
+    <aside className="files-pane" aria-label="Workspace">
       <div className="files-head">
-        <span>FILES</span>
+        <span>WORKSPACE</span>
         <div className="files-actions">
-          <label title="Tải file lên workspace" className="upload-label">
-            ⬆
-            <input type="file" multiple style={{ display: 'none' }}
-              onChange={(e) => { props.onUpload(e.target.files); e.currentTarget.value = '' }} />
-          </label>
-          <button title="Xuất workspace (.zip)" onClick={props.onExport}>⤓</button>
-          <button title="File mới" onClick={props.onNewFile}>＋</button>
-          <button title="Làm mới" onClick={props.onRefresh}>⟳</button>
-          {props.selected && <button title="Xóa file" onClick={props.onDelete}>🗑</button>}
+          <button title="Tải file lên workspace" aria-label="Tải file lên workspace" onClick={() => uploadRef.current?.click()}>⬆</button>
+          <input ref={uploadRef} type="file" multiple style={{ display: 'none' }} aria-label="Chọn file tải lên"
+            onChange={(e) => { props.onUpload(e.target.files); e.currentTarget.value = '' }} />
+          <button title="Xuất workspace (.zip)" aria-label="Xuất workspace" onClick={props.onExport}>⤓</button>
+          <button title="File mới" aria-label="File mới" onClick={props.onNewFile}>＋</button>
+          <button title="Làm mới" aria-label="Làm mới workspace" onClick={props.onRefresh}>⟳</button>
+          {props.selected && <button title="Xóa file" aria-label="Xóa file" onClick={props.onDelete}>🗑</button>}
+          <button className="files-close" title="Đóng panel Workspace" aria-label="Đóng panel Workspace" onClick={props.onClose}>✕</button>
         </div>
       </div>
       <div className="files-tree">
@@ -138,6 +141,7 @@ export function FilesPane(props: {
           </div>
           <textarea
             className="editor-area"
+            aria-label={`Nội dung ${props.selected}`}
             spellCheck={false}
             value={props.content ?? ''}
             onChange={(e) => props.onChange(e.target.value)}
@@ -146,6 +150,6 @@ export function FilesPane(props: {
         </div>
       )}
       <Terminal sid={props.sid} />
-    </div>
+    </aside>
   )
 }

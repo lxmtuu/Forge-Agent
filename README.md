@@ -193,6 +193,14 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
+### 🎨 Responsive app shell + role-aware Settings (v0.37)
+
+- **App gọn và rõ việc:** top bar hiển thị phiên hiện tại; mode, song song và model nằm trong một toolbar; footer chỉ giữ token/context và thao tác phiên. Empty state có ví dụ thao tác trực tiếp.
+- **Workspace dùng được ở mọi kích thước:** panel cạnh chat trên desktop, drawer có nút đóng/scrim/Escape dưới 1100px. Sidebar mobile có nút đóng thật; session, thư mục và file đều dùng được bằng keyboard/touch, nút xoá không còn phụ thuộc hover.
+- **Settings theo nhóm việc:** header/footer cố định, navigation riêng và nội dung cuộn độc lập; Connection tách **Provider & credentials** / **Model & generation**. Custom base URL chỉ hiện khi chọn provider Custom. Tab **Giao diện** cho mọi tài khoản; member thấy đúng các nhóm usable là Giao diện/Skills/Audit, admin giữ đủ global settings.
+- **Logic được vá cùng UX:** blur model không đổi không gửi PATCH; response load session/tree/context đến muộn không ghi đè phiên mới; Max tokens invalid không đóng dialog như thể đã lưu; focus được giữ trong dialog và khôi phục khi đóng. ACL, CSRF, session revoke và secret server-side không thay đổi.
+- Regression trình duyệt thật: `node scripts/browser_v037.cjs` (cần Playwright + smoke account giả; có thể đặt `FORGE_BASE_URL` và biến credential tương ứng).
+
 ### 🔑 Persistent provider keys/models + error diagnostics (v0.36)
 
 - **Một key cho mỗi provider**, cả ba có thể cùng tồn tại: OpenRouter, Google Gemini direct và Custom OpenAI-compatible. Settings hiển thị trạng thái `đã lưu/chưa lưu` của đúng provider; ô password luôn trống khi mở lại vì server không trả secret thô. Đổi provider xoá draft key để tránh lưu nhầm.
@@ -224,7 +232,7 @@ Các account vẫn chạy cùng OS account và provider quota; public signup kh�
 | **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
 | **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
 
-### 🚀 Chạy nhanh (v0.36)
+### 🚀 Chạy nhanh (v0.37)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 
@@ -238,7 +246,7 @@ Notion/Sentry/Linear giờ đăng nhập bằng tài khoản thật: tạo ứng
 
 ### 🖥 Model cục bộ (v0.19) — Ollama/LM Studio không cần key
 
-⚙ Cài đặt → **Base URL tuỳ chỉnh**: `http://localhost:11434/v1` → Model: `llama3.2` (tên model cục bộ) → chat như OpenRouter. Xoá URL để quay lại OpenRouter. Tiện ích kèm theo: `/rename <tên>`, `/find <từ-khóa>` (tìm trong cả nội dung tin nhắn), ô 🔍 trên sidebar, thông báo desktop khi agent xong (tab ẩn).
+⚙ Cài đặt → **Kết nối** → Provider **Custom OpenAI-compatible** → **Custom base URL**: `http://localhost:11434/v1` → Model: `llama3.2` (tên model cục bộ) → chat như OpenRouter. Xoá URL để quay lại OpenRouter. Tiện ích kèm theo: `/rename <tên>`, `/find <từ-khóa>` (tìm trong cả nội dung tin nhắn), ô 🔍 trên sidebar, thông báo desktop khi agent xong (tab ẩn).
 
 ### 📘 Audit log (v0.17.2)
 

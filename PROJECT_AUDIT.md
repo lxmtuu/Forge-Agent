@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 hiện hành **212 test / 32 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 có **204 test / 31 suite**; v0.36 **212 test / 32 suite**; v0.37 hiện hành **220 test / 33 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -308,6 +308,23 @@ User báo trên Windows/localhost v0.35: key dường như biến mất khi mở
 | Chưa kết luận | Chưa nhận response/log từ request 501 thật trên Windows nên **không tuyên bố đã xác định hoặc loại bỏ root cause ngoài máy user**. Query `google_state` chỉ là dấu hiệu OAuth cần xem thêm, không phải nguyên nhân chat đã chứng minh |
 
 **Release gate:** 212/212 test (32 suite), v0.36 8/8; Chromium audit 20/20 + model-race 1/1 + signup 15/15 + admin/member regression 14/14 = 50/50; mypy `engine/` + `server/` 39 files; TypeScript + Web build 42 modules; bandit Medium+ 0. Ruff theo scoped gate. Real Google OAuth, Docker/container smoke và nguồn 501 ngoài máy Windows vẫn chưa kiểm chứng.
+
+## 3n. Vòng 21 (v0.37) — Responsive shell + focused Settings
+
+Đợt này redesign Web shell nhưng giữ nguyên owner ACL, CSRF, session revoke, provider secret boundary và release auth. Repro chạy trên production bundle bằng Chromium thật với data/tài khoản giả; không sửa assertion để che data bẩn và không suy đoán lỗi từ một screenshot đang animation.
+
+| Hạng mục | Repro / kết quả |
+|---|---|
+| App shell | Gom mode/song song/model vào composer toolbar; top bar giữ tên/ID phiên và Workspace/Settings; empty state có ba prompt mẫu. Desktop 1440×1000 chat 852px/composer 186px; laptop 1024×768 chat 800px/composer 186px |
+| Responsive drawers | Baseline bắt Workspace đóng còn khoảng 1px và ☰ mobile không đóng được. Bản vá có nút đóng, scrim, Escape, explicit grid column; mobile 390×844 chat 390px/composer 267px, Workspace drawer rộng 366.59px. Matrix 320/390/768/1024/1440 không horizontal overflow/runtime error |
+| Touch + keyboard | Session, folder/file và delete không phụ thuộc hover; sidebar/Workspace có dialog semantics, focus trap/restore và nút close rõ ràng. Browser kiểm cả touch delete và Escape |
+| Settings | Connection tách Provider & credentials / Model & generation; Custom URL chỉ hiện với Custom. Header/footer cố định, nội dung cuộn riêng, tab navigation cuộn được trên mobile, select theo theme |
+| Member + Theme | Member chỉ thấy Giao diện/Skills/Audit; Theme Dark/Light/Amber áp dụng tức thì và lưu local theo thiết bị. Không mở global Settings Save hoặc nới ACL cho member |
+| Validation | Repro Max tokens `100`: trước vá dialog đóng nhưng server giữ `4096`; sau vá invalid không POST, dialog mở và focus field lỗi. Fresh-run lưu `16384 → 4096` rồi khôi phục |
+| Async ownership | `sidRef` synchronous + per-user/owner guards giữ delayed session/tree/context GET và late model PATCH khỏi ghi đè lựa chọn mới; logout/đổi user dọn async refs. Model blur unchanged = 0 PATCH, changed = 1 PATCH |
+| Regression artifact | `scripts/browser_v037.cjs` lưu 37 behavioral checks, URL/credentials cấu hình bằng env; `scripts/test_v037.py` có 8 static regression. Bundle mới `index-CnsaCxm0.js` + `index-C17X40lX.css` |
+
+**Release gate:** 220/220 test (33 suite, gồm security + TUI), v0.37 8/8; fresh Chromium audit 20/20 + UX 37/37 + existing 14/14 + model-race 1/1 + signup 15/15 = 87/87; responsive matrix 5 viewport; mypy `engine/` + `server/` 39 files; TypeScript noEmit + Vite build 42 modules; bandit Medium+ 0. Ruff theo scoped gate với legacy findings được ghi rõ. Real Google OAuth, Docker/container smoke và nguồn 501 ngoài máy Windows vẫn chưa kiểm chứng.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

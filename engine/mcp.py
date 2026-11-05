@@ -147,7 +147,7 @@ class McpServer:
                 init = await self._request("initialize", {
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "forge-agent", "version": "0.36.0"},
+                    "clientInfo": {"name": "forge-agent", "version": "0.37.0"},
                 }, INIT_TIMEOUT)
                 srv = (init.get("serverInfo") or {}).get("name", "?")
                 await self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -251,7 +251,7 @@ class McpHttpServer:
                 "params": {
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "forge-agent", "version": "0.36.0"},
+                    "clientInfo": {"name": "forge-agent", "version": "0.37.0"},
                 },
             })
             srv = (init.get("serverInfo") or {}).get("name", "?")

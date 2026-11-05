@@ -13,6 +13,14 @@ import { ElicitationCard } from './components/ElicitationCard'
 import { Markdown } from './md'
 import { LoginScreen } from './components/LoginScreen'
 
+const MODES: { id: ChatMode; icon: string; label: string; desc: string }[] = [
+  { id: 'direct', icon: '💬', label: 'Trực tiếp', desc: 'Chat thuần — không dùng tool, nhanh và rẻ' },
+  { id: 'agent', icon: '🤖', label: 'Agent', desc: 'Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi' },
+  { id: 'plan', icon: '📋', label: 'Kế hoạch', desc: 'Chỉ đọc và xuất kế hoạch, không sửa file' },
+  { id: 'architect', icon: '🧭', label: 'Kiến trúc sư', desc: 'Model mạnh lập kế hoạch, model thực thi triển khai' },
+  { id: 'battle', icon: '⚔', label: 'Battle', desc: 'Chạy cùng prompt trên nhiều model và chọn kết quả' },
+]
+
 /** Pure reducer: apply one agent event to an item timeline. */
 function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
   switch (ev.type) {
@@ -133,6 +141,8 @@ function buildTimeline(messages: { role: string; content: string | null; tool_ca
 
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
+  const userRef = useRef<AuthUser | null>(null)
+  userRef.current = user
   const [authLoading, setAuthLoading] = useState(true)
   const [googleEnabled, setGoogleEnabled] = useState(false)
   const [registrationEnabled, setRegistrationEnabled] = useState(false)
@@ -143,7 +153,12 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sid, setSid] = useState<string | null>(null)
   const sidRef = useRef<string | null>(null)
-  sidRef.current = sid
+  const savedModelsRef = useRef<Record<string, string>>({})
+  const activateSession = useCallback((id: string | null) => {
+    // Ref phải đổi đồng bộ để response chậm của phiên trước không thể ghi đè phiên mới.
+    sidRef.current = id
+    setSid(id)
+  }, [])
   const [items, setItems] = useState<Item[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -204,6 +219,8 @@ export default function App() {
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [ctx, setCtx] = useState<ContextStats | null>(null)
   const [showSb, setShowSb] = useState(false)
+  const [showWorkspace, setShowWorkspace] = useState(() => window.matchMedia('(min-width: 1101px)').matches)
+  const [modelSaveState, setModelSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
   const [queued, setQueued] = useState<string[]>([])
   const [menu, setMenu] = useState<{ kind: 'cmd' | 'file'; items: string[]; sel: number } | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -275,22 +292,35 @@ export default function App() {
   }
 
   const refreshSessions = useCallback(() => {
-    api.listSessions().then(setSessions).catch(() => {})
+    const owner = userRef.current?.id
+    api.listSessions().then((list) => {
+      if (owner && userRef.current?.id === owner) setSessions(list)
+    }).catch(() => {})
   }, [])
 
   const loadSession = useCallback(async (id: string) => {
     try {
       const s = await api.getSession(id)
+      savedModelsRef.current[id] = s.model
+      if (sidRef.current !== id) return
       setItems(buildTimeline(s.messages ?? []))
       setSessionUsage(s.usage ?? null)
       setActiveModel(s.model)
+      setModelSaveState('idle')
       setBatch(null)
-      api.context(id).then(setCtx).catch(() => {})
-    } catch (e) { setErrorBanner(String(e)) }
+      api.context(id).then((stats) => {
+        if (sidRef.current === id) setCtx(stats)
+      }).catch(() => {})
+    } catch (e) {
+      if (sidRef.current === id) setErrorBanner(String(e))
+    }
   }, [])
 
   const refreshTree = useCallback(async (id: string) => {
-    try { setTree(await api.tree(id)) } catch { /* ignore */ }
+    try {
+      const next = await api.tree(id)
+      if (sidRef.current === id) setTree(next)
+    } catch { /* ignore */ }
   }, [])
 
   // Auth bootstrap trước; tuyệt đối không tải/tạo session khi chưa biết user.
@@ -306,7 +336,9 @@ export default function App() {
     }).catch(() => { if (live) { setUser(null); setAuthLoading(false) } })
     const expired = () => {
       abortRef.current?.abort()
-      setUser(null); setAuthLoading(false); setSessions([]); setSid(null); setItems([])
+      savedModelsRef.current = {}
+      userRef.current = null
+      setUser(null); setAuthLoading(false); setSessions([]); activateSession(null); setItems([])
     }
     window.addEventListener('forge:unauthorized', expired)
     return () => { live = false; window.removeEventListener('forge:unauthorized', expired) }
@@ -317,7 +349,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    setSessions([]); setSid(null); setItems([]); setTree([]); setActiveModel(''); setSettings(null); setAvailableModels([])
+    savedModelsRef.current = {}
+    setSessions([]); activateSession(null); setItems([]); setTree([]); setActiveModel(''); setSettings(null); setAvailableModels([])
     api.health().then((s) => {
       if (cancelled) return
       setSettings(s)
@@ -328,11 +361,12 @@ export default function App() {
     api.listSessions().then(async (list) => {
       if (cancelled) return
       setSessions(list)
-      if (list.length > 0) { setSid(list[0].id); await loadSession(list[0].id); refreshTree(list[0].id) }
+      if (list.length > 0) { activateSession(list[0].id); await loadSession(list[0].id); refreshTree(list[0].id) }
       else {
         const created = await api.createSession()
         if (cancelled) return
-        setSid(created.id); setActiveModel(created.model); refreshSessions()
+        savedModelsRef.current[created.id] = created.model
+        activateSession(created.id); setActiveModel(created.model); setModelSaveState('idle'); refreshSessions()
       }
     }).catch(() => {})
     return () => { cancelled = true }
@@ -341,8 +375,21 @@ export default function App() {
 
   const refreshCtx = (sessionId: string | null) => {
     if (!sessionId) { setCtx(null); return }
-    api.context(sessionId).then(setCtx).catch(() => {})
+    api.context(sessionId).then((stats) => {
+      if (sidRef.current === sessionId) setCtx(stats)
+    }).catch(() => {})
   }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !settingsOpen) {
+        setShowSb(false)
+        if (window.matchMedia('(max-width: 1100px)').matches) setShowWorkspace(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [settingsOpen])
 
   // autoscroll while streaming — chỉ khi người dùng đang ở gần đáy (tôn trọng cuộn tay)
   useEffect(() => {
@@ -458,12 +505,17 @@ export default function App() {
   // ------------------------------------------------------------ sessions
   async function newSession() {
     if (streaming) stop()
+    const owner = userRef.current?.id
     const s = await api.createSession(activeModel || undefined)
-    setSid(s.id)
+    if (!owner || userRef.current?.id !== owner) return
+    savedModelsRef.current[s.id] = s.model
+    activateSession(s.id)
     setActiveModel(s.model)
+    setModelSaveState('idle')
     setItems([])
     setBatch(null)
     setSessionUsage(null)
+    setCtx(null)
     setTree([])
     closeFile()
     refreshSessions()
@@ -472,7 +524,9 @@ export default function App() {
   async function selectSession(id: string) {
     if (streaming) stop()
     setShowSb(false)
-    setSid(id)
+    if (window.matchMedia('(max-width: 1100px)').matches) setShowWorkspace(false)
+    activateSession(id)
+    setModelSaveState('idle')
     setFileSel(null); setFileContent(null)
     await loadSession(id)
     refreshTree(id)
@@ -553,7 +607,7 @@ export default function App() {
     try {
       const r = await api.fork(sid)
       if (r.session?.id) {
-        setSid(r.session.id); await loadSession(r.session.id); refreshSessions(); refreshTree(r.session.id)
+        activateSession(r.session.id); await loadSession(r.session.id); refreshSessions(); refreshTree(r.session.id)
         setInfo(`🍴 Đã fork → phiên mới ${r.session.id}`)
       }
     } catch (e) { setErrorBanner(String(e)) }
@@ -598,33 +652,46 @@ export default function App() {
     const sessionId = sid
     if (!sessionId) return
     const selected = (modelArg ?? activeModel).trim()
-    if (!selected) return
+    if (!selected) {
+      const saved = savedModelsRef.current[sessionId]
+      if (saved && sidRef.current === sessionId) { setActiveModel(saved); setModelSaveState('idle') }
+      return
+    }
+    if (savedModelsRef.current[sessionId] === selected) {
+      if (sidRef.current === sessionId) setModelSaveState('idle')
+      return
+    }
+    if (sidRef.current === sessionId) setModelSaveState('saving')
     try {
       const saved = await api.setSessionModel(sessionId, selected)
+      savedModelsRef.current[sessionId] = saved.model
       setSessions((prev) => prev.map((row) => row.id === sessionId ? { ...row, model: saved.model } : row))
       if (sidRef.current === sessionId) {
         setActiveModel(saved.model)
-        setInfo(`✓ Model của phiên đã lưu: ${saved.model}`)
+        setModelSaveState('saved')
       }
     } catch (e) {
       if (sidRef.current !== sessionId) return
+      setModelSaveState('error')
       setErrorBanner((e as Error).message)
       try {
         const current = await api.getSession(sessionId)
+        savedModelsRef.current[sessionId] = current.model
         if (sidRef.current === sessionId) setActiveModel(current.model)
       } catch { /* giữ error ban đầu; không khôi phục bằng request của session khác */ }
     }
   }
 
-  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) {
+  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) {
     const sessionId = sid
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
     // Save key/setting khác không được reset model session về default.
     if (model?.trim() && sessionId) {
       const saved = await api.setSessionModel(sessionId, s.model)
+      savedModelsRef.current[sessionId] = saved.model
       setSessions((prev) => prev.map((row) => row.id === sessionId ? { ...row, model: saved.model } : row))
-      if (sidRef.current === sessionId) setActiveModel(saved.model)
+      if (sidRef.current === sessionId) { setActiveModel(saved.model); setModelSaveState('saved') }
     } else if (model?.trim()) {
       setActiveModel(s.model)
     }
@@ -741,7 +808,9 @@ export default function App() {
   async function logout() {
     abortRef.current?.abort()
     try { await api.logout() } catch { /* session có thể đã hết hạn */ }
-    setUser(null); setSessions([]); setSid(null); setItems([]); setTree([]); setSettings(null)
+    savedModelsRef.current = {}
+    userRef.current = null
+    setUser(null); setSessions([]); activateSession(null); setItems([]); setTree([]); setSettings(null)
     try {
       const d = await api.authMe()
       setGoogleEnabled(d.google_enabled); setRegistrationEnabled(d.registration_enabled)
@@ -755,8 +824,11 @@ export default function App() {
       needsSetup={needsSetup} onLoggedIn={(u) => { setNeedsSetup(false); setUser(u) }} />
   }
 
+  const currentSession = sessions.find((s) => s.id === sid)
+  const currentMode = MODES.find((m) => m.id === chatMode) ?? MODES[1]
+
   return (
-    <div className={`app ${showSb ? 'show-sb' : ''}`}>
+    <div className={`app ${showSb ? 'show-sb' : ''} ${showWorkspace ? 'show-workspace' : ''}`}>
       {settings && (
         <Sidebar
           sessions={sessions}
@@ -770,30 +842,52 @@ export default function App() {
           userRole={user.role}
           onLogout={logout}
           onOpenSettings={() => setSettingsOpen(true)}
+          onClose={() => setShowSb(false)}
         />
       )}
+      {showSb && <button className="sb-scrim" aria-label="Đóng danh sách phiên" onClick={() => setShowSb(false)} />}
 
       <main className="chat-pane">
-        <button className="sb-toggle" aria-label="Danh sách phiên"
-          onClick={() => setShowSb((v) => !v)}>☰</button>
+        <header className="chat-topbar">
+          <button className="sb-toggle" aria-label="Danh sách phiên" aria-expanded={showSb}
+            onClick={() => setShowSb((v) => !v)}>☰</button>
+          <div className="session-heading">
+            <strong>{currentSession?.title || 'Phiên mới'}</strong>
+            <span>{sid ? `ID ${sid}` : 'Chưa có phiên'}</span>
+          </div>
+          <div className="topbar-actions">
+            {settings?.demo && <span className="topbar-demo">DEMO</span>}
+            <button className={`topbar-btn workspace-toggle ${showWorkspace ? 'on' : ''}`}
+              aria-label={showWorkspace ? 'Đóng Workspace' : 'Mở Workspace'} aria-expanded={showWorkspace}
+              onClick={() => setShowWorkspace((v) => !v)}><span aria-hidden="true">▤</span><span>Workspace</span></button>
+            <button className="topbar-btn topbar-settings" aria-label="Mở cài đặt nhanh"
+              onClick={() => setSettingsOpen(true)}>⚙</button>
+          </div>
+        </header>
         <div className="chat-scroll" ref={chatScrollRef} onScroll={onChatScroll}>
           {items.length === 0 && !batch && (
             <div className="hero">
-              <div className="hero-logo">⚡</div>
-              <h1>Forge Agent</h1>
-              <p>AI coding agent chạy trên máy bạn — đọc/ghi file, chạy lệnh, tự sửa lỗi.</p>
+              <div className="hero-eyebrow"><span>⚡</span> LOCAL · PRIVATE · READY</div>
+              <h1>Bạn muốn xây dựng điều gì?</h1>
+              <p>Forge đọc code, chỉnh file và chạy lệnh ngay trong workspace của bạn.</p>
               <div className="hero-examples">
-                {['Viết game snake bằng HTML/JS rồi mở thử', 'Phân tích dữ liệu csv trong workspace', 'Tạo REST API Python đơn giản + test'].map((x) => (
-                  <button key={x} onClick={() => setInput(x)}>{x}</button>
+                {[
+                  ['🎮', 'Tạo một trò chơi', 'Viết game snake bằng HTML/JS rồi mở thử'],
+                  ['📊', 'Khám phá dữ liệu', 'Phân tích dữ liệu csv trong workspace'],
+                  ['🚀', 'Xây REST API', 'Tạo REST API Python đơn giản + test'],
+                ].map(([icon, title, prompt]) => (
+                  <button key={prompt} onClick={() => { setInput(prompt); taRef.current?.focus() }}>
+                    <span className="example-icon" aria-hidden="true">{icon}</span>
+                    <span><strong>{title}</strong><small>{prompt}</small></span>
+                    <span className="example-arrow" aria-hidden="true">↗</span>
+                  </button>
                 ))}
               </div>
               <div className="hero-tips" aria-label="Mẹo nhanh">
                 <span><code>/review</code> review diff</span>
                 <span><code>/diff</code> xem thay đổi</span>
-                <span><code>/memory</code> bộ nhớ</span>
-                <span><code># ghi chú</code> ghi nhớ nhanh</span>
                 <span><code>@file.py</code> đính file</span>
-                <span><code>/run tên</code> custom agent</span>
+                <span><code># ghi chú</code> ghi nhớ nhanh</span>
               </div>
             </div>
           )}
@@ -833,7 +927,7 @@ export default function App() {
         <div className="composer">
           {settings?.demo && (
             <div className="demo-banner">
-              DEMO MODE — chưa có provider key. Agent vẫn chạy tool thật, nhưng "não" là kịch bản mẫu. Admin nhập key ở ⚙ hoặc terminal để kích hoạt model thật.
+              <strong>DEMO</strong> — agent đang dùng kịch bản mẫu; tool vẫn chạy thật. Thêm provider key trong Cài đặt để dùng model thật.
             </div>
           )}
           {editing && (
@@ -856,33 +950,42 @@ export default function App() {
               </div>
             </div>
           )}
-          <div className="mode-chips">
-            {([
-              ['direct', '💬', 'Trực tiếp', 'Chat thuần — không dùng tool, nhanh và rẻ'],
-              ['agent', '🤖', 'Agent', 'Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi'],
-              ['plan', '📋', 'Kế hoạch', 'Chỉ đọc + xuất kế hoạch, không sửa gì — duyệt xong chuyển Agent'],
-              ['architect', '🧭', 'Kiến trúc sư', 'Model mạnh lập kế hoạch → model rẻ thực thi luôn (Aider architect)'],
-              ['battle', '⚔', 'Battle', 'Cùng 1 prompt chạy N model song song, chọn phiên thắng'],
-            ] as [ChatMode, string, string, string][]).map(([m, icon, label, tip]) => (
-              <button key={m} className={`mode-chip ${chatMode === m ? 'on' : ''}`} title={tip}
-                onClick={() => setChatMode(m)}>{icon} {label}</button>
-            ))}
-            <span className="mode-sep" />
-            <button className={`mode-chip ${parallel ? 'on' : ''}`}
-              title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ trên)"
-              onClick={() => setParallel(!parallel)}>⚡ Song song</button>
-            <input className="session-model" list="session-models" value={activeModel}
-              onChange={(e) => setActiveModel(e.target.value)}
-              onBlur={() => { void persistSessionModel() }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
-              title="Model cho phiên này — lưu ngay khi Enter/rồi ô; server tự route provider"
-              aria-label="Model cho phiên này" />
+          <div className="composer-toolbar">
+            <div className="mode-picker" title={currentMode.desc}>
+              <span aria-hidden="true">{currentMode.icon}</span>
+              <select aria-label="Chế độ làm việc" value={chatMode}
+                onChange={(e) => setChatMode(e.target.value as ChatMode)}>
+                {MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </div>
+            <button className={`parallel-toggle ${parallel ? 'on' : ''}`} aria-pressed={parallel}
+              title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ làm việc)"
+              onClick={() => setParallel(!parallel)}>⚡ <span>Song song</span></button>
+            <div className="model-picker">
+              <label htmlFor="session-model-input">Model</label>
+              <div className="model-input-wrap">
+                <input id="session-model-input" className="session-model" list="session-models" value={activeModel}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    setActiveModel(next)
+                    setModelSaveState(sid && savedModelsRef.current[sid] === next ? 'idle' : 'dirty')
+                  }}
+                  onBlur={() => { void persistSessionModel() }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+                  title="Model cho phiên này — lưu khi Enter/rồi ô; server tự route provider"
+                  aria-label="Model cho phiên này" />
+                <span className={`model-save-state ${modelSaveState}`} aria-live="polite"
+                  title={modelSaveState === 'error' ? 'Không lưu được model' : modelSaveState === 'dirty' ? 'Model chưa lưu' : 'Model đã lưu cho phiên'}>
+                  {modelSaveState === 'saving' ? '…' : modelSaveState === 'dirty' ? 'Chưa lưu' : modelSaveState === 'error' ? 'Lỗi' : '✓'}
+                </span>
+              </div>
+            </div>
             <datalist id="session-models">
               {availableModels.map((m) => <option key={m.id} value={m.id}>{m.provider ?? ''}</option>)}
             </datalist>
           </div>
           {chatMode === 'battle' && (
-            <input className="battle-models" value={battleModels}
+            <input className="battle-models" value={battleModels} aria-label="Các model thi đấu"
               onChange={(e) => setBattleModels(e.target.value)}
               placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
           )}
@@ -917,10 +1020,11 @@ export default function App() {
             <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
               style={{ display: 'none' }} id="img-picker"
               onChange={(e) => { pickImages(e.target.files); e.target.value = '' }} />
-            <button className="btn-attach" title="Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)"
+            <button className="btn-attach" aria-label="Đính kèm ảnh" title="Đính kèm ảnh (tối đa 4 — model phải hỗ trợ vision)"
               onClick={() => document.getElementById('img-picker')?.click()} disabled={streaming || pendingImages.length >= 4}>📎</button>
             <textarea
               ref={taRef}
+              aria-label="Nhiệm vụ gửi cho Forge"
               value={input}
               placeholder={streaming
                 ? 'Agent đang làm việc…'
@@ -954,8 +1058,6 @@ export default function App() {
               : <button className="btn-send" onClick={() => send()} disabled={!input.trim()}>Gửi ➤</button>}
           </div>
           <div className="composer-foot">
-            <span>Phiên: <code>{sid ?? '—'}</code></span>
-            <span>Model: <code>{activeModel || '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
             {sessionUsage?.cost_usd != null && (
               <span title="Chi phí ước lượng theo giá OpenRouter — chỉ tính các lượt đã chạy trong phiên này">
@@ -984,6 +1086,7 @@ export default function App() {
         </div>
       </main>
 
+      {showWorkspace && <button className="workspace-scrim" aria-label="Đóng vùng Workspace" onClick={() => setShowWorkspace(false)} />}
       <FilesPane
         sid={sid ?? ''}
         tree={tree}
@@ -998,6 +1101,7 @@ export default function App() {
         onNewFile={newFile}
         onUpload={uploadFiles}
         onExport={exportWorkspace}
+        onClose={() => setShowWorkspace(false)}
       />
 
       {settingsOpen && settings && (

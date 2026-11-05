@@ -21,6 +21,7 @@ export function Sidebar(props: {
   userRole: string
   onLogout: () => void
   onOpenSettings: () => void
+  onClose?: () => void
 }) {
   const [q, setQ] = React.useState('')
   const shown = props.sessions.filter((s) => {
@@ -28,16 +29,18 @@ export function Sidebar(props: {
     return !t || s.title.toLowerCase().includes(t)
   })
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="Điều hướng phiên">
       <div className="brand">
-        <svg width="22" height="22" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1f1f24" /><path d="M18.5 4 8 18h6.5L13 28 24 13.5h-6.5L18.5 4z" fill="#d97757" /></svg>
+        <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1f1f24" /><path d="M18.5 4 8 18h6.5L13 28 24 13.5h-6.5L18.5 4z" fill="#d97757" /></svg>
         <span>Forge <em>agent</em></span>
+        <button className="sidebar-close" aria-label="Đóng sidebar" onClick={props.onClose}>✕</button>
       </div>
 
       <button className="btn-primary" onClick={props.onNew}>＋ Phiên mới</button>
 
       <input
         className="session-search"
+        aria-label="Tìm phiên"
         placeholder="🔍 Tìm phiên…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -45,19 +48,17 @@ export function Sidebar(props: {
       <div className="session-list">
         {shown.length === 0 && <div className="empty">{q ? 'Không khớp phiên nào' : 'Chưa có phiên nào'}</div>}
         {shown.map((s) => (
-          <div
-            key={s.id}
-            className={`session-item ${s.id === props.currentId ? 'active' : ''}`}
-            onClick={() => props.onSelect(s.id)}
-          >
-            <div className="session-title">{s.title}</div>
-            <div className="session-meta">
-              {s.message_count} tin · {relTime(s.updated_at)}
-            </div>
+          <div key={s.id} className={`session-item ${s.id === props.currentId ? 'active' : ''}`}>
+            <button className="session-main" onClick={() => props.onSelect(s.id)}
+              aria-current={s.id === props.currentId ? 'page' : undefined}>
+              <span className="session-title">{s.title}</span>
+              <span className="session-meta">{s.message_count} tin · {relTime(s.updated_at)}</span>
+            </button>
             <button
               className="session-del"
-              title="Xóa phiên"
-              onClick={(e) => { e.stopPropagation(); props.onDelete(s.id) }}
+              title={`Xóa phiên ${s.title}`}
+              aria-label={`Xóa phiên ${s.title}`}
+              onClick={() => props.onDelete(s.id)}
             >✕</button>
           </div>
         ))}

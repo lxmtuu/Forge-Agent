@@ -180,7 +180,7 @@ export const api = {
       body: JSON.stringify({ client_id, client_secret, public_url }) }).then((r) => j<GoogleAuthConfig>(r)),
   health: () => req('/api/settings').then((r) => j<Settings>(r)),
 
-  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) =>
+  saveSettings: (api_key?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) =>
     req('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
