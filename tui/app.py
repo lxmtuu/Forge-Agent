@@ -345,7 +345,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory [clear] /doctor /agents /run <tên> <task> "
+                          "/profile [tên] /context /memory [clear] /doctor /agents /skills [add|new|remove] "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -407,6 +407,21 @@ class ForgeTUI(App):
                 self.add_line(f"🧠 Context: {pct} ({ctx['chars']:,} ký tự ≈ {ctx['est_tokens']:,} "
                               f"tokens / {lim}) · {ctx['messages']} tin · "
                               f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
+        elif cmd == "/skills":
+            from engine import skillmgr
+            ws = self.agent.workspace if self.agent else (
+                store.workspace(self.sid) if self.sid else Path.cwd())
+            if arg.startswith("add "):
+                self.add_line(skillmgr.add(ws, arg[4:].strip()), cls="sys-line")
+            elif arg.startswith("new "):
+                parts = arg[4:].strip().split(None, 1)
+                self.add_line(skillmgr.new_skill(
+                    ws, parts[0] if parts else "",
+                    parts[1] if len(parts) > 1 else ""), cls="sys-line")
+            elif arg.startswith("remove "):
+                self.add_line(skillmgr.remove(ws, arg[7:].strip()), cls="sys-line")
+            else:
+                self.add_line(skillmgr.format_listing(ws), cls="sys-line")
         elif cmd == "/memory":
             from engine import memory as fmem
             ws = self.agent.workspace if self.agent else (

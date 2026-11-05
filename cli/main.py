@@ -49,6 +49,7 @@ HELP = """[bold]Lệnh[/bold]
   /read <path>        đọc file               /clear           xóa màn hình
   /mcp [refresh]      xem MCP servers        /mode [g|a]      guarded / auto (YOLO)
   /usage              tokens đã dùng         /keytest         kiểm tra API key
+  /skills [add|new|remove …]  quản lý skill (chuẩn Agent Skills SKILL.md)
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -216,6 +217,11 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
         except Exception:
             pass
     return 0
+
+
+def agent0_ws(store, session_id: str):
+    """Workspace của phiên hiện tại — dùng cho các lệnh /skills..."""
+    return store.workspace(session_id)
 
 
 async def run_batch_cli(tasks: list[dict], label: str = "⚡ tác vụ song song") -> None:
@@ -477,6 +483,22 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows:
                 console.print(f"  🤖 [bold]{r['name']}[/bold] — {r['description'] or '(không mô tả)'}"
                               + (f" · {r['model']}" if r["model"] else ""))
+            continue
+        if text == "/skills" or text.startswith("/skills "):
+            from engine import skillmgr
+            from rich.text import Text
+            arg = text[7:].strip()
+            if arg.startswith("add "):
+                out = skillmgr.add(agent0_ws(store, session_id, model), arg[4:].strip())
+            elif arg.startswith("new "):
+                parts = arg[4:].strip().split(None, 1)
+                out = skillmgr.new_skill(agent0_ws(store, session_id, model),
+                                         parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
+            elif arg.startswith("remove "):
+                out = skillmgr.remove(agent0_ws(store, session_id, model), arg[7:].strip())
+            else:
+                out = skillmgr.format_listing(agent0_ws(store, session_id, model))
+            console.print(Text(out))
             continue
         if text.startswith("/run "):
             await run_turn(session_id, text, model=model)  # expand trong run_turn

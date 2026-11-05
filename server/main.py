@@ -428,13 +428,30 @@ async def chat(sid: str, body: ChatBody, request: Request):
             model = ag_model
         if ag_mode:
             chat_mode = ag_mode
-    # /ten-lenh từ .forge/commands/<name>.md (custom slash commands)
-    from engine import commands as fcmd
-    expanded = fcmd.expand(text, ws)
-    if expanded is not None:
-        text = expanded
+    # /skills [add|new|remove …] — quản lý skill (chuẩn Agent Skills), không cần LLM
+    skills_synthetic: list[dict] | None = None
+    if text == "/skills" or text.startswith("/skills "):
+        from engine import skillmgr
+        s_arg = text[7:].strip()
+        if s_arg.startswith("add "):
+            s_out = skillmgr.add(ws, s_arg[4:].strip())
+        elif s_arg.startswith("new "):
+            parts = s_arg[4:].strip().split(None, 1)
+            s_out = skillmgr.new_skill(ws, parts[0] if parts else "",
+                                       parts[1] if len(parts) > 1 else "")
+        elif s_arg.startswith("remove "):
+            s_out = skillmgr.remove(ws, s_arg[7:].strip())
+        else:
+            s_out = skillmgr.format_listing(ws)
+        skills_synthetic = [{"type": "assistant_message", "content": s_out}]
+    else:
+        # /<tên-lệnh> từ .forge/commands & skills chuẩn SKILL.md — expand trước mọi nhánh khác
+        from engine import commands as fcmd
+        expanded = fcmd.expand(text, ws)
+        if expanded is not None:
+            text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
-    synthetic: list[dict] | None = None
+    synthetic: list[dict] | None = skills_synthetic
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

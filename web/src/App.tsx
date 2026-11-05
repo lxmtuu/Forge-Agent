@@ -157,6 +157,7 @@ export default function App() {
     ['/diff', 'xem diff phiên (git repo hoặc checkpoint)'],
     ['/memory', 'xem bộ nhớ đang nạp · “/memory clear” để xoá'],
     ['/run', 'chạy custom agent từ .forge/agents/<tên>.md'],
+    ['/skills', 'quản lý skill chuẩn SKILL.md · /skills add <git|thư-mục> · new · remove'],
   ]
   const queuedRef = useRef<string[]>([])
   const abortRef = useRef<AbortController | null>(null)

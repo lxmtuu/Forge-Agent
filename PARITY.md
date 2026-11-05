@@ -174,6 +174,19 @@ Theo GAP_ANALYSIS.md (research Claude Code/OpenCode/Aider 2026) — 5 mục P0:
 
 Kết quả test: **5/5 smoke v0.14 (chạy 2 lần, chống flaky) + regression 16+12+8+9+5+5+7 = 67 test xanh**.
 
+## 🧩 v0.15 "Skills 2.0" — theo chuẩn mở Agent Skills (SKILL.md)
+
+Theo SKILLS_RESEARCH.md (chuẩn agentskills.io — 70+ nền tảng, quyên cho Linux Foundation 10/2026):
+
+| # | Mục | Chi tiết |
+|---|---|---|
+| 1 | **📦 Format chuẩn** | `<tên>/SKILL.md` (+ scripts/ references/ assets/) — tương thích ngược file dẹt v0.11; frontmatter YAML thật (pyyaml + fallback tự-quote giá trị có `:`); fields name/license/compatibility/metadata/allowed-tools |
+| 2 | **🗂 Đa vị trí quét** | `.forge/skills` + `.agents/skills` (cross-client) + `.claude/skills` (project) + `~/.forge/skills` (user) + legacy global; project đè user + cảnh báo "bị che"; lenient validation (warn vẫn nạp, chỉ bỏ khi thiếu description/YAML vỡ) + diagnostics |
+| 3 | **🛠 Tooling** | `/skills` (listing nhóm nguồn + chẩn đoán) · `/skills add <git-url\|owner/repo\|thư-mục>` (clone → validate → cài `~/.forge/skills`) · `/skills new <tên>` (scaffold đúng chuẩn) · `/skills remove`; skill mẫu `skills-samples/commit-vn`; `/<tên>` gọi được skill ở MỌI nguồn |
+
+**Bằng chứng hệ sinh thái:** `/skills add anthropics/skills` cài 1 phát được 13 skill chính thức của Anthropic (docx, pdf, pptx, xlsx, skill-creator, mcp-builder…), 13/13 pass validate.
+Test: **6/6 smoke v0.15 (×2) + regression 67 xanh (tổng 73)**.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

@@ -115,7 +115,7 @@ file này vào workspace là agent tuân theo), và **mở dự án thật** là
 | Tính năng | Dùng thế nào |
 |---|---|
 | **🧩 Sub-agent** | Agent tự gọi `spawn_subagent(task)` cho việc nặng context (tìm kiếm diện rộng, review vùng code) — phiên mới, **workspace vẫn dùng chung**; trên web/TUI thấy thẻ 🧩 tiến độ realtime |
-| **🛠 Skills model-invoked** | `.forge/skills/review-pr.md` với `description:` ngắn — LLM **tự đọc khi mô tả khớp yêu cầu** (progressive disclosure, không đốt context); thêm `disable-model-invocation: true` để chỉ gọi tay `/review-pr` |
+| **🛠 Skills chuẩn mở (SKILL.md)** | Thư mục `<tên>/SKILL.md` theo **chuẩn Agent Skills (agentskills.io)** — chạy được cả skill của Claude Code/Codex/OpenCode; quét `.forge/skills` + `.agents/skills` + `.claude/skills` + `~/.forge/skills`; quản lý bằng `/skills`, cài từ bất kỳ repo git nào bằng `/skills add owner/repo` |
 | **🪝 Hooks vòng đời** | `data/config.json` → `"hooks": {"pre_tool_use": [{"command": "block-danger.sh", "matcher": "run_command"}], "post_tool_use": [...], "session_start": [...]}` — script nhận JSON trên stdin; **exit 2 = chặn tool call** (lý do stderr đi thẳng vào hội thoại) |
 | **🧭 LSP navigation** | `lsp_definition` (đi tới định nghĩa) · `lsp_references` (tìm nơi dùng) · `lsp_search_symbols` (tra symbol toàn workspace) — tự retry khi server chưa index |
 
@@ -164,6 +164,19 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
   "model_fallbacks": ["openrouter/free"]
 }
 ```
+
+### 🧩 Skills 2.0 (v0.15) — chuẩn mở Agent Skills
+
+```bash
+/skills                      # liệt kê mọi skill theo nguồn + chẩn đoán
+/skills add anthropics/skills   # cài từ GitHub (owner/repo, URL git, hoặc thư mục local)
+/skills new review-api Review API theo chuẩn dự án   # scaffold skill mới đúng spec
+/commit-vn fix lỗi login     # gọi skill như slash command ($ARGUMENTS)
+```
+
+Nơi quét (project đè user): `.forge/skills/` · `.agents/skills/` · `.claude/skills/` · `~/.forge/skills/`.
+Skill có thể kèm `scripts/` `references/` `assets/` — agent chạy script qua shell (vẫn qua guard danger).
+Skill mẫu: `skills-samples/commit-vn/`.
 
 ### 🤖 Autonomy & Cost (v0.14)
 

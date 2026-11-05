@@ -1,4 +1,4 @@
-"""Custom slash commands — .forge/commands/<name>.md (chuẩn OpenCode/Claude Code).
+"""Custom slash commands — .forge/commands/<name>.md + mọi SKILL.md (chuẩn Agent Skills).
 
 - Thư mục dự án:  <workspace>/.forge/commands/<name>.md
 - Thư mục toàn cục: <DATA_DIR>/forge/commands/<name>.md
@@ -35,6 +35,11 @@ def find_custom(workspace: Path, name: str) -> Path | None:
                 return p
         except OSError:
             continue
+    # skill (chuẩn SKILL.md/thư mục + flat) — precedence đã xử lý trong skills.list_skills
+    from .skills import find_skill
+    sk = find_skill(workspace, name)
+    if sk:
+        return Path(sk["path"])
     return None
 
 

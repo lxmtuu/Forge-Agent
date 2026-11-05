@@ -52,7 +52,7 @@ async def t1():
     (d / "deploy.md").write_text(
         "---\ndescription: Triển khai production\ndisable-model-invocation: true\n---\n"
         "Deploy cẩn thận!", encoding="utf-8")
-    rows = list_skills(ws)
+    rows, _diags = list_skills(ws)  # v0.15: trả (skills, diagnostics)
     assert {r["name"] for r in rows} == {"pr-review", "deploy"}, rows
     rev = [r for r in rows if r["name"] == "pr-review"][0]
     assert rev["model_invocable"] is True
@@ -60,7 +60,7 @@ async def t1():
     assert dep["model_invocable"] is False
     # skills block: deploy bị ẩn, có hướng dẫn đọc file
     blk = skills_block(ws)
-    assert "pr-review" in blk and ".forge/skills/pr-review.md" in blk
+    assert "pr-review" in blk and "pr-review.md" in blk
     assert "deploy" not in blk, "disable-model-invocation phải bị ẩn khỏi block"
     # system prompt chứa block
     from engine.session import SessionStore
