@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🧭 Architect mode + ✏️ Sửa tin (v0.21)
+
+Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ tự thi công (đặt role trong `data/config.json`: `model_roles: {"strong": "...", "cheap": "..."}` — mặc định strong=model chính, cheap=openrouter/free). Hover tin nhắn của bạn → **✏️** sửa rồi Enter để chạy lại từ đó. Tab 🔗 Dịch vụ giờ cài/gỡ preset trực tiếp.
+
 ### 🔐 OAuth 2.1 cho connectors (v0.20)
 
 Notion/Sentry/Linear giờ đăng nhập bằng tài khoản thật: tạo ứng dụng OAuth của nhà cung cấp (redirect `http://127.0.0.1:8765/callback`) → `/connectors add notion` → `/connectors oauth notion <client_id> <client_secret>` — trình duyệt mở, duyệt xong token tự lưu (PKCE + state chống CSRF, refresh ngầm). Trên web: ⚙ → tab **🔗 Dịch vụ**. Toàn bộ token chỉ nằm trong `data/secrets.json` (chmod 600), không bao giờ vào context LLM.

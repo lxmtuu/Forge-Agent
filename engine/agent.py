@@ -11,9 +11,9 @@ import traceback
 from pathlib import Path
 
 from . import config, guard, llm, tools
+from .auditlog import log_tool, monotonic_ms
 from .llm import LLMError
 from .mcp import manager as mcp_manager
-from .auditlog import log_tool, monotonic_ms
 from .session import SessionStore
 
 MAX_ITERATIONS = 30
@@ -65,10 +65,19 @@ Explore the workspace, then produce: (1) a short understanding of the current st
 (4) how to verify. The user will review this plan and switch to Agent mode to execute.
 """
 
+ARCHITECT_PLAN_PROMPT = (
+    "Hãy lập KẾ HOẠCH triển khai ngắn gọn (tối đa ~200 từ): mục tiêu 1 dòng, "
+    "các bước đánh số (kể cả file sẽ tạo/sửa), rủi ro nếu có. "
+    "KHÔNG viết code, KHÔNG dùng tool — chỉ kế hoạch."
+)
+ARCHITECT_EXEC_PROMPT = (
+    "Thực hiện NGAY kế hoạch trên theo từng bước, dùng tool khi cần. "
+    "Không hỏi lại, không lập kế hoạch mới — nếu gặp chướng ngại nhỏ thì tự quyết và đi tiếp."
+)
 READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols",
                    "lsp_definition", "lsp_references", "lsp_search_symbols",
                    "fetch_url", "check_background"}
-CHAT_MODES = ("direct", "agent", "plan")
+CHAT_MODES = ("direct", "agent", "plan", "architect")
 
 
 def _agents_md_block(workspace: Path) -> str:
@@ -83,7 +92,7 @@ def _agents_md_block(workspace: Path) -> str:
                 if text.strip():
                     blocks.append(f"=== PROJECT INSTRUCTIONS ({name}) — follow strictly ===\n{text}")
                     break  # chỉ 1 file quy tắc cấp dự án (ưu tiên cao nhất)
-            except Exception:
+            except Exception:  # noqa: S110, BLE001 — tệp quy tắc hỏng không được làm sập chat
                 pass
     # quy tắc toàn cục của người dùng (nếu có)
     try:
@@ -92,7 +101,7 @@ def _agents_md_block(workspace: Path) -> str:
             text = load_with_imports(g)[:2000]
             if text.strip():
                 blocks.append(f"=== GLOBAL USER RULES (data/AGENTS.md) ===\n{text}")
-    except Exception:
+    except Exception:  # noqa: S110, BLE001 — biên never-raise như auditlog
         pass
     if not blocks:
         return ""
@@ -325,19 +334,24 @@ class Agent:
             ) + self._memory_block() + self._skills_block() + (session_extra or ""),
         }
 
-    async def send(self, user_text: str, chat_mode: str = "agent", content=None):
+    async def send(self, user_text: str, chat_mode: str = "agent", content=None,
+                   append_user: bool = True):
         """Run one full user turn; async-generator of events.
 
-        chat_mode: "agent" (full loop) | "direct" (no tools) | "plan" (read-only).
+        chat_mode: "agent" (full loop) | "direct" (no tools) | "plan" (read-only)
+                 | "architect" (model mạnh lập kế hoạch → model rẻ thực thi).
         content: payload lưu vào session — mặc định là user_text; truyền list
         content-parts (multimodal: text + image_url) khi có ảnh đính kèm.
+        append_user=False: tin user ĐÃ nằm trong session (flow chỉnh-sửa-chạy-lại
+        E5) — không append nữa, không đổi title.
         """
         s = self.session
-        s.messages.append({"role": "user",
-                           "content": content if content is not None else user_text})
-        if s.title == "New session":
-            s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
-        self.store.save(s)
+        if append_user:
+            s.messages.append({"role": "user",
+                               "content": content if content is not None else user_text})
+            if s.title == "New session":
+                s.title = user_text.strip().replace("\n", " ")[:60] or "New session"
+            self.store.save(s)
 
         # '# <nội dung>' → quick-memory (chuẩn Claude Code): ghi MEMORY.md, không tốn LLM
         if user_text.startswith("# ") and len(user_text.strip()) > 2:
@@ -385,6 +399,31 @@ class Agent:
         else:
             active_specs = all_specs
 
+        turn_model = self.model
+        if chat_mode == "architect":
+            strong = llm.resolve_model("strong")
+            yield {"type": "phase", "phase": "plan", "model": strong}
+            plan_parts: list[str] = []
+            p_usage = None
+            async for ev in self._llm_with_fallback(
+                    messages + [{"role": "user", "content": ARCHITECT_PLAN_PROMPT}],
+                    None, strong):
+                if ev["type"] == "delta":
+                    plan_parts.append(ev["text"])
+                    yield {"type": "assistant_delta", "text": ev["text"]}
+                elif ev["type"] == "usage":
+                    p_usage = ev["usage"]
+                elif ev["type"] == "model_fallback":
+                    yield ev
+            plan_text = "".join(plan_parts).strip() or "(không có kế hoạch)"
+            s.messages.append({"role": "assistant", "content": plan_text})
+            messages.append(s.messages[-1])
+            messages.append({"role": "user", "content": ARCHITECT_EXEC_PROMPT})
+            turn_model = llm.resolve_model("cheap")
+            self.store.save(s)
+            yield {"type": "phase", "phase": "execute", "model": turn_model,
+                   "plan_chars": len(plan_text), "usage": p_usage}
+
         turn_state = {"spawns": 0}  # số sub-agent đã dùng trong LƯỢT này (mọi vòng lặp)
         try:
             for _ in range(MAX_ITERATIONS):
@@ -392,7 +431,7 @@ class Agent:
                 tool_calls: list[dict] | None = None
                 usage = None
 
-                async for ev in self._llm_with_fallback(messages, active_specs, self.model):
+                async for ev in self._llm_with_fallback(messages, active_specs, turn_model):
                     et = ev["type"]
                     if et == "delta":
                         content_parts.append(ev["text"])
@@ -556,6 +595,7 @@ class Agent:
                             # tool MCP có thể kích hoạt elicitation/create giữa chừng —
                             # vừa chờ kết quả vừa đẩy event elicitation_request ra UI
                             import asyncio as _aio2
+
                             from . import elicitations as _el
                             seen: set[str] = set()
                             base = set(_el.PENDING.keys())
@@ -725,7 +765,8 @@ async def compact_session(agent: "Agent", instructions: str = "") -> dict:
 
 async def init_agents_md(agent: "Agent") -> dict:
     """Phân tích workspace → sinh AGENTS.md (kiểu /init của Claude Code/OpenCode)."""
-    from . import llm, tools as _tools
+    from . import llm
+    from . import tools as _tools
 
     ws = agent.workspace
     overview_parts = [await _tools.execute_tool("list_dir", {"path": "."}, ws)]

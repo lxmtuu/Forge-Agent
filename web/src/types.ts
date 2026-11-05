@@ -146,7 +146,7 @@ export type BatchEvent =
   | { type: 'error'; message: string }
   | { type: 'done' }
 
-export type ChatMode = 'direct' | 'agent' | 'plan' | 'battle'
+export type ChatMode = 'direct' | 'agent' | 'plan' | 'architect' | 'battle'
 
 export interface TaskGroup {
   index: number
@@ -157,7 +157,7 @@ export interface TaskGroup {
 }
 
 export type Item =
-  | { kind: 'user'; id: string; text: string; images?: string[] }
+  | { kind: 'user'; id: string; text: string; images?: string[]; msgIndex?: number }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string; streaming: boolean }
   | {

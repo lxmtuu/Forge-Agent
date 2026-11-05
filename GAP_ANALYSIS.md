@@ -28,7 +28,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 | A3 | **Todo/plan checklist** — LLM tự ghi danh sách việc, UI hiển thị tiến độ realtime (✓/◻) | Claude (TodoWrite/tasks), Codex (/goal) | ❌ | **P0** |
 | A4 | **Sub-agent nền (background)** — lead tiếp tục làm, được báo khi sub xong (Notification agent_completed) | Claude v2.1.198 ⭐, OpenCode | ❌ spawn hiện chặn lượt | P1 |
 | A5 | **Repo map** — bản đồ cấu trúc + symbol nén gọn tự nạp cho task lớn | Aider (tree-sitter), Claude ⚠️ | ❌ (nhưng có sẵn LSP symbols + tree để ghép) | P1 |
-| A6 | Architect 2-model (mạnh lập plan → rẻ code) | Aider architect mode | 🟡 gần đủ (subagent + model_roles) — chỉ thiếu pipeline 1-phát | P2 |
+| A6 | **✅ ĐÃ LÀM v0.21** Architect 2-model — mode 🧭: model mạnh lập kế hoạch (không tool) → model rẻ thi công đủ tool | Aider architect mode | phase plan/execute stream riêng | P2 |
 
 ### Nhóm B — Git
 
@@ -59,7 +59,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 | E2 | **✅ ĐÃ LÀM v0.19** /rename (tự đặt tên = tin nhắn đầu có sẵn) | Claude (/rename auto) | store.rename + POST /api/rename, 3 UI | P1 (nhỏ) |
 | E3 | **✅ ĐÃ LÀM v0.19** Tìm phiên — sidebar (tiêu đề) + /find (tiêu đề+NỘI DUNG) | OpenCode | list(q) + ô 🔍 + /find | P1 (nhỏ) |
 | E4 | **✅ ĐÃ LÀM v0.19** Thông báo khi xong — web Notification (tab ẩn) + TUI bell (>5s) | Claude (Notification hooks) | xin quyền lần gửi đầu | P1 (nhỏ) |
-| E5 | Edit lại tin người dùng → chạy lại từ đó | chuẩn web chat | ❌ | P2 |
+| E5 | **✅ ĐÃ LÀM v0.21** Edit lại tin người dùng → chạy lại từ đó (✏️ trên bubble, cắt timeline, /rerun + chat rerun=true) | chuẩn web chat | server cắt session, không append trùng | P2 |
 
 ### Nhóm F — Tự động hoá
 

@@ -89,6 +89,16 @@
 
 **Kết quả vòng 4: 116/116 test (17 suite) · bandit Medium+ = 0 · ruff module mới sạch.**
 
+## 3e. Vòng 5 (v0.21) — Kiến trúc sư & Chỉnh lại
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **A6** | **Architect 2-model** | mode `architect`: giai đoạn PLAN gọi `resolve_model("strong")` KHÔNG tool (prompt ép chỉ lập kế hoạch ~200 từ) → sự kiện `phase plan/execute` stream riêng → giai đoạn EXECUTE gọi `resolve_model("cheap")` đủ TOOL_SPECS với prompt "thực hiện ngay, không hỏi lại"; kế hoạch lưu vào session như assistant msg — test stub chứng minh đúng model/tool/prompt từng pha |
+| **E5** | **Sửa tin & chạy lại** | `POST /api/sessions/{sid}/rerun {index,text}` cắt session từ tin user + thay nội dung (400 nếu index sai/không phải user, 404 nếu lạ) → web: ✏️ trên bubble (hover), hộp sửa Enter=chạy lại/Esc=huỷ, cắt timeline rồi `/chat rerun=true` → `agent.send(append_user=False)` KHÔNG append trùng (test chứng minh) |
+| **C5** | **Hub UX web** | tab 🔗 Dịch vụ: nút **＋ Cài** / **🗑 Gỡ** preset trực tiếp (`POST /api/connectors/install?id=`, `DELETE …/installed`) — không còn bắt gõ CLI |
+
+**Kết quả vòng 5: 120/120 test (18 suite) · bandit Medium+ 0 · tsc sạch · ruff các dòng sửa sạch (phần never-raise cũ giữ làm baseline có ghi chú).**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

@@ -175,7 +175,7 @@ class LspSession:
                 "processId": None,
                 "rootUri": self.workspace.as_uri(),
                 "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
-                "clientInfo": {"name": "forge-agent", "version": "0.20.0"},
+                "clientInfo": {"name": "forge-agent", "version": "0.21.0"},
             }, timeout=15)
             if result is None:
                 return False

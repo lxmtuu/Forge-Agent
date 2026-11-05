@@ -385,6 +385,11 @@ export function SettingsModal(props: {
                       <b>{p.label.split(' — ')[0]}</b>
                       {p.connected ? <span className="st st-ok">đã kết nối {p.masked ? `· ${p.masked}` : ''}</span>
                         : <span className={`st ${p.installed ? 'st-warn' : 'st-dim'}`}>{p.installed ? 'chưa đăng nhập' : 'chưa cài'}</span>}
+                      {!p.installed ? (
+                        <button className="btn-primary btn-sm" onClick={() => api.connectorInstall(p.id).then(loadSvc).catch(() => {})}>＋ Cài</button>
+                      ) : (
+                        <button className="btn-ghost btn-sm" onClick={() => confirm(`Gỡ '${p.label.split(' — ')[0]}'?`) && api.connectorRemove(p.id).then(loadSvc).catch(() => {})}>🗑 Gỡ</button>
+                      )}
                       {p.oauth && p.connected && (
                         <button className="btn-ghost btn-sm" onClick={() => api.oauthDisconnect(p.id).then(loadSvc)}>Đăng xuất</button>
                       )}

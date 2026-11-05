@@ -131,8 +131,14 @@ export const api = {
     }).then((r) => j<{ ok: boolean }>(r)),
 
   /** POST chat and stream SSE events (proxy-safe, abortable). images = data URIs. */
-  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[]) =>
-    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, images: images ?? [] }, onEvent, signal),
+  streamChat: (sid: string, text: string, mode: string, onEvent: (ev: AgentEvent) => void, signal: AbortSignal, images?: string[], rerun?: boolean) =>
+    sseRequest<AgentEvent>(`/api/sessions/${sid}/chat`, { text, mode, images: images ?? [], rerun: rerun ?? false }, onEvent, signal),
+
+  rerun: (sid: string, index: number, text: string) =>
+    fetch(`/api/sessions/${sid}/rerun`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, text }),
+    }).then((r) => j<{ ok: boolean; messages: number }>(r)),
 
   context: (sid: string) =>
     fetch(`/api/sessions/${sid}/context`).then((r) => j<ContextStats>(r)),
@@ -153,6 +159,10 @@ export const api = {
     fetch(`/api/connectors/${encodeURIComponent(name)}/oauth/status`).then((r) => j<{ status: string; detail: string; authorize_url?: string }>(r)),
   oauthDisconnect: (name: string) =>
     fetch(`/api/connectors/${encodeURIComponent(name)}/oauth`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
+  connectorInstall: (id: string) =>
+    fetch(`/api/connectors/install?id=${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => j<{ ok: boolean; message: string }>(r)),
+  connectorRemove: (id: string) =>
+    fetch(`/api/connectors/${encodeURIComponent(id)}/installed`, { method: 'DELETE' }).then((r) => j<{ ok: boolean; message: string }>(r)),
 
   fork: (sid: string) =>
     fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),

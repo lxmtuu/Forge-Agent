@@ -101,9 +101,10 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
 function buildTimeline(messages: { role: string; content: string | null; tool_calls?: { id: string; function: { name: string } }[]; tool_call_id?: string }[]): Item[] {
   const items: Item[] = []
   const pendingTools = new Map<string, Item & { kind: 'tool' }>()
-  for (const m of messages) {
+  for (let mi = 0; mi < messages.length; mi++) {
+    const m = messages[mi]
     if (m.role === 'user') {
-      items.push({ kind: 'user', id: uid(), text: m.content ?? '' })
+      items.push({ kind: 'user', id: uid(), text: m.content ?? '', msgIndex: mi })
     } else if (m.role === 'assistant') {
       if (m.content) items.push({ kind: 'assistant', id: uid(), text: m.content, streaming: false })
       for (const tc of m.tool_calls ?? []) {
@@ -142,6 +143,47 @@ export default function App() {
   const [batch, setBatch] = useState<TaskGroup[] | null>(null)
   const [sessionUsage, setSessionUsage] = useState<Usage | null>(null)
   const [chatMode, setChatMode] = useState<ChatMode>('agent')
+  const [editing, setEditing] = useState<{ index: number; text: string; itemId: string } | null>(null)
+
+  async function rerunFrom(index: number, text: string, itemId: string) {
+    if (!sid || streaming) return
+    setEditing(null)
+    setErrorBanner(null)
+    try {
+      await api.rerun(sid, index, text)
+    } catch (e) {
+      setErrorBanner(`Không sửa được tin: ${(e as Error).message}`)
+      return
+    }
+    // cắt timeline từ tin đang sửa, rồi stream lại với rerun=true (không append tin user mới)
+    const cut = items.findIndex((x) => x.id === itemId)
+    setItems(cut >= 0 ? items.slice(0, cut) : items)
+    await doStream('', chatMode, [], true)
+  }
+
+  async function doStream(text: string, mode: ChatMode, imgs: string[], rerunMode: boolean) {
+    const ac = new AbortController()
+    abortRef.current = ac
+    setStreaming(true)
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => {})
+    }
+    try {
+      await api.streamChat(sid as string, text, mode, (ev) => {
+        setItems((prev) => applyEvent(prev, ev))
+      }, ac.signal, imgs, rerunMode)
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setErrorBanner((e as Error).message)
+    } finally {
+      setStreaming(false)
+      abortRef.current = null
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        try { new Notification('Forge agent — đã xong', { body: text.slice(0, 90) }) } catch { /* ignore */ }
+      }
+      refreshSessions()
+      if (sid) refreshTree(sid)
+    }
+  }
   const [battleModels, setBattleModels] = useState('openrouter/free, google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash')
   const [info, setInfo] = useState<string | null>(null)
   const [busyTool, setBusyTool] = useState<string | null>(null)
@@ -512,8 +554,13 @@ export default function App() {
   // --------------------------------------------------------------- render
   function renderItem(it: Item) {
     if (it.kind === 'user') {
+      const editable = it.msgIndex !== undefined && !streaming
       return (
         <div key={it.id} className="msg user">
+          {editable && (
+            <button className="msg-edit" title="Sửa & chạy lại từ đây"
+              onClick={() => { setEditing({ index: it.msgIndex as number, text: it.text, itemId: it.id }) }}>✏️</button>
+          )}
           <div className="bubble">
             {it.images && it.images.length > 0 && (
               <div className="msg-images">
@@ -690,11 +737,32 @@ export default function App() {
               DEMO MODE — chưa có OpenRouter API key. Agent vẫn chạy tool thật, nhưng "não" là kịch bản mẫu. Nhập key ở ⚙ để kích hoạt model thật.
             </div>
           )}
+          {editing && (
+            <div className="edit-box">
+              <textarea
+                value={editing.text}
+                rows={2}
+                onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void rerunFrom(editing.index, editing.text, editing.itemId) }
+                  if (e.key === 'Escape') setEditing(null)
+                }}
+                autoFocus
+              />
+              <div className="edit-actions">
+                <small>Sửa & chạy lại — mọi tin sau tin này bị bỏ. Enter = chạy lại · Esc = huỷ</small>
+                <button className="btn-ghost btn-sm" onClick={() => setEditing(null)}>Huỷ</button>
+                <button className="btn-primary btn-sm" disabled={!editing.text.trim() || streaming}
+                  onClick={() => void rerunFrom(editing.index, editing.text, editing.itemId)}>↻ Chạy lại</button>
+              </div>
+            </div>
+          )}
           <div className="mode-chips">
             {([
               ['direct', '💬', 'Trực tiếp', 'Chat thuần — không dùng tool, nhanh và rẻ'],
               ['agent', '🤖', 'Agent', 'Vòng lặp đầy đủ: đọc/ghi file, chạy lệnh, tự sửa lỗi'],
               ['plan', '📋', 'Kế hoạch', 'Chỉ đọc + xuất kế hoạch, không sửa gì — duyệt xong chuyển Agent'],
+              ['architect', '🧭', 'Kiến trúc sư', 'Model mạnh lập kế hoạch → model rẻ thực thi luôn (Aider architect)'],
               ['battle', '⚔', 'Battle', 'Cùng 1 prompt chạy N model song song, chọn phiên thắng'],
             ] as [ChatMode, string, string, string][]).map(([m, icon, label, tip]) => (
               <button key={m} className={`mode-chip ${chatMode === m ? 'on' : ''}`} title={tip}
@@ -754,6 +822,7 @@ export default function App() {
                     ? 'Mỗi dòng = 1 tác vụ song song · Ctrl+Enter để chạy'
                     : chatMode === 'direct' ? 'Hỏi gì đó… (Enter gửi)'
                       : chatMode === 'plan' ? 'Mô tả tính năng cần lập kế hoạch…'
+                      : chatMode === 'architect' ? 'Mô tả việc cần làm — model mạnh sẽ vạch kế hoạch rồi tự thi công…'
                         : 'Nhập nhiệm vụ… (@file.py đính kèm file · Enter gửi · Shift+Enter xuống dòng)'}
               onChange={(e) => updateInput(e.target.value)}
               onKeyDown={(e) => {

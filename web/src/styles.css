@@ -738,3 +738,13 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .svc-head b { flex: 1; }
 .svc-oauth { margin-top: 7px; display: flex; flex-direction: column; gap: 6px; }
 .svc-oauth input { width: 100%; }
+
+/* ── v0.21: sửa tin & chạy lại ── */
+.msg.user { position: relative; }
+.msg-edit { position: absolute; left: -30px; top: 6px; opacity: 0; background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 6px; }
+.msg.user:hover .msg-edit { opacity: 0.75; }
+.msg-edit:hover { opacity: 1 !important; background: var(--bg-in, #26272d); }
+.edit-box { display: flex; flex-direction: column; gap: 6px; margin: 0 16px 8px; padding: 10px; border: 1px solid var(--accent, #d97757); border-radius: 10px; background: var(--bg-in, #1b1c21); }
+.edit-box textarea { width: 100%; background: transparent; color: inherit; border: none; outline: none; resize: vertical; font: inherit; }
+.edit-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.edit-actions small { margin-right: auto; color: var(--dim, #8b8d96); }

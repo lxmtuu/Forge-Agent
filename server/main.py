@@ -40,8 +40,9 @@ STATIC_DIR = ROOT / "server" / "static"
 class ChatBody(BaseModel):
     text: str
     model: str | None = None
-    mode: str = "agent"  # direct | agent | plan
+    mode: str = "agent"  # direct | agent | plan | architect
     images: list[str] = []  # data URI image/png|jpeg|webp|gif (tối đa 4)
+    rerun: bool = False  # true: chạy lại từ tin user đã sửa (qua /rerun) — không append tin mới
 
 
 class BattleBody(BaseModel):
@@ -198,6 +199,34 @@ async def connector_presets():
             "connected": fo.has_oauth(pid), "masked": fo.masked(pid),
         })
     return {"presets": out}
+
+
+class InstallBody(BaseModel):
+    url: str = ""
+    write: bool = False
+
+
+@app.post("/api/connectors/install")
+async def connector_install(body: InstallBody, id: str):
+    from engine import connectors as fc
+    pid = (id or "").strip().lower()
+    if pid not in fc.PRESETS:
+        raise HTTPException(404, f"Không có preset '{id}'")
+    msg = fc.add(pid, body.url, body.write)
+    if msg.startswith("❌"):
+        raise HTTPException(400, msg)
+    name = fc.PRESETS[pid]["label"].split(" — ")[0].split(" (")[0]
+    return {"ok": True, "message": msg, "name": name}
+
+
+@app.delete("/api/connectors/{id}/installed")
+async def connector_uninstall(id: str):
+    from engine import connectors as fc
+    pid = (id or "").strip().lower()
+    for cfg in fc.load_servers():
+        if cfg.get("preset", "") == pid:
+            return {"ok": True, "message": fc.remove(cfg["name"])}
+    raise HTTPException(404, f"Preset '{id}' chưa cài")
 
 
 @app.post("/api/connectors/{name}/oauth/start")
@@ -391,6 +420,27 @@ async def delete_session(sid: str):
     return {"ok": ok}
 
 
+# ----------------------------------------------------- E5: chỉnh sửa tin & chạy lại
+class RerunBody(BaseModel):
+    index: int
+    text: str
+
+
+@app.post("/api/sessions/{sid}/rerun")
+async def rerun_session(sid: str, body: RerunBody):
+    """Cắt session từ tin user thứ `index` và thay nội dung mới — web sẽ gọi /chat rerun=true."""
+    st = store.get(sid)
+    if not st:
+        raise HTTPException(404, "Session not found")
+    if not (0 <= body.index < len(st.messages)):
+        raise HTTPException(400, f"index {body.index} ngoài phạm vi (0..{len(st.messages) - 1})")
+    if st.messages[body.index].get("role") != "user":
+        raise HTTPException(400, "index không trỏ vào tin nhắn của người dùng")
+    st.messages = st.messages[:body.index] + [{"role": "user", "content": body.text}]
+    store.save(st)
+    return {"ok": True, "messages": len(st.messages)}
+
+
 # ----------------------------------------------------- comfort: undo/compact/init
 @app.post("/api/sessions/{sid}/undo")
 async def undo_session(sid: str):
@@ -490,12 +540,12 @@ async def chat(sid: str, body: ChatBody, request: Request):
     if not s:
         raise HTTPException(404, "Session not found")
     text = body.text.strip()
-    if not text:
+    if not text and not body.rerun:
         raise HTTPException(400, "Empty message")
 
     demo = config.get_api_key() is None
     model = body.model or None
-    chat_mode = body.mode if body.mode in ("direct", "agent", "plan") else "agent"
+    chat_mode = body.mode if body.mode in ("direct", "agent", "plan", "architect") else "agent"
     ws = store.workspace(sid)
 
     # /run <tên> <task> — custom agent từ .forge/agents/<name>.md (đè model/mode nếu có)
@@ -631,7 +681,8 @@ async def chat(sid: str, body: ChatBody, request: Request):
                                   "nhập API key để dùng vision)")
                 source = send_demo(agent, demo_text)
             else:
-                source = agent.send(text, chat_mode=chat_mode, content=content)
+                source = agent.send(text, chat_mode=chat_mode, content=content,
+                                    append_user=not body.rerun)
             async for ev in source:
                 if await request.is_disconnected():
                     return

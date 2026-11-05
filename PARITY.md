@@ -231,6 +231,16 @@ Test: **5/5 smoke v0.20×(E2E fake-Ollama: đúng path/không-Auth/model/stream/
 
 Test: **6/6 OAuth suite (gồm E2E flow với fake provider: loopback thật, fake token endpoint xác nhận code_verifier↔challenge khớp) — tổng 116/116 / 17 suite · bandit Medium+ 0.**
 
+## 🧭 v0.21 "Kiến trúc sư & Chỉnh lại"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🧭 Architect mode (A6)** | Chip mode mới: model mạnh (role `strong`) lập kế hoạch ngắn → model rẻ (role `cheap`) thi công đầy đủ tool — tiết kiệm chi phí kiểu Aider; sự kiện `phase` để UI phân tách 2 giai đoạn |
+| 2 | **✏️ Sửa tin & chạy lại (E5)** | Hover tin của bạn → ✏️ → sửa → Enter: cắt hội thoại từ đó, chạy lại (không append trùng) — chuẩn web chat |
+| 3 | **＋ Cài / 🗑 Gỡ preset ngay tab Dịch vụ (C5)** | Connectors hub hoàn tất: cài/gỡ không cần CLI |
+
+Test: **4/4 suite v0.22 (stub chứng minh strong/cheap + đủ/không tool đúng pha; rerun validate index; append_user=False) — tổng 120/120 / 18 suite.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**
