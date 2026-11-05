@@ -157,7 +157,7 @@ def main() -> int:
         if not sys.stdin.isatty():
             say("❌ Chưa có user. Chạy python scripts/setup_auth.py trong terminal tương tác.")
             return 1
-        say("👤 Lần đầu cần tạo admin (email + password ≥16 ký tự; không có public registration).")
+        say("👤 Lần đầu cần tạo admin (email + password ≥16 ký tự; public signup mặc định tắt).")
         from scripts.setup_auth import main as auth_setup
         rc = auth_setup([])
         if rc != 0:

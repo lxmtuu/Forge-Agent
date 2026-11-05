@@ -29,6 +29,7 @@ export interface AuthState {
   user: AuthUser | null
   csrf_token: string
   google_enabled: boolean
+  registration_enabled: boolean
   needs_setup: boolean
 }
 
@@ -40,7 +41,7 @@ async function req(url: string, init: RequestInit = {}): Promise<Response> {
     headers.set('X-CSRF-Token', csrfToken)
   }
   const res = await globalThis.fetch(url, { ...init, headers, credentials: 'same-origin' })
-  if (res.status === 401 && url !== '/api/auth/login') {
+  if (res.status === 401 && !['/api/auth/login', '/api/auth/register'].includes(url)) {
     window.dispatchEvent(new CustomEvent('forge:unauthorized'))
   }
   return res
@@ -57,6 +58,16 @@ async function login(email: string, password: string): Promise<AuthUser> {
   const data = await req('/api/auth/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
+  }).then((r) => j<{ user: AuthUser; csrf_token: string }>(r))
+  csrfToken = data.csrf_token
+  return data.user
+}
+
+async function register(email: string, password: string, name: string): Promise<AuthUser> {
+  await authMe()
+  const data = await req('/api/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name }),
   }).then((r) => j<{ user: AuthUser; csrf_token: string }>(r))
   csrfToken = data.csrf_token
   return data.user
@@ -116,7 +127,12 @@ async function sseRequest<T>(url: string, body: unknown, onEvent: (ev: T) => voi
 export const api = {
   authMe,
   login,
+  register,
   logout: async () => { await req('/api/auth/logout', { method: 'POST' }) },
+  registrationConfig: () => req('/api/auth/registration/config').then((r) => j<{ enabled: boolean }>(r)),
+  setRegistrationEnabled: (enabled: boolean) =>
+    req('/api/auth/registration/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }) }).then((r) => j<{ enabled: boolean }>(r)),
   listUsers: () => req('/api/auth/users').then((r) => j<AuthUser[]>(r)),
   inviteUser: (email: string, password: string | undefined, name: string, role: string) =>
     req('/api/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' },

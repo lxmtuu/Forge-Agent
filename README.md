@@ -193,11 +193,12 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
-### 🔐 Private team + multi-provider routing (v0.34)
+### 🔐 Account, public signup tùy chọn + multi-provider routing (v0.35)
 
 | Tính năng | Hành vi |
 |---|---|
-| **Account riêng, không public registration** | Admin đầu tiên tạo bằng `scripts/setup_auth.py` hoặc `setup_keys.py --release`; admin mời member trong ⚙ → **Team**. Email/password + Google OIDC, không còn shared Basic/Bearer password |
+| **Account riêng** | Admin đầu tiên tạo bằng `scripts/setup_auth.py` hoặc `setup_keys.py --release`; admin mời member trong ⚙ → **Team**. Email/password + Google OIDC, không còn shared Basic/Bearer password |
+| **Public signup opt-in (v0.35)** | Admin bật trong ⚙ → **Team** hoặc đặt `FORGE_ALLOW_REGISTRATION=1` làm default ban đầu. Form tự đăng ký chỉ tạo member, có CSRF + rate-limit theo IP/email, auto-login; mặc định tắt khi nâng cấp |
 | **Cookie + CSRF** | Session cookie HttpOnly/SameSite=Lax/Secure qua HTTPS, DB chỉ lưu token hash; mutation và SSE POST cần CSRF. Logout/disable revoke session |
 | **Owner ACL** | Session/workspace, fork/export, batch/battle/sub-agent, loop, inbox, audit/usage, approval/elicitation đều lọc theo user. Session legacy `owner_id=""` chỉ hiện sau `scripts/migrate_sessions.py --apply` tường minh |
 | **Model theo session** | Canonical `openrouter:vendor/model`, `google:gemini-...`, `custom:...`; provider key chỉ ở server. Demo/cost/fallback/sub-agent route theo model của từng request, không mutate default toàn server |
@@ -206,7 +207,7 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 | **Release security** | Settings/keycheck toàn server khóa qua terminal; CORS same-origin mặc định, auth/LLM rate-limit, API `no-store`, sanitized subprocess env |
 | **Image generation** | Mới có capability contract; chưa có adapter, API báo `image_generation_adapter=false` và request tạo ảnh trả 501 |
 
-Private team vẫn chạy cùng OS account và provider quota; đây là owner ACL ở application layer cho nhóm tin cậy, không phải OS sandbox chống user độc hại. Quy trình HTTPS, migration, Docker/systemd và checklist: **SECURITY.md · DEPLOY.md**.
+Các account vẫn chạy cùng OS account và provider quota; public signup không xác minh quyền sở hữu email qua SMTP và không thay thế gateway quota/CAPTCHA; đây là owner ACL ở application layer cho nhóm tin cậy, không phải OS sandbox chống user độc hại. Quy trình HTTPS, migration, Docker/systemd và checklist: **SECURITY.md · DEPLOY.md**.
 
 ### 🌙 Autonomy nâng cao (v0.32)
 
@@ -216,7 +217,7 @@ Private team vẫn chạy cùng OS account và provider quota; đây là owner A
 | **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
 | **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
 
-### 🚀 Chạy nhanh (v0.34)
+### 🚀 Chạy nhanh (v0.35)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 

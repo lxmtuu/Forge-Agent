@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 hiện hành **196 test / 30 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 có **196 test / 30 suite**; v0.35 hiện hành **204 test / 31 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -273,6 +273,22 @@ Phạm vi Phase 1: một VPS/process, private team do admin mời, không public
 
 **Chưa kiểm chứng:** Docker CLI/container smoke và real Google OAuth. Không dùng credential thật trong test; OIDC fake flow/JWKS local không thay thế production consent/callback smoke.
 
+
+## 3l. Vòng 19 (v0.35) — Opt-in public signup + auth UX
+
+User yêu cầu mở self-registration sau khi preview v0.34 chỉ có invite-only. Thay đổi được tách thành release mới; tag/ZIP v0.34 không bị ghi đè.
+
+| Hạng mục | Kết quả |
+|---|---|
+| Policy | Public signup mặc định tắt; admin bật/tắt trong Team. `FORGE_ALLOW_REGISTRATION` chỉ là default ban đầu, lựa chọn trong Auth DB được ưu tiên |
+| Endpoint | `POST /api/auth/register`: CSRF, yêu cầu admin bootstrap, password ≥16 ký tự, email/name validation, duplicate 409, role injection 422, auto-login + CSRF rotation |
+| Quyền | Payload public không nhận role/enabled; chỉ tạo member. Admin tắt signup không revoke user cũ; disable user vẫn revoke sessions |
+| Abuse control | 5 lượt/15 phút/IP + 3 lượt/15 phút/email trong một process, `429 + Retry-After`; docs yêu cầu gateway quota/CAPTCHA khi public Internet |
+| Google | Signup tắt = invite-only; signup mở = Google user mới chỉ tạo member. PKCE/state/nonce/RS256 và OIDC scopes không đổi |
+| Web | Mục Đăng ký, form tên/email/password/xác nhận, validation, auto-login, trạng thái Google chưa cấu hình; admin có signup toggle |
+| Giới hạn | Chưa có SMTP email verification hoặc CAPTCHA tích hợp; owner ACL vẫn không phải OS sandbox |
+
+**Release gate:** 204/204 test (31 suite), v0.35 8/8; Chromium signup 15/15 + admin/member regression 14/14; mypy server/main.py + engine/ 38 files; TypeScript + Web build 42 modules; bandit Medium+ 0. Ruff theo scoped gate, không tuyên bố toàn repo sạch. Real Google OAuth và Docker/container smoke vẫn chưa chạy.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

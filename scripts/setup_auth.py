@@ -73,6 +73,7 @@ def check() -> int:
     print("Users       :", len(users), f"({sum(u.enabled for u in users)} active)")
     print("Admins      :", sum(u.role == "admin" and u.enabled for u in users))
     print("Google login:", "configured" if cfg else "chưa cấu hình")
+    print("Public signup:", "enabled" if store.registration_enabled() else "disabled")
     print("Auth DB     :", store.db_path)
     return 0 if users and any(u.role == "admin" and u.enabled for u in users) else 1
 

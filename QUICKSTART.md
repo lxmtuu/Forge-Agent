@@ -54,7 +54,7 @@ python scripts/launch.py --release --no-browser
 ```
 
 - Nếu chưa có user, setup yêu cầu tạo **email + password admin đầu tiên** (password nhập ẩn, ≥16 ký tự). Có thể tạo thêm bằng `python scripts/setup_auth.py --email member@example.com`.
-- Đăng nhập bằng tài khoản email/password riêng hoặc Google OIDC đã cấu hình; **không còn username chung `forge`**. Admin mời user trong ⚙ → Team, không có public registration.
+- Đăng nhập bằng tài khoản email/password riêng hoặc Google OIDC đã cấu hình; **không còn username chung `forge`**. Admin tạo user trong ⚙ → Team; public signup mặc định tắt, khi được bật sẽ có form **Đăng ký** và chỉ tạo member.
 - Mỗi user chỉ thấy session/workspace của mình; member chọn model theo session nhưng không đổi default/settings toàn server.
 - Settings/key input toàn server bị khóa ở release; chỉ operator đổi qua terminal.
 - Bắt buộc HTTPS reverse proxy khi truy cập qua mạng. Đặt `FORGE_PUBLIC_URL=https://...` hoặc `FORGE_COOKIE_SECURE=1`. Đọc **SECURITY.md + DEPLOY.md** trước khi public.
@@ -70,6 +70,6 @@ python cli/main.py --parallel "task A" "task B"
 ## An toàn
 - Mặc định **Guarded**: lệnh nguy hiểm bị chặn. Có thể đổi **ASK** hoặc **AUTO** (AUTO chỉ nên dùng trong sandbox).
 - Shell/hook/git/MCP không tự thừa kế provider key; MCP chỉ nhận secret được khai báo explicit.
-- Release có per-user cookie auth + owner ACL, CSRF, CORS same-origin và rate-limit; vẫn chỉ nên cấp cho nhóm tin cậy vì không phải OS sandbox.
+- Release có per-user cookie auth + owner ACL, CSRF, CORS same-origin và rate-limit; đây không phải OS sandbox. Chỉ bật public signup khi operator chấp nhận cấp workspace cho người ngoài và đã có kiểm soát abuse phù hợp.
 
 Chi tiết: **README.md · USER_GUIDE.md · SECURITY.md · DEPLOY.md**.

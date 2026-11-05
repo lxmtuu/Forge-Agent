@@ -1,7 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.34.0 "Private team + multi-provider"** · 196 test / 30 suite · mypy 0 lỗi · 38 files · bandit Medium+ 0
-> Lịch sử v0.10 → v0.34 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
+> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.35.0 "Opt-in public signup"** · 204 test / 31 suite · mypy 0 lỗi · 38 files · bandit Medium+ 0
+> Lịch sử v0.10 → v0.35 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
 
 ---
 
@@ -24,7 +24,8 @@
 | **v0.9.0** | `bb62c9c` | **Intelligence**: LSP diagnostics (tự sửa lỗi sau khi ghi file), MCP elicitation đầy đủ (spec 2026-07-28), profiles kiểu config.toml |
 | **v0.32.0** | `3e754aa` | **Autonomy nâng cao**: sub-agent nền + Notification `agent_completed`, repo map + `/repomap`, thêm 4 hook events; đóng A4/A5/C1 |
 | **v0.33.0** | `994beda` | **Shared-server security**: sanitized subprocess env, terminal setup OpenRouter/Google/custom, provider secret store + PBKDF2 release auth, Settings lock, CORS same-origin, auth/LLM rate-limit. 179 test tại mốc này |
-| **v0.34.0** | main (release) | **Private team + multi-provider**: per-user cookie auth + CSRF, email/password + Google OIDC, Team admin, owner ACL toàn bộ dữ liệu, canonical model theo session, provider-aware demo/cost/fallback/sub-agent, migration CLI và first-run bootstrap. 17 regression mới; toàn bộ 196 test PASS |
+| **v0.34.0** | `908683c` | **Private team + multi-provider**: per-user cookie auth + CSRF, email/password + Google OIDC, Team admin, owner ACL toàn bộ dữ liệu, canonical model theo session, provider-aware demo/cost/fallback/sub-agent, migration CLI và first-run bootstrap. 17 regression mới; toàn bộ 196 test PASS |
+| **v0.35.0** | main (release) | **Opt-in public signup + auth UX**: form đăng ký member, auto-login, admin toggle bền vững, CSRF + rate-limit IP/email, role injection guard, Google self-signup theo policy, trạng thái Google chưa cấu hình rõ ràng. 8 regression mới; toàn bộ 204 test PASS |
 
 ---
 
@@ -40,7 +41,7 @@
 | `approvals.py` | Hỏi duyệt lệnh tương tác (ask mode), auto-deny timeout |
 | `checkpoints.py` | Checkpoint git-inner repo riêng, undo theo từng hành động |
 | `session.py` | Phiên bền vững + owner_id + ScopedSessionStore ACL + workspace/pointer/fork |
-| `auth.py` | SQLite users/browser sessions/Google identities/OAuth flows; password/session chỉ hash, revoke/disable, dummy verify |
+| `auth.py` | SQLite users/browser sessions/Google identities/OAuth flows + registration policy; password/session chỉ hash, revoke/disable, dummy verify |
 | `google_auth.py` | Google OIDC Authorization Code + PKCE/state/nonce, RS256/JWKS; chỉ scope OIDC |
 | `models.py` | Canonical model registry/capabilities + ModelRouter stateless theo từng request |
 | `config.py` | Provider-aware config + secret migration + profiles + release/rate-limit settings |
@@ -56,13 +57,13 @@
 ### 🖥 4 giao diện
 | Giao diện | Điểm mạnh riêng |
 |---|---|
-| **Web** (`server/` + `web/`) | Login email/password + Google có điều kiện, auth bootstrap trước data, cookie/CSRF wrapper, reset state khi đổi user, Team admin, model canonical theo session; SSE chat/battle, terminal/files, diff, elicitation, settings theo role, ảnh 📎, fork/export/undo/nén/init |
+| **Web** (`server/` + `web/`) | Login/register email/password + Google có điều kiện, auth bootstrap trước data, cookie/CSRF wrapper, reset state khi đổi user, Team admin + signup toggle, model canonical theo session; SSE chat/battle, terminal/files, diff, elicitation, settings theo role, ảnh 📎, fork/export/undo/nén/init |
 | **TUI** (`tui/`) | Toàn màn hình textual: 3 panel (sessions/chat/files), Ctrl+M đổi mode, mọi lệnh slash, modal duyệt + elicitation |
 | **CLI** (`cli/`) | REPL rich + `--once` + `--parallel` + `--battle` + `--profile`, mọi lệnh slash |
 | **Demo mode** | Không cần key vẫn chạy tool thật (kịch bản mẫu) — người mới bật là chạy |
 
 ### 🌐 Server API (nhóm chính)
-`/api/health` · `/api/auth/{me,login,logout,users,password,google/*}` · `/api/settings` (GET/POST: key, model, mode, web_search, allow/deny, max_tokens) · `/api/keycheck` · `/api/models` (canonical multi-provider; live OpenRouter + Gemini direct) · `/api/sessions` CRUD · `/api/sessions/{sid}/chat` (SSE) · `/undo` `/compact` `/init` `/fork` `/export` · `/api/batch` · `/api/battle` (SSE) · `/api/approvals/{aid}` · `/api/elicitations` + `/api/elicitation/{eid}` · `/api/workspace/{exec,open,close,tree,file,upload,export}` · `/api/mcp` CRUD
+`/api/health` · `/api/auth/{me,register,login,logout,users,password,registration/*,google/*}` · `/api/settings` (GET/POST: key, model, mode, web_search, allow/deny, max_tokens) · `/api/keycheck` · `/api/models` (canonical multi-provider; live OpenRouter + Gemini direct) · `/api/sessions` CRUD · `/api/sessions/{sid}/chat` (SSE) · `/undo` `/compact` `/init` `/fork` `/export` · `/api/batch` · `/api/battle` (SSE) · `/api/approvals/{aid}` · `/api/elicitations` + `/api/elicitation/{eid}` · `/api/workspace/{exec,open,close,tree,file,upload,export}` · `/api/mcp` CRUD
 
 ---
 
@@ -70,16 +71,17 @@
 
 | Gate | Phạm vi | Kết quả |
 |---|---|:-:|
-| Full clean regression | 30 suite `scripts/test_*.py`, sau khi xoá `__pycache__` | **196/196 PASS** ✅ |
+| Full clean regression | 31 suite `scripts/test_*.py`, sau khi xoá `__pycache__` | **204/204 PASS** ✅ |
 | `scripts/test_v033.py` | Secret store/hash, 3 providers, sanitized subprocess env, API redaction, cookie login/public health, release lock, CORS/preflight, rate-limit, terminal setup | **12/12** ✅ |
 | `scripts/test_v034.py` | AuthStore, anonymous/CSRF, email login/logout, Team, owner ACL, audit/usage/inbox/approval/elicitation, migration, registry/routing, concurrent providers, background owner, OIDC + RS256/JWKS local, image fail-closed, setup CLI/Web bundle, provider-specific demo/cost, member MCP/skills, first-run launcher | **17/17** ✅ |
-| HTTP smoke thật | Uvicorn :8765 + release mode + fake users/data tạm: cookie Secure/HttpOnly, CSRF, login/logout, SSE demo, Team/owner ACL, model theo session | **22/22 PASS** ✅ |
-| Browser smoke thật | Playwright Chromium: admin Team, đổi/persist model qua chat+reload, logout/login member, ẩn admin tabs, browser storage/runtime | **14/14 PASS** ✅ |
+| `scripts/test_v035.py` | Bootstrap guard, admin-only policy, signup disabled/CSRF, validation/member-only/auto-login/duplicate/role injection, toggle/disable, IP+email rate-limit, Google policy, production bundle, owner isolation giữa hai public member | **8/8** ✅ |
+| HTTP smoke thật | v0.34 · Uvicorn :8765 + release mode + fake users/data tạm: cookie Secure/HttpOnly, CSRF, login/logout, SSE demo, Team/owner ACL, model theo session | **22/22 PASS** ✅ |
+| Browser smoke thật | Chromium trên v0.35: signup form/validation/201/auto-login/logout/login/member role **15/15**; admin/member/model/ACL regression **14/14** | **29/29 PASS** ✅ |
 | Static checks | mypy `server/main.py` + `engine/`; TypeScript noEmit; Vite production build 42 modules | **PASS** ✅ |
 | Security lint | bandit Medium+ trên engine/server/setup/migration/launcher | **0 finding** ✅ |
 | Ruff | Full cho new files; changed-core gate ngoại trừ legacy `BLE001/S110/S112/RUF100`; không tuyên bố toàn repo sạch | **PASS theo phạm vi** ✅ |
 
-Bundle cuối: `server/static/assets/index-DUXriFRs.js` + `index-DvwSMss-.css`.
+Bundle cuối: `server/static/assets/index-BAbh243A.js` + `index-C9Qx8Obd.css`.
 
 Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global thay vì provider của model; battle dùng chung một demo boolean; background sub-agent mất router/owner default; architect đổi semantics TUI; demo bỏ ảnh vẫn đòi vision; `ScopedSessionStore` thiếu `allow_mcp`; launcher thiếu Authlib và còn kiểm tra shared release password. Các failure do fixture response shape/logout 204 được sửa ở test/smoke client, không nới product ACL.
 
@@ -113,14 +115,14 @@ Bug Phase 1 bị test bắt và đã sửa: demo dùng active provider global th
 | `FEATURE_AUDIT.md` | Ma trận 34 hạng mục vs 3 đối thủ + cập nhật từng phiên bản |
 | `PRODUCT_DIRECTION.md` | Kim chỉ nam sản phẩm (research đối thủ 2026) |
 | `BUILD_DESKTOP.md` / `DEPLOY.md` | Đóng gói .exe / deploy server |
-| `SECURITY.md` | Private-team threat model, owner ACL, cookie/CSRF, OIDC, provider/MCP boundary, migration/rotation và checklist |
+| `SECURITY.md` | Account/signup threat model, owner ACL, cookie/CSRF, OIDC, abuse controls, provider/MCP boundary, migration/rotation và checklist |
 | `scripts/demo_mcp_server.py` | MCP server mẫu (4 tools, có elicitation thật để thử) |
 
 ## 6. Trạng thái bàn giao
 
-- **Release:** v0.34.0, Web production build sẵn; ZIP `forge-agent-v0.34.0.zip`.
-- **Git:** nhánh main, release commit tạo từ working tree đã kiểm; baseline v0.33 `994beda` giữ nguyên.
-- **Kiểm thử:** 196/196 test · 30 suite · HTTP 22/22 · browser 14/14 · mypy 0 lỗi · bandit Medium+ 0.
-- **Preview smoke:** uvicorn :8765, health 0.34.0, release mode + data/tài khoản giả, không có provider credential thật.
+- **Release:** v0.35.0, Web production build sẵn; ZIP `forge-agent-v0.35.0.zip`.
+- **Git:** nhánh main, release commit tạo từ working tree đã kiểm; baseline v0.34 `908683c` và tag/ZIP cũ giữ nguyên.
+- **Kiểm thử:** 204/204 test · 31 suite · browser 29/29 · mypy 0 lỗi · bandit Medium+ 0; HTTP 22/22 ở baseline v0.34.
+- **Preview smoke:** uvicorn :8765, health 0.35.0, public signup enabled với data/tài khoản giả; Google OAuth chưa cấu hình và không có provider credential thật.
 - **Yêu cầu hệ thống:** Python 3.10+ · dependencies trong requirements (gồm Authlib) · OpenRouter/Google Gemini/custom provider hoặc demo không cần key.
-- **Giới hạn đã ghi rõ:** single process/VPS; owner ACL không phải OS sandbox; chưa có image-generation adapter; real Google OAuth và Docker smoke là bước vận hành còn lại.
+- **Giới hạn đã ghi rõ:** single process/VPS; owner ACL không phải OS sandbox; public signup chưa có SMTP verification/CAPTCHA; chưa có image-generation adapter; real Google OAuth và Docker smoke còn lại.

@@ -1,7 +1,8 @@
-"""Private-team identity, browser sessions and OAuth transaction storage.
+"""Account identity, browser sessions and OAuth transaction storage.
 
 SQLite phù hợp một VPS. Mật khẩu dùng PBKDF2 có salt; browser chỉ giữ session token
-trong HttpOnly cookie, DB chỉ giữ SHA-256(token). Không có public registration.
+trong HttpOnly cookie, DB chỉ giữ SHA-256(token). Public registration là policy
+opt-in do admin kiểm soát; tài khoản tự đăng ký luôn là member.
 """
 from __future__ import annotations
 
@@ -312,6 +313,25 @@ class AuthStore:
                 raise ValueError("User đã liên kết một Google subject khác")
             db.execute("INSERT OR IGNORE INTO oauth_accounts(provider,subject,user_id,email,created_at) "
                        "VALUES('google',?,?,?,?)", (subject, user_id, email, time.time()))
+
+    def registration_enabled(self) -> bool:
+        """Effective signup policy; an explicit DB choice overrides the env default."""
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT value FROM auth_settings WHERE key='registration_enabled'"
+            ).fetchone()
+        if row is not None:
+            return row["value"] == "1"
+        raw = os.environ.get("FORGE_ALLOW_REGISTRATION", "").strip().lower()
+        return raw in ("1", "true", "yes", "on")
+
+    def set_registration_enabled(self, enabled: bool) -> None:
+        with self._lock, self._connect() as db:
+            db.execute(
+                "INSERT INTO auth_settings(key,value) VALUES('registration_enabled',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("1" if enabled else "0",),
+            )
 
     def save_google_config(self, client_id: str, client_secret: str, public_url: str) -> None:
         if not client_id.strip() or not client_secret.strip():

@@ -133,10 +133,12 @@ export function SettingsModal(props: {
   const [teamErr, setTeamErr] = useState<string | null>(null)
   const [googleCfg, setGoogleCfg] = useState<GoogleAuthConfig | null>(null)
   const [googleSecret, setGoogleSecret] = useState('')
+  const [registrationCfg, setRegistrationCfg] = useState<{ enabled: boolean } | null>(null)
   const loadTeam = () => {
     if (!props.isAdmin) return
     api.listUsers().then(setTeamUsers).catch((e) => setTeamErr(String((e as Error).message ?? e)))
     api.googleConfig().then(setGoogleCfg).catch(() => {})
+    api.registrationConfig().then(setRegistrationCfg).catch((e) => setTeamErr(String((e as Error).message ?? e)))
   }
   const invite = async () => {
     setTeamBusy(true); setTeamErr(null)
@@ -152,6 +154,12 @@ export function SettingsModal(props: {
       setGoogleCfg(await api.saveGoogleConfig(googleCfg.client_id, googleSecret, googleCfg.public_url))
       setGoogleSecret('')
     } catch (e) { setTeamErr((e as Error).message) } finally { setTeamBusy(false) }
+  }
+  const saveRegistration = async (enabled: boolean) => {
+    setTeamBusy(true); setTeamErr(null)
+    try { setRegistrationCfg(await api.setRegistrationEnabled(enabled)) }
+    catch (e) { setTeamErr((e as Error).message) }
+    finally { setTeamBusy(false) }
   }
 
   // ── Audit log tab ──
@@ -535,7 +543,14 @@ export function SettingsModal(props: {
         {tab === 'team' && props.isAdmin && (
           <>
             <div className="field">
-              <span>👥 Private team <em>(không có public registration)</em></span>
+              <span>👥 Team &amp; access <em>(invite + public signup tùy chọn)</em></span>
+              <label className="registration-toggle">
+                <input type="checkbox" checked={registrationCfg?.enabled ?? false}
+                  disabled={teamBusy || registrationCfg === null}
+                  onChange={(e) => saveRegistration(e.target.checked)} />
+                <span>Cho phép tự đăng ký tài khoản member</span>
+              </label>
+              <small>Mặc định tắt. Endpoint có CSRF + rate-limit theo IP/email; tài khoản mới không bao giờ là admin. Email/password tự đăng ký chưa xác minh quyền sở hữu email — cân nhắc gateway quota/CAPTCHA khi mở public Internet.</small>
               <small>User Google-only: để password trống; họ đăng nhập bằng Google có cùng email đã được mời. Disable sẽ revoke session ngay.</small>
               <div className="perm-grid">
                 <input type="email" placeholder="email@team.com" value={teamEmail} onChange={(e) => setTeamEmail(e.target.value)} />

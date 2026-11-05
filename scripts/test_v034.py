@@ -21,7 +21,8 @@ TMP = Path(tempfile.mkdtemp(prefix="forge-v034-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
 for name in ("OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "FORGE_CUSTOM_API_KEY",
              "FORGE_PROVIDER", "FORGE_MODEL", "FORGE_RELEASE_MODE", "FORGE_PUBLIC_URL",
-             "FORGE_GOOGLE_CLIENT_ID", "FORGE_GOOGLE_CLIENT_SECRET", "FORGE_COOKIE_SECURE"):
+             "FORGE_GOOGLE_CLIENT_ID", "FORGE_GOOGLE_CLIENT_SECRET", "FORGE_COOKIE_SECURE",
+             "FORGE_ALLOW_REGISTRATION"):
     os.environ.pop(name, None)
 
 PASSWORD = "phase1-fake-password-not-a-real-secret"

@@ -1,6 +1,6 @@
-# 🚀 DEPLOY — Forge Agent v0.34 private team
+# 🚀 DEPLOY — Forge Agent v0.35 account & access
 
-> Đọc **SECURITY.md** trước. Một process/VPS, account do admin mời, owner ACL cho session/workspace. Provider key và Auth DB chỉ nằm ở persistent data, không trong git/image/ZIP.
+> Đọc **SECURITY.md** trước. Một process/VPS, account do admin tạo hoặc public signup opt-in, owner ACL cho session/workspace. Provider key và Auth DB chỉ nằm ở persistent data, không trong git/image/ZIP.
 
 ## 1. Docker Compose
 
@@ -113,7 +113,13 @@ sudo -u www-data env FORGE_DATA_DIR=/var/lib/forge \
   --client-id '<oauth-client-id>' --public-url 'https://forge.example.com'
 ```
 
-Client secret nhập ẩn. Scope chỉ `openid email profile`; không phải Gmail/Drive OAuth. User Google-only vẫn phải được admin mời bằng đúng email trước khi login.
+Client secret nhập ẩn. Scope chỉ `openid email profile`; không phải Gmail/Drive OAuth. Khi public signup tắt, user Google-only phải được admin tạo trước bằng đúng email. Nếu admin bật public signup, Google user mới cũng chỉ được tạo làm member.
+
+### 3.1 Public signup (tuỳ chọn, mặc định tắt)
+
+Admin bật trong **⚙ → Team → Cho phép tự đăng ký tài khoản member**. Có thể đặt `FORGE_ALLOW_REGISTRATION=1` làm default ban đầu cho deployment mới; lựa chọn admin trong Auth DB sau đó được ưu tiên.
+
+Public signup chỉ tạo member, yêu cầu CSRF/password ≥16 ký tự và có rate-limit theo IP/email. **Chưa có SMTP email verification**; production public Internet nên đặt gateway quota + CAPTCHA phía trước và theo dõi user mới. Không expose uvicorn trực tiếp. Kiểm tra `setup_auth.py --check` để xem policy hiện tại.
 
 ## 4. PaaS có persistent disk
 

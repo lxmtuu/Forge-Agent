@@ -120,16 +120,17 @@ Mỗi tool MCP lần đầu chạy đều **hỏi duyệt** (allowlist) — khô
 - **Provider key** lưu tại `data/provider-secrets.json`; **connector token** lưu riêng tại `data/secrets.json`. Cả hai đều nằm ngoài git/ZIP, listing chỉ hiện bản mask.
 - Shell/hook/background/git/LSP không thừa kế provider/admin key. MCP chỉ nhận secret được khai báo explicit trong `env` của server đó.
 
-### Private team — release mode (v0.34)
+### Account và release mode (v0.35)
 
 1. Operator chạy `python scripts/setup_keys.py --provider openrouter --release` (hoặc `--provider google`) **trước khi phát hành**. Nếu chưa có user, setup hỏi email + password admin đầu tiên.
-2. Tạo thêm user bằng `python scripts/setup_auth.py --email member@example.com`, hoặc admin vào **⚙ → Team → Tạo / mời user**. Password ≥16 ký tự chỉ lưu PBKDF2 hash trong `data/auth.db`; không có public registration hay username chung.
-3. Khởi động `python scripts/launch.py --release --no-browser`. Mỗi người đăng nhập bằng email/password riêng; có thể bật Google OIDC trong Team (chỉ login, không cấp Gmail).
-4. Cookie session là HttpOnly; mutation cần CSRF. Logout/disable revoke session. User A không đọc được session/workspace/audit/inbox của user B.
-5. Member chọn canonical model theo session; chỉ admin đổi default/settings/Team/MCP/connectors/global skills. Release khoá key settings toàn server qua terminal.
-6. CORS mặc định same-origin và có rate-limit LLM/auth. Khi qua mạng **bắt buộc HTTPS reverse proxy**, đặt `FORGE_PUBLIC_URL=https://...` hoặc `FORGE_COOKIE_SECURE=1`; đọc `SECURITY.md` và `DEPLOY.md`.
-7. Local chỉ listen `127.0.0.1`; chỉ đặt `FORGE_HOST=0.0.0.0` sau khi auth/proxy sẵn sàng. Owner ACL không phải OS sandbox, vẫn chỉ cấp cho nhóm tin cậy.
-8. Nâng cấp từ v0.33: session cũ bị ẩn cho tới khi chạy dry-run rồi `python scripts/migrate_sessions.py --email admin@example.com --apply` tường minh.
+2. Tạo thêm user bằng `python scripts/setup_auth.py --email member@example.com`, hoặc admin vào **⚙ → Team → Tạo / mời user**. Password ≥16 ký tự chỉ lưu PBKDF2 hash trong `data/auth.db`; không có username chung.
+3. **Public signup là tùy chọn, mặc định tắt.** Admin bật **⚙ → Team → Cho phép tự đăng ký tài khoản member**. Màn hình login khi đó có mục **Đăng ký**; tài khoản mới luôn là member và tự đăng nhập sau khi tạo. Endpoint có CSRF + rate-limit theo IP/email. Email/password tự đăng ký chưa xác minh quyền sở hữu email qua SMTP.
+4. Google OIDC được cấu hình trong Team. Nếu public signup tắt, Google chỉ cho user đã được tạo trước; nếu đang bật, email Google mới cũng chỉ tạo member. Google login chỉ dùng scope OIDC, không cấp Gmail.
+5. Cookie session là HttpOnly; mutation cần CSRF. Logout/disable revoke session. User A không đọc được session/workspace/audit/inbox của user B.
+6. Member chọn canonical model theo session; chỉ admin đổi default/settings/Team/signup/MCP/connectors/global skills. Release khóa key settings toàn server qua terminal.
+7. CORS mặc định same-origin và có rate-limit LLM/auth/signup. Khi qua mạng **bắt buộc HTTPS reverse proxy**, đặt `FORGE_PUBLIC_URL=https://...` hoặc `FORGE_COOKIE_SECURE=1`; đọc `SECURITY.md` và `DEPLOY.md`.
+8. Local chỉ listen `127.0.0.1`; chỉ đặt `FORGE_HOST=0.0.0.0` sau khi auth/proxy sẵn sàng. Owner ACL không phải OS sandbox; public signup cần gateway quota/CAPTCHA phù hợp khi mở Internet.
+9. Nâng cấp từ v0.33: session cũ bị ẩn cho tới khi chạy dry-run rồi `python scripts/migrate_sessions.py --email admin@example.com --apply` tường minh.
 
 ## 10. Sự cố thường gặp
 

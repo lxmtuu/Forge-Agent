@@ -135,6 +135,7 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [googleEnabled, setGoogleEnabled] = useState(false)
+  const [registrationEnabled, setRegistrationEnabled] = useState(false)
   const [needsSetup, setNeedsSetup] = useState(false)
   const [activeModel, setActiveModel] = useState('')
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
@@ -296,6 +297,7 @@ export default function App() {
     api.authMe().then((d) => {
       if (!live) return
       setGoogleEnabled(d.google_enabled)
+      setRegistrationEnabled(d.registration_enabled)
       setNeedsSetup(d.needs_setup)
       setUser(d.user)
       setAuthLoading(false)
@@ -708,12 +710,17 @@ export default function App() {
     abortRef.current?.abort()
     try { await api.logout() } catch { /* session có thể đã hết hạn */ }
     setUser(null); setSessions([]); setSid(null); setItems([]); setTree([]); setSettings(null)
+    try {
+      const d = await api.authMe()
+      setGoogleEnabled(d.google_enabled); setRegistrationEnabled(d.registration_enabled)
+      setNeedsSetup(d.needs_setup)
+    } catch { /* login vẫn hiển thị với policy đã nạp trước đó */ }
   }
 
   if (authLoading) return <main className="login-page"><div className="auth-loading">⚡ Đang kiểm tra phiên…</div></main>
   if (!user) {
-    return <LoginScreen googleEnabled={googleEnabled} needsSetup={needsSetup}
-      onLoggedIn={(u) => { setNeedsSetup(false); setUser(u) }} />
+    return <LoginScreen googleEnabled={googleEnabled} registrationEnabled={registrationEnabled}
+      needsSetup={needsSetup} onLoggedIn={(u) => { setNeedsSetup(false); setUser(u) }} />
   }
 
   return (

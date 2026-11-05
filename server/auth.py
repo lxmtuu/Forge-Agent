@@ -1,4 +1,4 @@
-"""HTTP auth routes/dependencies cho private-team Forge."""
+"""HTTP auth routes/dependencies cho account, team và public signup opt-in."""
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from engine import google_auth
 from engine.auth import (
@@ -34,11 +34,28 @@ def secure_cookies() -> bool:
 
 
 _LOGIN_RATE: dict[str, list[float]] = {}
+_REGISTER_IP_RATE: dict[str, list[float]] = {}
+_REGISTER_EMAIL_RATE: dict[str, list[float]] = {}
+_REGISTER_WINDOW = 15 * 60.0
+_REGISTER_IP_LIMIT = 5
+_REGISTER_EMAIL_LIMIT = 3
 
 
 class LoginBody(BaseModel):
     email: str = Field(max_length=254)
     password: str = Field(max_length=512)
+
+
+class RegisterBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=512)
+    name: str = Field(default="", max_length=120)
+
+
+class RegistrationConfigBody(BaseModel):
+    enabled: bool
 
 
 class InviteBody(BaseModel):
@@ -132,13 +149,64 @@ def _login_throttled(key: str) -> bool:
     return False
 
 
+def _sliding_retry(bucket: dict[str, list[float]], key: str, limit: int) -> int:
+    """In-process abuse control for one VPS; use gateway quota when scaling out."""
+    now = time.monotonic()
+    cutoff = now - _REGISTER_WINDOW
+    rows = bucket.setdefault(key, [])
+    rows[:] = [t for t in rows if t > cutoff]
+    if len(rows) >= limit:
+        return max(1, int(rows[0] + _REGISTER_WINDOW - now) + 1)
+    rows.append(now)
+    if len(bucket) > 1000:
+        for old_key in list(bucket):
+            if not bucket[old_key] or bucket[old_key][-1] <= cutoff:
+                bucket.pop(old_key, None)
+    return 0
+
+
+def _registration_retry(request: Request, email: str) -> int:
+    host = request.client.host if request.client else "unknown"
+    digest = hashlib.sha256(email.strip().casefold().encode("utf-8")).hexdigest()[:16]
+    # Evaluate both buckets so one dimension cannot be used to bypass the other.
+    ip_retry = _sliding_retry(_REGISTER_IP_RATE, host, _REGISTER_IP_LIMIT)
+    email_retry = _sliding_retry(_REGISTER_EMAIL_RATE, digest, _REGISTER_EMAIL_LIMIT)
+    return max(ip_retry, email_retry)
+
+
 @router.get("/me")
 async def me(request: Request, response: Response) -> dict[str, Any]:
     user = optional_user(request)
+    has_users = auth_store.has_users()
     return {"user": user.public() if user and user.enabled else None,
             "csrf_token": issue_csrf(request, response),
             "google_enabled": auth_store.google_config() is not None,
-            "needs_setup": not auth_store.has_users()}
+            "registration_enabled": has_users and auth_store.registration_enabled(),
+            "needs_setup": not has_users}
+
+
+@router.post("/register", status_code=201)
+async def register(request: Request, response: Response, body: RegisterBody) -> dict[str, Any]:
+    check_csrf(request)
+    if not auth_store.has_users():
+        raise HTTPException(503, "Cần bootstrap admin trước khi mở đăng ký")
+    if not auth_store.registration_enabled():
+        raise HTTPException(403, "Tự đăng ký đang tắt — liên hệ admin")
+    retry = _registration_retry(request, body.email)
+    if retry:
+        raise HTTPException(429, "Quá nhiều lượt đăng ký — thử lại sau",
+                            headers={"Retry-After": str(retry)})
+    try:
+        # Never accept role/enabled from the public payload.
+        user = auth_store.create_user(body.email, body.password, body.name, role="member")
+    except ValueError as exc:
+        status = 409 if str(exc) == "Email đã tồn tại" else 400
+        raise HTTPException(status, str(exc)) from exc
+    old = request.cookies.get(SESSION_COOKIE, "")
+    if old:
+        auth_store.revoke_session(old)
+    set_session(response, auth_store.create_session(user.id))
+    return {"user": user.public(), "csrf_token": issue_csrf(request, response, force=True)}
 
 
 @router.post("/login")
@@ -214,6 +282,9 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
             user = auth_store.get_by_email(identity["email"])
         if user is None and not auth_store.has_users():
             user = auth_store.create_user(identity["email"], name=identity["name"], role="admin")
+        if user is None and auth_store.registration_enabled():
+            # Google đã xác minh email; public signup chỉ tạo member sau bootstrap.
+            user = auth_store.create_user(identity["email"], name=identity["name"], role="member")
         if user is None:
             return fail("not_invited")
         if not user.enabled:
@@ -281,6 +352,18 @@ async def change_password(request: Request, response: Response, body: PasswordBo
     updated = auth_store.get(user.id)
     assert updated is not None
     return {"user": updated.public(), "csrf_token": issue_csrf(request, response, force=True)}
+
+
+@router.get("/registration/config")
+async def get_registration_config(_: User = Depends(require_admin)) -> dict[str, bool]:  # noqa: B008
+    return {"enabled": auth_store.registration_enabled()}
+
+
+@router.put("/registration/config")
+async def put_registration_config(body: RegistrationConfigBody,
+                                  _: User = Depends(require_admin)) -> dict[str, bool]:  # noqa: B008
+    auth_store.set_registration_enabled(body.enabled)
+    return {"enabled": body.enabled}
 
 
 @router.get("/google/config")

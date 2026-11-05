@@ -1,6 +1,6 @@
-# 🔐 SECURITY — Forge Agent v0.34 private team
+# 🔐 SECURITY — Forge Agent v0.35 account & access
 
-> Mô hình mục tiêu: **một VPS/process, nhiều tài khoản được admin mời, provider key do operator giữ**. Session/workspace có owner ACL ở application layer. Đây vẫn là môi trường cho nhóm tin cậy, **không phải sandbox OS hoặc multi-tenant isolation chống user độc hại**.
+> Mô hình mục tiêu: **một VPS/process, account do admin tạo hoặc public signup opt-in, provider key do operator giữ**. Session/workspace có owner ACL ở application layer. Đây vẫn là môi trường cho nhóm tin cậy, **không phải sandbox OS hoặc multi-tenant isolation chống user độc hại**.
 
 ## 1. Cài provider key và tạo admin
 
@@ -21,7 +21,7 @@ python scripts/setup_auth.py --check
 ```
 
 - Password tối thiểu **16 ký tự**, lưu salt + PBKDF2-HMAC-SHA256 (240.000 vòng), không lưu password thô.
-- User đầu tiên phải là admin. Không có public registration; user sau do admin tạo/mời trong **⚙ → Team** hoặc CLI.
+- User đầu tiên phải là admin. Mặc định invite-only; admin có thể bật public signup trong **⚙ → Team**. Public endpoint không thể tạo admin và vẫn bị chặn trước khi bootstrap admin.
 - `FORGE_DATA_DIR` nên nằm ngoài source, ví dụ `/var/lib/forge`, và phải thuộc đúng OS user chạy server.
 
 ### Runtime data
@@ -39,7 +39,15 @@ $FORGE_DATA_DIR/
 
 Thư mục data được hạn chế quyền best-effort; `auth.db` chứa Google client secret nếu bật OIDC nên phải được bảo vệ như provider key. `data/` bị gitignore và loại khỏi release ZIP.
 
-## 2. Browser auth và owner ACL
+## 2. Browser auth, public signup và owner ACL
+
+### Public signup opt-in (v0.35)
+
+- Mặc định tắt khi cài/nâng cấp. Bật trong **⚙ → Team**, hoặc dùng `FORGE_ALLOW_REGISTRATION=1` làm **default ban đầu**; lựa chọn admin ghi trong Auth DB được ưu tiên sau đó.
+- `POST /api/auth/register` yêu cầu CSRF và admin đã tồn tại. Payload không nhận `role`/`enabled`; user mới luôn là member active, password ≥16 ký tự, sau đó server phát session cookie và xoay CSRF.
+- Giới hạn trong một process: 5 lượt/15 phút/IP và 3 lượt/15 phút/email; trả `429 + Retry-After`. Admin tắt signup không revoke user đã tạo; disable từng user vẫn revoke ngay.
+- **Chưa có SMTP email verification.** Email/password tự đăng ký chưa chứng minh quyền sở hữu email. Khi mở public Internet cần HTTPS, gateway quota và nên có CAPTCHA/approval workflow phù hợp; rate-limit in-process không phải toàn bộ chống abuse.
+- Nếu signup đang mở, Google OIDC cũng có thể tạo member cho email Google mới; nếu đóng, Google trở lại invite-only. Google `email_verified` vẫn bắt buộc.
 
 - Login bằng email/password hoặc Google OIDC. Không còn shared Basic/Bearer password.
 - Session cookie `forge_session`: **HttpOnly + SameSite=Lax**, hết hạn sau 8 giờ; DB chỉ lưu SHA-256 của token. Bật `Secure` qua HTTPS public URL hoặc `FORGE_COOKIE_SECURE=1`.
@@ -53,7 +61,7 @@ Thư mục data được hạn chế quyền best-effort; `auth.db` chứa Googl
 | Chọn canonical model theo session | ✓ | ✓ |
 | Audit/usage/inbox/approval/elicitation của chính mình | ✓ | ✓ |
 | Đổi default model/provider/settings toàn server | ✓ | — |
-| Quản lý Team, Google login, MCP/connectors toàn server | ✓ | — |
+| Quản lý Team, public signup, Google login, MCP/connectors toàn server | ✓ | — |
 | Mở arbitrary host workspace | ✓ | — |
 | Dùng MCP tools với credential toàn server | ✓ | — |
 | Cài/xoá/sửa global skill | ✓ | — |
@@ -91,7 +99,7 @@ Client secret nhập ẩn. Tạo **Web application** trong Google Cloud và đă
 https://forge.example.com/api/auth/google/callback
 ```
 
-Flow dùng Authorization Code + PKCE S256 + state + nonce, verify ID token RS256 bằng Google JWKS, issuer/audience/expiry/nonce và `email_verified`. OAuth transaction hết hạn sau 10 phút và chỉ dùng một lần. Email phải được mời trước; user Google-only không cần password.
+Flow dùng Authorization Code + PKCE S256 + state + nonce, verify ID token RS256 bằng Google JWKS, issuer/audience/expiry/nonce và `email_verified`. OAuth transaction hết hạn sau 10 phút và chỉ dùng một lần. Khi signup tắt, email phải được tạo trước; khi signup mở, Google user mới chỉ trở thành member. User Google-only không cần password.
 
 Scope chỉ `openid email profile`. **Không xin offline access hoặc Gmail scope.** Google login không tạo quyền Gmail/Drive; connector OAuth là hệ thống riêng và chỉ admin quản lý.
 
@@ -109,6 +117,7 @@ forge.example.com {
 - Không expose uvicorn trực tiếp. Nginx cần `proxy_buffering off` và timeout phù hợp cho SSE.
 - Release mặc định same-origin. Chỉ thêm origin HTTPS chính xác vào `FORGE_CORS_ORIGINS` khi thật sự cần; `*` làm server từ chối khởi động ở release.
 - LLM endpoints (`chat`, `compact`, `init`, `loop`, `batch`, `battle`) mặc định giới hạn **20 request/phút/user+IP**, trả `429 + Retry-After`. Login cũng có giới hạn brute-force theo IP+email.
+- Signup giới hạn **5 lượt/15 phút/IP + 3 lượt/15 phút/email**; request public vẫn cần CSRF.
 - Rate limit là in-process cho **một VPS/process**. Nhiều worker/instance cần quota tổng ở proxy/gateway. Đây không phải billing quota; admin vẫn phải theo dõi chi phí provider.
 
 ## 6. Subprocess và connector secrets
@@ -146,8 +155,9 @@ Lệnh chỉ gán session owner rỗng, không đụng session đã thuộc user
 ```bash
 python scripts/test_v033.py
 python scripts/test_v034.py
+python scripts/test_v035.py
 ```
 
-Suite dùng fake credential và data tạm. v0.34 kiểm AuthStore, owner ACL, CSRF/cookie, Team, model routing, background owner, OIDC flow giả và RS256/JWKS local, migration, member MCP/skill isolation.
+Suite dùng fake credential và data tạm. v0.35 kiểm public signup/toggle/role guard/rate-limit/Google policy/owner isolation; v0.34 kiểm AuthStore, owner ACL, CSRF/cookie, Team, model routing, background owner, OIDC flow giả và RS256/JWKS local, migration, member MCP/skill isolation.
 
 **Kiểm thử OIDC giả không thay thế Google OAuth thật trên production.** Sau khi cấu hình client thật, admin cần smoke: start → Google consent → callback → logout → login lại, và kiểm tra uninvited/disabled account. Không ghi client secret/token vào test log.
