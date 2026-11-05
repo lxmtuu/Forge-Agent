@@ -5,6 +5,7 @@ Run:  uvicorn server.main:app --host 0.0.0.0 --port 8000
 import asyncio
 import io
 import json
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -16,14 +17,14 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine import config, llm, tools, guard    # noqa: E402
-from engine.agent import Agent, send_demo, run_batch, run_battle   # noqa: E402
-from engine.mcp import manager as mcp_manager, load_servers, save_servers  # noqa: E402
-from engine.session import SessionStore        # noqa: E402
+from engine import config, guard, llm, tools
+from engine.agent import Agent, run_batch, run_battle, send_demo
+from engine.mcp import load_servers, save_servers
+from engine.mcp import manager as mcp_manager
+from engine.session import SessionStore
 
 app = FastAPI(title="Forge Agent", version="0.1.0")
 app.add_middleware(
@@ -103,12 +104,25 @@ _MODELS_CACHE = {"ts": 0.0, "data": []}
 # ---------------------------------------------------------------------------
 # Health / settings
 # ---------------------------------------------------------------------------
+def _pkg_version() -> str:
+    """Đọc version pyproject 1 LẦN lúc import (không I/O trong request handler)."""
+    try:
+        import tomllib
+        return tomllib.load(open(ROOT / "pyproject.toml", "rb"))["project"]["version"]
+    except Exception:  # noqa: BLE001 — thiếu version không được làm chết health
+        return "?"
+
+
+APP_VERSION = _pkg_version()
+
+
 @app.get("/api/health")
 async def health():
     key = config.get_api_key()
     cfg = config.load_config()
     return {
         "ok": True,
+        "version": APP_VERSION,
         "demo": key is None,
         "model": config.get_model(),
         "key_masked": config.mask_key(key),
@@ -674,7 +688,9 @@ async def audit_export():
     """Xuất audit log CSV (tối đa 2000 mục mới nhất) — Excel/Sheets đọc trực tiếp."""
     import csv as _csv
     import io as _io
+
     from fastapi.responses import Response
+
     from engine import auditlog
     buf = _io.StringIO()
     w = _csv.writer(buf)
@@ -702,8 +718,9 @@ async def export_session(sid: str):
     s = store.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
-    from engine.export import to_markdown
     from urllib.parse import quote
+
+    from engine.export import to_markdown
     md = to_markdown(s)
     fname = f"forge-{s.id}.md"
     return Response(
@@ -785,7 +802,7 @@ async def chat(sid: str, body: ChatBody, request: Request):
                 try:
                     from engine import checkpoints as fckpt
                     await fckpt.snapshot(sid, ws, f"merge wt-{sub}")
-                except Exception:  # noqa: BLE001 — snapshot lỗi không xoá kết quả merge
+                except Exception:  # noqa: BLE001, S110 — snapshot lỗi không xoá kết quả merge
                     pass
             wt_synthetic = [{"type": "assistant_message",
                              "content": ("✅ " if res["ok"] else "❌ ") + res["message"]}]
@@ -835,7 +852,6 @@ async def chat(sid: str, body: ChatBody, request: Request):
                 loop_synthetic = [{"type": "assistant_message",
                                    "content": f"🔁 Loop BẬT — mỗi `{fsched.fmt_interval(status_l['every'])}` chạy «{task_text}» "
                                               "(tool + audit như chat thường; sống trong tiến trình server, restart là dừng; `/loop off` để tắt)"}]
-        loop_synthetic = loop_synthetic  # noqa: F841 — dùng khối dưới
     # /connectors [add|auth|allow|deny|remove] — quản lý connector MCP, không cần LLM
     connectors_synthetic: list[dict] | None = None
     if text == "/connectors" or text.startswith("/connectors "):
@@ -930,7 +946,7 @@ async def chat(sid: str, body: ChatBody, request: Request):
 
     # @file references → đính kèm nội dung file vào message
     from engine import atfiles
-    text, attached = atfiles.expand_at_refs(text, ws)
+    text, _attached = atfiles.expand_at_refs(text, ws)
 
     # ảnh đính kèm (multimodal) — content parts kiểu OpenAI/OpenRouter
     content = None
@@ -973,9 +989,9 @@ async def chat(sid: str, body: ChatBody, request: Request):
                     if res:
                         yield sse({"type": "auto_commit", "subject": res["subject"],
                                    "files": res["files"]})
-                except Exception as _ace:
+                except Exception as _ace:  # noqa: BLE001 — autocommit lỗi chỉ log, không chết lượt
                     print(f"[autocommit] bỏ qua: {_ace}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — lỗi lượt phải report SSE, không chết stream
             yield sse({"type": "error", "message": f"Lỗi server: {e}"})
         yield sse({"type": "done"})
 
@@ -1007,7 +1023,7 @@ async def batch(body: BatchBody, request: Request):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — lỗi batch phải report SSE
             yield sse({"type": "error", "message": f"Lỗi batch: {e}"})
         yield sse({"type": "done"})
 
@@ -1032,7 +1048,7 @@ async def battle(body: BattleBody, request: Request):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — lỗi battle phải report SSE
             yield sse({"type": "error", "message": f"Lỗi battle: {e}"})
         yield sse({"type": "done"})
 
@@ -1106,7 +1122,7 @@ async def workspace_tree(sid: str):
         items = []
         try:
             entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-        except Exception:
+        except Exception:  # noqa: BLE001 — tree lỗi trả rỗng, không chết request
             return []
         for e in entries:
             if e.name in tools.SKIP_DIRS or e.name.startswith("."):
@@ -1154,7 +1170,7 @@ async def delete_workspace_file(sid: str, path: str):
 
 
 @app.post("/api/workspace/upload")
-async def upload_files(sid: str, files: list[UploadFile] = File(...)):
+async def upload_files(sid: str, files: list[UploadFile] = File(...)):  # noqa: B008 — DI chuẩn FastAPI
     ws = _ws(sid)
     saved, skipped = [], []
     MAX_SIZE = 20 * 1024 * 1024
