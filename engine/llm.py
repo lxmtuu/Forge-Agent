@@ -1,6 +1,6 @@
 """OpenRouter chat-completions client with SSE streaming + OpenAI-style tool calling."""
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -9,6 +9,25 @@ from . import config
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 GOOGLE_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+PROVIDER_PREFIXES = ("openrouter", "google", "custom")
+
+
+def split_model_id(model: str | None = None) -> tuple[str, str]:
+    """Tách provider khỏi model ID; ID legacy giữ semantics của active config."""
+    raw = (model or config.get_model() or config.FALLBACK_MODEL).strip()
+    prefix, sep, bare = raw.partition(":")
+    if sep and prefix.lower() in PROVIDER_PREFIXES and bare:
+        return prefix.lower(), bare
+    return config.get_provider(), raw
+
+
+def qualify_model(model: str | None, provider: str | None = None) -> str:
+    raw = (model or config.get_model() or config.FALLBACK_MODEL).strip()
+    detected, _ = split_model_id(raw)
+    prefix, sep, _ = raw.partition(":")
+    if sep and prefix.lower() in PROVIDER_PREFIXES:
+        return raw
+    return f"{provider or detected}:{raw}"
 
 
 def resolve_model(model: str | None = None) -> str:
@@ -18,24 +37,23 @@ def resolve_model(model: str | None = None) -> str:
     suffix ":online" = shorthand của plugins:[{id:"web"}].
     """
     from fnmatch import fnmatch
-    m = (model or config.get_model() or "").strip()
-    if not m:
-        m = config.FALLBACK_MODEL
+    raw = (model or config.get_model() or config.FALLBACK_MODEL).strip()
+    provider, m = split_model_id(raw)
     cfg = config.load_config()
-    if cfg.get("web_search") and config.get_provider() == "openrouter" and not m.endswith(":online"):
+    if cfg.get("web_search") and provider == "openrouter" and not m.endswith(":online"):
         bypass = cfg.get("web_search_skip") or []
         if not any(fnmatch(m.lower(), str(p).lower()) for p in bypass):
             m = m + ":online"
-    return m
+    return f"{provider}:{m}" if raw.partition(":")[0].lower() in PROVIDER_PREFIXES and raw.partition(":")[1] else m
 
 
 class LLMError(Exception):
     pass
 
 
-def _provider_label() -> str:
+def _provider_label(provider: str | None = None) -> str:
     return {"google": "Google Gemini", "custom": "Custom provider"}.get(
-        config.get_provider(), "OpenRouter")
+        provider or config.get_provider(), "OpenRouter")
 
 
 def _redact_error(text: str, headers: dict) -> str:
@@ -97,24 +115,32 @@ def pick_fallback(model: str | None, err: Exception) -> str | None:
     if not any(mk in msg for mk in _FALLBACK_MARKS):
         return None
     cfg = config.load_config()
+    provider, current = split_model_id(model or config.get_model())
     fallbacks = cfg.get("model_fallbacks")
     if fallbacks is None:
-        fallbacks = ["openrouter/free"] if config.get_provider() == "openrouter" else []
-    cur = (model or "").split(":")[0].strip().lower()
-    for fb in fallbacks:
-        fb = str(fb).strip()
-        if fb and fb.split(":")[0].strip().lower() != cur:
-            return fb
+        fallbacks = ["openrouter/free"] if provider == "openrouter" else []
+    cur = current.removesuffix(":online").strip().lower()
+    prefixed = bool(model and model.partition(":")[0].lower() in PROVIDER_PREFIXES
+                    and model.partition(":")[1])
+    for item in fallbacks:
+        fb = str(item).strip()
+        if not fb:
+            continue
+        fb_provider, fb_model = split_model_id(fb)
+        if ":" not in fb.partition("/")[0]:
+            fb_provider = provider
+        if fb_model.removesuffix(":online").strip().lower() != cur:
+            return qualify_model(fb, fb_provider) if prefixed else fb
     return None
 
 
-def _endpoint(api_key: str | None) -> tuple[str, dict]:
+def _endpoint(api_key: str | None, provider: str | None = None) -> tuple[str, dict]:
     """Chọn endpoint + headers: base URL tuỳ chỉnh (Ollama/LM Studio/vLLM…) hoặc OpenRouter.
 
     - Base URL custom: key TÙY CHỌN (lấy custom_api_key nếu có — Ollama không cần).
     - OpenRouter: bắt buộc key.
     """
-    provider = config.get_provider()
+    provider = provider or config.get_provider()
     if provider == "google":
         key = api_key or config.get_google_api_key()
         if not key:
@@ -163,17 +189,20 @@ async def stream_chat(
       {"type": "usage",     "usage": dict}
     Raises LLMError on HTTP/network failures.
     """
-    url, headers = _endpoint(api_key)
+    provider, _ = split_model_id(model or config.get_model())
+    url, headers = _endpoint(api_key, provider)
+    resolved = resolve_model(model or config.get_model())
+    resolved_provider, resolved_model = split_model_id(resolved)
     payload: dict = {
-        "model": (resolve_model(model or config.get_model()).removeprefix("google/").removesuffix(":online")
-                  if config.get_provider() == "google" else resolve_model(model or config.get_model())),
+        "model": (resolved_model.removeprefix("google/").removesuffix(":online")
+                  if resolved_provider == "google" else resolved_model),
         "messages": messages,
         "stream": True,
         "temperature": temperature,
         "max_tokens": config.get_max_tokens(),
     }
     effort = config.get_reasoning_effort()
-    if effort and config.get_provider() == "openrouter":
+    if effort and resolved_provider == "openrouter":
         # D3 — chỉ gửi qua OpenRouter (server OpenAI-compat lạ có thể từ chối field lạ)
         payload["reasoning"] = {"effort": effort}
     if tools:
@@ -193,9 +222,9 @@ async def stream_chat(
                 if resp.status_code != 200:
                     body = _redact_error(
                         (await resp.aread()).decode("utf-8", "replace")[:2000], headers)
-                    label = _provider_label()
+                    label = _provider_label(provider)
                     if resp.status_code == 401:
-                        if config.get_provider() == "openrouter":
+                        if resolved_provider == "openrouter":
                             raise LLMError(
                                 "OpenRouter 401 — API key KHÔNG HỢP LỆ (\"User not found\" = key sai, "
                                 "thiếu ký tự hoặc đã bị xóa). Hãy tạo key mới tại https://openrouter.ai/keys, "
@@ -206,7 +235,7 @@ async def stream_chat(
                             "Kiểm tra key bằng python scripts/setup_keys.py --check. "
                             f"Chi tiết đã redact: {body[:300]}")
                     if resp.status_code == 402:
-                        if config.get_provider() == "openrouter":
+                        if resolved_provider == "openrouter":
                             raise LLMError(
                                 "OpenRouter 402 — Key hợp lệ nhưng tài khoản KHÔNG ĐỦ CREDIT cho model trả phí này. "
                                 "3 cách xử lý: (1) ⚙ Cài đặt → lọc model 'free' → chọn model miễn phí "
@@ -227,7 +256,7 @@ async def stream_chat(
                     except json.JSONDecodeError:
                         continue
                     if obj.get("error"):
-                        raise LLMError(f"{_provider_label()} error: {_redact_error(str(obj['error']), headers)}")
+                        raise LLMError(f"{_provider_label(provider)} error: {_redact_error(str(obj['error']), headers)}")
                     if obj.get("usage"):
                         usage = obj["usage"]
                     choices = obj.get("choices") or []
@@ -261,7 +290,7 @@ async def stream_chat(
                     if choice.get("finish_reason"):
                         finish_reason = choice["finish_reason"]
         except httpx.HTTPError as e:
-            raise LLMError(f"Lỗi kết nối {_provider_label()}: {e}") from e
+            raise LLMError(f"Lỗi kết nối {_provider_label(provider)}: {e}") from e
 
     if acc_tool_calls:
         tool_calls = [acc_tool_calls[i] for i in sorted(acc_tool_calls)]
@@ -282,9 +311,10 @@ def build_assistant_message(content: str | None, tool_calls: list[dict] | None) 
     return msg
 
 
-async def check_key(api_key: str | None = None) -> dict:
+async def check_key(api_key: str | None = None, provider: str | None = None) -> dict:
     """Verify key theo provider; key chỉ đi trong header, không vào URL/log."""
-    if config.get_provider() == "google":
+    provider = provider or config.get_provider()
+    if provider == "google":
         key = api_key or config.get_google_api_key()
         if not key:
             return {"valid": False, "error": "Chưa có Google API key",

@@ -17,7 +17,7 @@
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **179 test / 29 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — mốc v0.33 **179 test / 29 suite**; v0.34 hiện hành **196 test / 30 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -252,6 +252,27 @@ Phạm vi chốt: một server dùng chung cho nhóm tin cậy, operator giữ k
 **Lỗi thật test bắt trước ship:** checkpoint `snapshot/undo/list` còn nhánh `{**os.environ}` mà scan keyword-only đã bỏ sót; migration ghi legacy key đè key mới; tên mục doctor làm regression v0.10. Đều vá code và chạy lại, không hạ tiêu chí test.
 
 **Kết quả vòng 17: 179/179 test (29 suite) · mypy 0/34 file · bandit Medium+ 0 · Web build PASS · ruff sạch cho `engine/secrets.py`, `scripts/setup_keys.py`, `scripts/test_v033.py`.** Không tuyên bố ruff toàn repo sạch; các lỗi baseline đã ghi nhận ở các vòng trước giữ nguyên phạm vi.
+
+
+## 3k. Vòng 18 (v0.34) — Private team + multi-provider routing
+
+Phạm vi Phase 1: một VPS/process, private team do admin mời, không public registration; provider key vẫn do operator giữ. Owner ACL ở application layer không được tuyên bố là OS sandbox hay isolation chống user độc hại.
+
+| Hạng mục | Kết quả |
+|---|---|
+| Identity | `engine/auth.py` + `server/auth.py`: SQLite users/sessions/Google identities/OAuth flows, email/password + Google OIDC, cookie HttpOnly + CSRF, revoke/disable, giữ last admin, không Basic/shared password |
+| OIDC | PKCE S256/state/nonce, RS256/JWKS, issuer/aud/exp/nonce/email_verified; chỉ `openid email profile`, không Gmail/offline scope |
+| Owner ACL | Session/workspace/fork/export/batch/battle/sub-agent/loop/messages/worktree/audit/usage/inbox/approval/elicitation đều scoped; legacy owner rỗng bị ẩn |
+| Model | Canonical `openrouter:vendor/model`, `google:gemini-...`, `custom:...`; model theo session, provider key chỉ lưu phía server; demo/cost/fallback/background route theo từng request |
+| Member boundary | Không đổi global settings/Team/MCP/connectors/global skills; không nạp MCP credential toàn server; project workspace/skills vẫn dùng được |
+| Web | Auth bootstrap trước data, login/logout/reset user state, Team/Google config, admin-only tabs, model selector theo session, provider của key tách default routing |
+| Vận hành | `setup_auth.py`, `migrate_sessions.py` dry-run/`--apply`, launcher first-run bootstrap + Authlib dependency check, docs HTTPS/migration/rotation |
+| Image | Capability contract tồn tại nhưng adapter chưa có; catalog báo `adapter=false`, request trả 501 |
+
+**Release gate:** 196/196 test (30 suite), v0.34 17/17; HTTP smoke 22/22 và Playwright 14/14 với data/tài khoản giả; mypy server/main.py + engine/ · 38 files; TypeScript + Web build 42 modules; bandit Medium+ 0. Ruff full cho new files và changed-core gate theo phạm vi, không tuyên bố toàn repo sạch.
+
+**Chưa kiểm chứng:** Docker CLI/container smoke và real Google OAuth. Không dùng credential thật trong test; OIDC fake flow/JWKS local không thay thế production consent/callback smoke.
+
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

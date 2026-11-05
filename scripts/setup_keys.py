@@ -1,4 +1,4 @@
-"""Cấu hình provider + release auth trong terminal, không echo API key.
+"""Cấu hình provider + private user auth trong terminal, không echo API key/password.
 
     python scripts/setup_keys.py
     python scripts/setup_keys.py --provider google --release
@@ -41,11 +41,14 @@ def check() -> int:
     print("Model    :", config.get_model())
     print("LLM key  :", config.mask_key(key) if key else "CHƯA CÓ — demo mode")
     print("Release  :", "BẬT (Settings khóa + bắt buộc đăng nhập)" if config.is_release_mode() else "tắt")
-    if config.is_release_mode():
-        print("Release auth:", "đã cấu hình" if secretstore.has_release_auth() else "THIẾU")
+    from engine.auth import AuthStore
+    users = AuthStore()
+    print("Users    :", len(users.list_users()), "· Google login:", "configured" if users.google_config() else "chưa cấu hình")
+    if config.is_release_mode() and not users.has_users():
+        print("User auth : THIẾU — chạy python scripts/setup_auth.py")
     print("Secret file:", secretstore.PROVIDER_FILE)
-    print("Auth file  :", secretstore.AUTH_FILE, "(chỉ hash, không có mật khẩu thô)")
-    return 0 if config.has_llm_credentials() and (not config.is_release_mode() or secretstore.has_release_auth()) else 1
+    print("Auth DB    :", users.db_path, "(password/session chỉ hash)")
+    return 0 if config.has_llm_credentials() and (not config.is_release_mode() or users.has_users()) else 1
 
 
 def run_setup(provider_arg: str | None = None, release_arg: bool = False) -> None:
@@ -82,25 +85,24 @@ def run_setup(provider_arg: str | None = None, release_arg: bool = False) -> Non
         release = answer in {"y", "yes", "1", "true"}
     patch["release_mode"] = release
     if release:
-        if secretstore.AUTH_FILE.is_file():
-            print("Đã có release password — Enter để giữ nguyên, hoặc nhập mật khẩu mới.")
-            password = _secret("Mật khẩu release mới (nhập ẩn): ", allow_empty=True)
-        else:
-            password = _secret("Mật khẩu release ≥16 ký tự (nhập ẩn): ")
-        if password:
-            again = _secret("Nhập lại mật khẩu release: ")
+        from engine.auth import AuthStore
+        users = AuthStore()
+        if not users.has_users():
+            email = _ask("Email admin đầu tiên")
+            password = _secret("Mật khẩu admin ≥16 ký tự (nhập ẩn): ")
+            again = _secret("Nhập lại mật khẩu admin: ")
             if password != again:
                 raise ValueError("Hai lần nhập mật khẩu không khớp")
-            secretstore.write_release_password(password)
-        elif not secretstore.has_release_auth():
-            raise ValueError("Release mode bắt buộc có mật khẩu")
+            users.create_user(email, password, name="Forge admin", role="admin")
+        else:
+            print("User auth đã có tài khoản — giữ nguyên; quản lý thêm bằng scripts/setup_auth.py.")
 
     config.save_config(patch)  # tự tách key khỏi config.json
     print("\n✓ Đã lưu cấu hình an toàn. Key KHÔNG được in ra hay ghi vào source/git/zip.")
     print("  Provider:", provider, "· Model:", patch["model"])
     print("  Secret:", secretstore.PROVIDER_FILE)
     if release:
-        print("  Release: BẬT · đăng nhập username `forge`, password vừa đặt (chỉ lưu hash).")
+        print("  Release: BẬT · đăng nhập bằng tài khoản riêng (không còn shared Basic Auth).")
         print("  Khởi động lại server trước khi mở cho người dùng; bắt buộc HTTPS ở reverse proxy.")
     else:
         print("  Release: tắt (chỉ nên dùng trên máy cá nhân).")

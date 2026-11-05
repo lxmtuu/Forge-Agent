@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
+import type { AuthUser, GoogleAuthConfig } from '../api'
 import type { AuditEntry, ConnectorPreset, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, SkillInfo, UsageTotals } from '../types'
 
 const THEMES = [
@@ -14,6 +15,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 const TABS = [
   { id: 'conn', label: '📡 Kết nối' },
+  { id: 'team', label: '👥 Team' },
   { id: 'safe', label: '🛡 An toàn' },
   { id: 'mcp', label: '🔌 MCP' },
   { id: 'svc', label: '🔗 Dịch vụ' },
@@ -27,11 +29,13 @@ export function SettingsModal(props: {
   settings: Settings
   sid?: string | null
   onClose: () => void
-  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) => Promise<void>
+  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) => Promise<void>
+  isAdmin: boolean
 }) {
   const locked = props.settings.settings_locked ?? false
-  const provider = props.settings.provider ?? 'openrouter'
-  const providerLabel = provider === 'google' ? 'Google / Gemini' : provider === 'custom' ? 'Custom OpenAI-compatible' : 'OpenRouter'
+  const initialProvider = props.settings.provider ?? 'openrouter'
+  const [keyProvider, setKeyProvider] = useState(initialProvider)
+  const providerLabel = keyProvider === 'google' ? 'Google / Gemini' : keyProvider === 'custom' ? 'Custom OpenAI-compatible' : 'OpenRouter'
   const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
@@ -93,7 +97,7 @@ export function SettingsModal(props: {
 
   const doKeyCheck = (k?: string) => {
     setChecking(true)
-    api.keyCheck(k).then(setKeyCheck).catch((e) => setKeyCheck({ valid: false, error: String(e) }))
+    api.keyCheck(k, keyProvider).then(setKeyCheck).catch((e) => setKeyCheck({ valid: false, error: String(e) }))
       .finally(() => setChecking(false))
   }
 
@@ -119,6 +123,37 @@ export function SettingsModal(props: {
       .catch((e) => setSkillErr(String((e as Error).message ?? e)))
   }
 
+  // ── Private team + Google OIDC (admin) ──
+  const [teamUsers, setTeamUsers] = useState<AuthUser[] | null>(null)
+  const [teamEmail, setTeamEmail] = useState('')
+  const [teamName, setTeamName] = useState('')
+  const [teamPassword, setTeamPassword] = useState('')
+  const [teamRole, setTeamRole] = useState('member')
+  const [teamBusy, setTeamBusy] = useState(false)
+  const [teamErr, setTeamErr] = useState<string | null>(null)
+  const [googleCfg, setGoogleCfg] = useState<GoogleAuthConfig | null>(null)
+  const [googleSecret, setGoogleSecret] = useState('')
+  const loadTeam = () => {
+    if (!props.isAdmin) return
+    api.listUsers().then(setTeamUsers).catch((e) => setTeamErr(String((e as Error).message ?? e)))
+    api.googleConfig().then(setGoogleCfg).catch(() => {})
+  }
+  const invite = async () => {
+    setTeamBusy(true); setTeamErr(null)
+    try {
+      await api.inviteUser(teamEmail.trim(), teamPassword || undefined, teamName.trim(), teamRole)
+      setTeamEmail(''); setTeamName(''); setTeamPassword(''); loadTeam()
+    } catch (e) { setTeamErr((e as Error).message) } finally { setTeamBusy(false) }
+  }
+  const saveGoogle = async () => {
+    if (!googleCfg) return
+    setTeamBusy(true); setTeamErr(null)
+    try {
+      setGoogleCfg(await api.saveGoogleConfig(googleCfg.client_id, googleSecret, googleCfg.public_url))
+      setGoogleSecret('')
+    } catch (e) { setTeamErr((e as Error).message) } finally { setTeamBusy(false) }
+  }
+
   // ── Audit log tab ──
   const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null)
   const [auditFilter, setAuditFilter] = useState('')
@@ -129,6 +164,7 @@ export function SettingsModal(props: {
     if (tab === 'audit' && auditRows === null) loadAudit()
     if (tab === 'svc' && svcPresets === null) loadSvc()
     if (tab === 'skl') loadSkills()
+    if (tab === 'team' && teamUsers === null) loadTeam()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
@@ -151,7 +187,7 @@ export function SettingsModal(props: {
   }
 
   useEffect(() => {
-    reloadMcp()
+    if (props.isAdmin) reloadMcp()
     api.models().then((d) => setModels(d.models)).catch(() => {})
     api.usage().then(setTotals).catch(() => {})
   }, [])
@@ -180,6 +216,7 @@ export function SettingsModal(props: {
         allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
         deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
         custom_base_url: baseUrl.trim(),
+        provider: keyProvider,
         reasoning_effort: effort,
         auto_commit: autoCommit,
         ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
@@ -207,7 +244,7 @@ export function SettingsModal(props: {
 
         {totals && (
           <div className="usage-line">
-            📊 Toàn bộ hệ thống: <b>{totals.sessions}</b> phiên ·{' '}
+            📊 Dữ liệu của bạn: <b>{totals.sessions}</b> phiên ·{' '}
             <b>{(totals.total_tokens ?? 0).toLocaleString('vi-VN')}</b> tokens
             (↑{totals.prompt_tokens} ↓{totals.completion_tokens})
             {totals.cost > 0 && <> · ~${totals.cost.toFixed(4)}</>}
@@ -215,7 +252,7 @@ export function SettingsModal(props: {
         )}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.map((t) => (
+          {TABS.filter((t) => props.isAdmin || !['team', 'mcp', 'svc', 'sys'].includes(t.id)).map((t) => (
             <button key={t.id} role="tab" aria-selected={tab === t.id}
               className={`settings-tab ${tab === t.id ? 'on' : ''}`}
               onClick={() => setTab(t.id)}>{t.label}</button>
@@ -231,7 +268,7 @@ export function SettingsModal(props: {
                 Người dùng không thể đọc hoặc thay API key từ trang này.
               </div>
             )}
-            <div className="field">
+            {props.isAdmin && <div className="field">
               <span>Base URL tuỳ chỉnh <em>(model cục bộ — Ollama/LM Studio/vLLM; để trống = OpenRouter)</em></span>
               <input
                 placeholder="vd: http://localhost:11434/v1"
@@ -239,7 +276,7 @@ export function SettingsModal(props: {
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
               <small>Dán URL rồi đặt Model thành tên cục bộ (vd <code>llama3.2</code>, <code>qwen2.5-coder</code>). API key tuỳ chọn — điền ở ô key bên trên nếu server cần.</small>
-            </div>
+            </div>}
             <div className="field">
               <span>Effort suy luận <em>(reasoning budget — chỉ áp dụng qua OpenRouter)</em></span>
               <select value={effort} onChange={(e) => setEffort(e.target.value)}>
@@ -249,6 +286,15 @@ export function SettingsModal(props: {
                 <option value="high">High — suy luận sâu, chậm hơn</option>
               </select>
             </div>
+            {props.isAdmin && <div className="field">
+              <span>Provider của API key <em>(không đổi default routing)</em></span>
+              <select value={keyProvider} onChange={(e) => setKeyProvider(e.target.value as typeof keyProvider)} disabled={locked}>
+                <option value="openrouter">OpenRouter</option>
+                <option value="google">Google Gemini direct</option>
+                <option value="custom">Custom OpenAI-compatible</option>
+              </select>
+              <small>Key được ghi vào secret store phía server cho provider đã chọn. Model theo session vẫn có thể dùng provider khác.</small>
+            </div>}
             {props.settings.web_key_input === false ? (
               <div className="field release-key-status">
                 <span>🔐 {providerLabel} credentials</span>
@@ -261,18 +307,18 @@ export function SettingsModal(props: {
               <label className="field">
                 <span>{providerLabel} API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
                 <div className="key-row">
-                  <input type="password" placeholder={provider === 'google' ? 'AIza...' : provider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
+                  <input type="password" placeholder={keyProvider === 'google' ? 'AIza...' : keyProvider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
                     onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
-                  {provider !== 'custom' && (
+                  {keyProvider !== 'custom' && (
                     <button className="btn-ghost btn-sm" disabled={checking}
                       onClick={() => doKeyCheck(key || undefined)}>
                       {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
                     </button>
                   )}
                 </div>
-                {provider === 'google' ? (
+                {keyProvider === 'google' ? (
                   <small>Tạo key tại <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio</a>. Free Tier có thể dùng dữ liệu để cải thiện sản phẩm — không gửi code bí mật.</small>
-                ) : provider === 'custom' ? (
+                ) : keyProvider === 'custom' ? (
                   <small>Key cho server OpenAI-compatible hiện tại; để trống nếu không đổi. Ollama thường không cần key.</small>
                 ) : (
                   <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy, để trống nếu không đổi.</small>
@@ -294,7 +340,7 @@ export function SettingsModal(props: {
             )}
 
             <div className="field">
-              <span>Model <em>({models.length > 0 ? `${models.length} model đồng bộ từ OpenRouter` : 'đang đồng bộ…'})</em></span>
+              <span>Model <em>({models.length > 0 ? `${models.length} model từ registry nhiều provider` : 'đang đồng bộ…'})</em></span>
               <input list="models" value={model} onChange={(e) => setModel(e.target.value)} />
               <datalist id="models">
                 {(models.length ? models.map((m) => m.id) : props.settings.default_models).map((m) => (
@@ -322,7 +368,7 @@ export function SettingsModal(props: {
                   </button>
                 ))}
               </div>
-              <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
+              <small>💡 Tài khoản chưa nạp credit → dùng model 🆓 (vd <code>openrouter:openrouter/free</code>). Model trả phí (Claude/GPT) cần credit tại openrouter.ai/credits.</small>
             </div>
 
             <label className="field">
@@ -486,6 +532,44 @@ export function SettingsModal(props: {
             </div>
           </>
         )}
+        {tab === 'team' && props.isAdmin && (
+          <>
+            <div className="field">
+              <span>👥 Private team <em>(không có public registration)</em></span>
+              <small>User Google-only: để password trống; họ đăng nhập bằng Google có cùng email đã được mời. Disable sẽ revoke session ngay.</small>
+              <div className="perm-grid">
+                <input type="email" placeholder="email@team.com" value={teamEmail} onChange={(e) => setTeamEmail(e.target.value)} />
+                <input placeholder="Tên hiển thị" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+              </div>
+              <div className="perm-grid">
+                <input type="password" placeholder="Password ≥16 ký tự (tuỳ chọn)" value={teamPassword} onChange={(e) => setTeamPassword(e.target.value)} />
+                <select value={teamRole} onChange={(e) => setTeamRole(e.target.value)}><option value="member">Member</option><option value="admin">Admin</option></select>
+              </div>
+              <button className="btn-primary btn-sm" disabled={teamBusy || !teamEmail.trim()} onClick={invite}>＋ Tạo / mời user</button>
+            </div>
+            {teamErr && <div className="key-result bad">{teamErr}</div>}
+            <div className="audit-list">
+              {(teamUsers ?? []).map((u) => (
+                <div className="audit-row" key={u.id}>
+                  <span style={{ flex: 1 }}><b>{u.name || u.email}</b><br /><small>{u.email} · {u.role}{u.google_linked ? ' · Google' : ''}{u.password_set ? ' · password' : ''}</small></span>
+                  <span className={`audit-chip ${u.enabled ? 'st-ok' : 'st-bad'}`}>{u.enabled ? 'active' : 'disabled'}</span>
+                  <button className="btn-ghost btn-sm" onClick={() => api.setUserEnabled(u.id, !u.enabled).then(loadTeam).catch((e) => setTeamErr((e as Error).message))}>
+                    {u.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="field" style={{ marginTop: 18 }}>
+              <span>Google OpenID Connect <em>(chỉ login, KHÔNG xin Gmail scope)</em></span>
+              <small>Redirect URI: <code>{googleCfg?.public_url ? `${googleCfg.public_url}/api/auth/google/callback` : 'https://forge.example/api/auth/google/callback'}</code>. Public URL production phải HTTPS.</small>
+              <input placeholder="Google OAuth client ID" value={googleCfg?.client_id ?? ''} onChange={(e) => setGoogleCfg((old) => old ? { ...old, client_id: e.target.value } : { configured: false, client_id: e.target.value, public_url: window.location.origin, client_secret_set: false })} />
+              <input type="password" placeholder={googleCfg?.client_secret_set ? 'Client secret (để trống = giữ nguyên)' : 'Google OAuth client secret'} value={googleSecret} onChange={(e) => setGoogleSecret(e.target.value)} />
+              <input placeholder="https://forge.example" value={googleCfg?.public_url ?? ''} onChange={(e) => setGoogleCfg((old) => old ? { ...old, public_url: e.target.value } : { configured: false, client_id: '', public_url: e.target.value, client_secret_set: false })} />
+              <button className="btn-primary btn-sm" disabled={teamBusy || !googleCfg?.client_id || !googleCfg.public_url} onClick={saveGoogle}>Lưu Google login</button>
+            </div>
+          </>
+        )}
+
         {tab === 'skl' && (
           <>
             <div className="field">
@@ -631,7 +715,7 @@ export function SettingsModal(props: {
             <div className="field">
               <span>Bảo mật & dữ liệu</span>
               <small style={{ lineHeight: 1.7 }}>
-                🔐 Provider key lưu trong <code>data/provider-secrets.json</code> trên server (chmod 600 khi hỗ trợ), không đưa vào git/zip. Release password chỉ lưu hash.<br />
+                🔐 Provider key lưu trong <code>data/provider-secrets.json</code> trên server (chmod 600 khi hỗ trợ), không đưa vào git/zip. User password và session token chỉ lưu hash.<br />
                 🧩 Shell/hook/subprocess của agent bị loại key LLM/admin khỏi environment.<br />
                 🛡 Guarded mode chặn lệnh nguy hiểm (<code>sudo</code>, <code>rm -rf /</code>, pipe-từ-mạng…).<br />
                 💾 Checkpoint: mọi thay đổi file của agent đều có bản git nội bộ — nút ↩ Undo hoàn tác được.

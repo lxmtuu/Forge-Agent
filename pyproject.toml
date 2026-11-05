@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-agent"
-version = "0.33.0"
+version = "0.34.0"
 description = "⚡ Forge — self-hosted AI coding agent (TUI + Web + CLI, Claude Code / Codex style)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "httpx>=0.27",
+  "authlib>=1.6,<2",
   "rich>=13.7",
   "pydantic>=2.7",
   "python-multipart>=0.0.9",

@@ -1,74 +1,103 @@
-# 🔐 SECURITY — vận hành Forge Agent cho một server dùng chung
+# 🔐 SECURITY — Forge Agent v0.34 private team
 
-> Áp dụng từ **v0.33.0**. Mô hình mục tiêu: **một server, operator giữ provider key, nhóm tin cậy dùng chung**. Đây không phải hệ thống multi-tenant cô lập: người có tài khoản release có thể xem session/workspace của nhau và yêu cầu agent chạy tool theo policy của server.
+> Mô hình mục tiêu: **một VPS/process, nhiều tài khoản được admin mời, provider key do operator giữ**. Session/workspace có owner ACL ở application layer. Đây vẫn là môi trường cho nhóm tin cậy, **không phải sandbox OS hoặc multi-tenant isolation chống user độc hại**.
 
-## 1. Chuẩn bị key trong terminal — trước khi phát hành
+## 1. Cài provider key và tạo admin
 
-Không dán key vào chat, source, `Dockerfile`, `docker-compose.yml`, Web bundle hay ZIP. Chạy trong terminal tương tác trên server:
+Không dán key/password vào source, chat, Dockerfile, compose file, Web bundle hay ZIP. Chạy trong terminal tương tác:
 
 ```bash
-# OpenRouter
+# Nhập provider key ẩn; nếu chưa có user, lệnh này cũng tạo admin đầu tiên.
 python scripts/setup_keys.py --provider openrouter --release
+# Hoặc: --provider google / --provider custom
 
-# Hoặc Google Gemini (OpenAI-compatible endpoint)
-python scripts/setup_keys.py --provider google --release
+# Tạo thêm admin/member; password nhập ẩn, không có --password.
+python scripts/setup_auth.py --email admin@example.com --role admin
+python scripts/setup_auth.py --email member@example.com --role member
 
-# Hoặc server OpenAI-compatible/Ollama
-python scripts/setup_keys.py --provider custom --release
-
-# Chỉ kiểm tra trạng thái (không sửa, không in full key)
+# Kiểm tra trạng thái, không in secret.
 python scripts/setup_keys.py --check
+python scripts/setup_auth.py --check
 ```
 
-Cách tương đương qua launcher:
+- Password tối thiểu **16 ký tự**, lưu salt + PBKDF2-HMAC-SHA256 (240.000 vòng), không lưu password thô.
+- User đầu tiên phải là admin. Không có public registration; user sau do admin tạo/mời trong **⚙ → Team** hoặc CLI.
+- `FORGE_DATA_DIR` nên nằm ngoài source, ví dụ `/var/lib/forge`, và phải thuộc đúng OS user chạy server.
 
-```bash
-python scripts/launch.py --setup --provider google --release
-python scripts/launch.py --release --no-browser
-```
-
-- Key/password được nhập bằng `getpass` (không echo); setup từ chối stdin không tương tác.
-- Không có tùy chọn `--key`, tránh key nằm trong shell history/process list.
-- Release password: username cố định **`forge`**, mật khẩu tối thiểu **16 ký tự**; chỉ salt + PBKDF2-HMAC-SHA256 hash (240.000 vòng) được lưu.
-- Operator nên dùng `FORGE_DATA_DIR` ngoài cây source trên production. Ví dụ: `/var/lib/forge`.
-
-### Nơi lưu runtime
+### Runtime data
 
 ```text
 $FORGE_DATA_DIR/
-├── config.json             # provider/model/policy, KHÔNG chứa provider key
-├── provider-secrets.json   # openrouter/google/custom key, chmod 600 khi hỗ trợ
-├── release-auth.json       # username + salt + PBKDF2 hash, KHÔNG password thô
-├── sessions/
-└── workspaces/
+├── config.json               # model/policy; KHÔNG chứa provider key
+├── provider-secrets.json     # OpenRouter/Google/custom key, chmod 600
+├── auth.db                   # user, password/session hash, Google identity/OAuth config
+├── secrets.json              # connector token nếu dùng
+├── sessions/                 # mỗi session có owner_id
+├── workspaces/
+└── session-migration-backup/ # chỉ xuất hiện sau migration có --apply
 ```
 
-`data/` đã bị gitignore và bị loại khỏi artifact phát hành. Key được đọc theo thứ tự **environment → provider-secrets.json → legacy config**; lần lưu config kế tiếp migrate legacy key ra secret file. Environment vẫn là lựa chọn cho secret manager của nền tảng, nhưng không phải mặc định an toàn tuyệt đối (process dump/log của hạ tầng có thể ghi env).
+Thư mục data được hạn chế quyền best-effort; `auth.db` chứa Google client secret nếu bật OIDC nên phải được bảo vệ như provider key. `data/` bị gitignore và loại khỏi release ZIP.
 
-## 2. Release mode làm gì
+## 2. Browser auth và owner ACL
 
-Khi `release_mode=true` hoặc `FORGE_RELEASE_MODE=1`:
+- Login bằng email/password hoặc Google OIDC. Không còn shared Basic/Bearer password.
+- Session cookie `forge_session`: **HttpOnly + SameSite=Lax**, hết hạn sau 8 giờ; DB chỉ lưu SHA-256 của token. Bật `Secure` qua HTTPS public URL hoặc `FORGE_COOKIE_SECURE=1`.
+- Cookie CSRF riêng không HttpOnly để JS same-origin đọc; mọi mutation và SSE POST cần header `X-CSRF-Token` khớp cookie. Cross-site request bị từ chối.
+- Logout revoke token; disable user revoke toàn bộ session của user đó. Đổi password cũng revoke các phiên đăng nhập cũ.
+- Login shell/static và `/api/health` là public; API chứa dữ liệu user yêu cầu đăng nhập. Health không trả model, endpoint hay secret.
 
-- Toàn bộ Web/API/static yêu cầu **Basic auth** (`forge` + release password) hoặc **Bearer** (password/`FORGE_ADMIN_TOKEN`).
-- Thiếu cấu hình auth → **503 fail-closed**; thiếu/sai credentials → **401**.
-- `POST /api/settings` và `/api/keycheck` → **403**; Web hiển thị trạng thái mask và hướng dẫn terminal, nút Lưu bị khóa.
-- CORS mặc định **same-origin**; không còn wildcard. Đặt `FORGE_CORS_ORIGINS=*` ở release làm server từ chối khởi động.
-- Request LLM (`chat`, `compact`, `init`, `loop`, `batch`, `battle`) bị giới hạn mặc định **20 request/phút/user+IP**; đổi bằng `FORGE_RATE_LIMIT_PER_MIN` (1–1000). Response giới hạn là **429 + Retry-After**.
-- Có rate-limit đăng nhập sai theo IP. Cache API `no-store`, thêm `nosniff` và `Referrer-Policy: no-referrer`.
+| Quyền | Admin | Member |
+|---|:---:|:---:|
+| Session/workspace, fork/export/batch/battle/loop của chính mình | ✓ | ✓ |
+| Chọn canonical model theo session | ✓ | ✓ |
+| Audit/usage/inbox/approval/elicitation của chính mình | ✓ | ✓ |
+| Đổi default model/provider/settings toàn server | ✓ | — |
+| Quản lý Team, Google login, MCP/connectors toàn server | ✓ | — |
+| Mở arbitrary host workspace | ✓ | — |
+| Dùng MCP tools với credential toàn server | ✓ | — |
+| Cài/xoá/sửa global skill | ✓ | — |
+| Tạo/trust/toggle project skill trong workspace mình | ✓ | ✓ |
 
-Rate limit hiện là **in-process**. Nếu chạy nhiều worker/instance, cần giới hạn tổng ở reverse proxy/API gateway; không dùng số liệu per-process như quota toàn cụm.
+Owner trả về `404` khi truy cập session của user khác để không xác nhận sự tồn tại. ACL không thay thế OS sandbox: agent/shell vẫn chạy dưới cùng OS account theo policy server, vì vậy không cấp account cho người không tin cậy.
 
-### CORS có chủ đích (chỉ khi thật sự cần)
+## 3. Model và provider boundary
+
+Canonical model ID:
+
+```text
+openrouter:vendor/model       # qua OpenRouter
+google:gemini-...             # Gemini direct
+custom:model                  # OpenAI-compatible endpoint do admin cấu hình
+```
+
+`openrouter:google/...` là model vendor Google **qua OpenRouter**, không phải Gemini direct. Provider key chỉ nằm trên server; client không gửi endpoint hay nhận secret. Demo/cost/fallback/sub-agent/batch/battle route theo provider của từng model, không theo active provider toàn cục.
+
+`image_generation` mới là capability contract. **Chưa có image-generation adapter**: catalog trả rỗng với `image_generation_adapter=false`, chat yêu cầu tạo ảnh trả 501. Không coi vision (hiểu ảnh) là image generation.
+
+## 4. Google OIDC — chỉ login, không Gmail
+
+Cấu hình trong **⚙ → Team → Google OpenID Connect**, hoặc:
 
 ```bash
-FORGE_CORS_ORIGINS=https://forge.example.com
+python scripts/setup_auth.py --google \
+  --client-id '<oauth-client-id>' \
+  --public-url 'https://forge.example.com'
 ```
 
-Chỉ liệt kê origin HTTPS chính xác, phân tách nhiều origin bằng dấu phẩy. Không dùng `*`; khởi động lại server sau khi đổi.
+Client secret nhập ẩn. Tạo **Web application** trong Google Cloud và đăng ký chính xác:
 
-## 3. HTTPS và reverse proxy là bắt buộc khi qua mạng
+```text
+https://forge.example.com/api/auth/google/callback
+```
 
-Basic/Bearer credentials chỉ được bảo vệ khỏi nghe lén khi đi qua **HTTPS**. Chạy uvicorn sau Caddy/Nginx/SSO gateway và chỉ bind loopback khi proxy cùng máy. Ví dụ Caddy:
+Flow dùng Authorization Code + PKCE S256 + state + nonce, verify ID token RS256 bằng Google JWKS, issuer/audience/expiry/nonce và `email_verified`. OAuth transaction hết hạn sau 10 phút và chỉ dùng một lần. Email phải được mời trước; user Google-only không cần password.
+
+Scope chỉ `openid email profile`. **Không xin offline access hoặc Gmail scope.** Google login không tạo quyền Gmail/Drive; connector OAuth là hệ thống riêng và chỉ admin quản lý.
+
+## 5. HTTPS, CORS và rate limit
+
+Production qua mạng bắt buộc HTTPS reverse proxy:
 
 ```caddy
 forge.example.com {
@@ -76,43 +105,49 @@ forge.example.com {
 }
 ```
 
-Nginx cần giữ SSE: `proxy_buffering off; proxy_read_timeout 600;`. Không mở trực tiếp port uvicorn ra Internet. Xem **DEPLOY.md** cho systemd/Docker đầy đủ.
+- Đặt `FORGE_PUBLIC_URL=https://forge.example.com` hoặc `FORGE_COOKIE_SECURE=1`.
+- Không expose uvicorn trực tiếp. Nginx cần `proxy_buffering off` và timeout phù hợp cho SSE.
+- Release mặc định same-origin. Chỉ thêm origin HTTPS chính xác vào `FORGE_CORS_ORIGINS` khi thật sự cần; `*` làm server từ chối khởi động ở release.
+- LLM endpoints (`chat`, `compact`, `init`, `loop`, `batch`, `battle`) mặc định giới hạn **20 request/phút/user+IP**, trả `429 + Retry-After`. Login cũng có giới hạn brute-force theo IP+email.
+- Rate limit là in-process cho **một VPS/process**. Nhiều worker/instance cần quota tổng ở proxy/gateway. Đây không phải billing quota; admin vẫn phải theo dõi chi phí provider.
 
-## 4. Boundary của provider key và subprocess
+## 6. Subprocess và connector secrets
 
-- Shell, hook, background task, git/checkpoint/worktree, review, LSP và skill manager dùng environment đã loại `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `FORGE_CUSTOM_API_KEY`, `FORGE_ADMIN_TOKEN` và các LLM credential liên quan.
-- MCP stdio mặc định **không** nhận các key đó. Chỉ secret được khai báo explicit trong `env` của từng MCP server mới được truyền; opt-in một key không mở toàn bộ secret khác.
-- Không cấp provider key cho MCP nếu MCP không thật sự cần. Nếu khai báo secret trong `data/mcp.json`, file đó cũng phải được coi là secret store, giữ ngoài git/ZIP và hạn chế quyền đọc.
-- Provider error body được redact Authorization/API key trước khi đưa vào SSE/log. Health chỉ trả bản mask, không trả full secret; Web không lưu credential vào browser storage.
+Shell, hook, background task, git/checkpoint/worktree, review, LSP và skill manager dùng sanitized environment, loại provider/admin credential. Provider error được redact trước khi trả SSE/log.
 
-Các secret khác như `DATABASE_URL`/connector token có thể là opt-in riêng cho connector. Chỉ cài MCP/hook đáng tin: chúng là code chạy trên server.
+MCP stdio chỉ nhận secret khai báo explicit trong `env` của server đó. Vì MCP/connectors đang dùng credential toàn server, **member không nạp MCP tools và không quản lý connector** trong Phase 1. Không cài MCP/hook không tin cậy: chúng là code chạy trên server.
 
-## 5. Checklist trước khi mở cho nhóm
+## 7. Nâng cấp từ v0.33 — migration tường minh
 
-1. `python scripts/setup_keys.py --provider <openrouter|google|custom> --release` thành công.
-2. `python scripts/setup_keys.py --check` exit 0, chỉ hiện key mask.
-3. Chạy một process/worker trước khi cần scale; bật rate-limit tổng ở proxy nếu scale.
-4. HTTPS hoạt động; port backend chỉ listen loopback/private network.
-5. Không có `FORGE_CORS_ORIGINS=*`; ưu tiên không cấu hình CORS.
-6. Giữ `approval_mode=guarded`; cân nhắc `docker_sandbox` và container riêng.
-7. `git status --ignored` / kiểm tra ZIP không có `data/`, `provider-secrets.json`, `release-auth.json`, `.env`.
-8. Đăng nhập thử, xác nhận Settings khóa; thử request không auth phải 401 (hoặc 503 nếu chưa setup auth).
-9. Theo dõi chi phí/quota tại provider. Google Free Tier có thể dùng dữ liệu để cải thiện sản phẩm — không gửi code bí mật lên Free Tier.
-10. Người dùng phải thuộc nhóm tin cậy; không coi đây là isolation giữa khách hàng lạ.
+Session cũ có `owner_id=""` bị ẩn, **không tự gán cho người đăng nhập đầu tiên**. Kiểm tra trước:
 
-## 6. Đổi/thu hồi key hoặc password
+```bash
+python scripts/migrate_sessions.py --email admin@example.com
+```
 
-1. Dừng traffic/server.
-2. Chạy lại `python scripts/setup_keys.py --provider <provider> --release`; nhập key mới và/hoặc password mới.
-3. Khởi động lại và chạy `--check`.
-4. Thu hồi key cũ tại OpenRouter/Google. Xóa bản secret cũ khỏi backup không cần thiết theo policy của operator.
+Đây là dry-run. Sau khi xác nhận đúng user:
 
-Không xóa `release-auth.json` khi server đang public: lần request kế tiếp sẽ fail-closed 503, nhưng đây là khóa khẩn cấp chứ không phải quy trình rotation bình thường.
+```bash
+python scripts/migrate_sessions.py --email admin@example.com --apply
+```
 
-## 7. Regression test
+Lệnh chỉ gán session owner rỗng, không đụng session đã thuộc user khác, ghi atomic và tạo backup trong data. Không in nội dung hội thoại.
+
+## 8. Rotation và thu hồi
+
+1. Disable user trong Team để revoke browser sessions ngay; giữ lại dữ liệu theo retention policy của operator.
+2. Đổi provider key bằng `setup_keys.py`; thu hồi key cũ tại provider.
+3. Đổi Google client secret trong Team hoặc `setup_auth.py --google`; không để secret cũ trong log/backup không cần thiết.
+4. User đổi password qua `POST /api/auth/password`; các browser session cũ bị revoke. Không dùng shared password.
+5. Kiểm tra `--check`, HTTP smoke và quyền sau mỗi rotation/update.
+
+## 9. Regression và giới hạn kiểm chứng
 
 ```bash
 python scripts/test_v033.py
+python scripts/test_v034.py
 ```
 
-Suite dùng fake key và `FORGE_DATA_DIR` tạm; không gọi provider thật. Phạm vi: secret migration, PBKDF2, Google/OpenRouter/custom, shell/hook/background/git/MCP env, release auth, Settings lock, CORS/preflight, rate-limit, terminal setup, API/Web redaction.
+Suite dùng fake credential và data tạm. v0.34 kiểm AuthStore, owner ACL, CSRF/cookie, Team, model routing, background owner, OIDC flow giả và RS256/JWKS local, migration, member MCP/skill isolation.
+
+**Kiểm thử OIDC giả không thay thế Google OAuth thật trên production.** Sau khi cấu hình client thật, admin cần smoke: start → Google consent → callback → logout → login lại, và kiểm tra uninvited/disabled account. Không ghi client secret/token vào test log.

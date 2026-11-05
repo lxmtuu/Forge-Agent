@@ -2,9 +2,8 @@
 
 Run:  uvicorn server.main:app --host 0.0.0.0 --port 8000
 """
+# ruff: noqa: B008 — FastAPI Depends trong default là DI idiom của toàn bộ routes.
 import asyncio
-import base64
-import binascii
 import io
 import json
 import os
@@ -12,9 +11,10 @@ import sys
 import time
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,13 +24,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine import config, guard, llm, tools
-from engine import secrets as secretstore
 from engine.agent import Agent, run_batch, run_battle, send_demo
+from engine.auth import CSRF_COOKIE, User, csrf_valid
 from engine.mcp import load_servers, save_servers
 from engine.mcp import manager as mcp_manager
-from engine.session import SessionStore
+from engine.models import CAPABILITIES, ModelCapabilityError
+from engine.models import registry as model_registry
+from engine.models import router as model_router
+from engine.session import ScopedSessionStore, SessionStore
+from server import auth as auth_web
+from server.auth import require_admin, require_user
 
-app = FastAPI(title="Forge Agent", version="0.33.0")
+app = FastAPI(title="Forge Agent", version="0.34.0")
+app.include_router(auth_web.router)
 # Development giữ CORS mở cho tooling; release mặc định same-origin. Muốn mở
 # cross-origin phải liệt kê rõ FORGE_CORS_ORIGINS=https://app.example,...
 _cors = [x.strip() for x in os.environ.get("FORGE_CORS_ORIGINS", "").split(",") if x.strip()]
@@ -39,8 +45,13 @@ if config.is_release_mode() and "*" in _cors:
 if _cors or not config.is_release_mode():
     app.add_middleware(
         CORSMiddleware, allow_origins=_cors or ["*"], allow_methods=["*"], allow_headers=["*"],
+        allow_credentials=bool(_cors),
     )
 store = SessionStore()
+
+
+def _db(user: User) -> ScopedSessionStore:
+    return ScopedSessionStore(store, user.id, allow_mcp=user.role == "admin")
 
 STATIC_DIR = ROOT / "server" / "static"
 
@@ -52,6 +63,7 @@ class ChatBody(BaseModel):
     text: str
     model: str | None = None
     mode: str = "agent"  # direct | agent | plan | architect
+    capability: str = "code"  # code | reasoning | vision | design | tools
     images: list[str] = []  # data URI image/png|jpeg|webp|gif (tối đa 4)
     rerun: bool = False  # true: chạy lại từ tin user đã sửa (qua /rerun) — không append tin mới
 
@@ -70,6 +82,7 @@ class OpenWorkspaceBody(BaseModel):
 
 
 class SettingsBody(BaseModel):
+    provider: str | None = None
     api_key: str | None = None
     model: str | None = None
     approval_mode: str | None = None
@@ -108,33 +121,13 @@ def sse(ev: dict) -> str:
     return f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
 
-_MODELS_CACHE = {"ts": 0.0, "data": []}
+_MODELS_CACHE: dict[str, Any] = {"ts": 0.0, "data": []}
 _LLM_RATE: dict[str, list[float]] = {}
-_AUTH_RATE: dict[str, list[float]] = {}
-
-
-def _release_identity(request: Request) -> tuple[str | None, str]:
-    """Xác thực Basic (browser) hoặc Bearer (API); trả (username, scheme)."""
-    header = request.headers.get("authorization", "")
-    scheme, _, credential = header.partition(" ")
-    try:
-        if scheme.lower() == "basic":
-            decoded = base64.b64decode(credential.strip(), validate=True).decode("utf-8")
-            username, password = decoded.split(":", 1)
-        elif scheme.lower() == "bearer":
-            username, password = "forge", credential.strip()
-        else:
-            return None, ""
-    except (ValueError, UnicodeError, binascii.Error):
-        return None, ""
-    if secretstore.verify_release_password(username, password):
-        return username, scheme.lower()
-    return None, scheme.lower()
 
 
 def _rate_retry(identity: str, limit: int,
                 bucket: dict[str, list[float]] | None = None) -> int:
-    """Sliding window 60s, in-process. Trả 0 nếu được phép, hoặc số giây chờ."""
+    """Sliding window 60s theo user; in-process cho deployment một VPS."""
     now = time.monotonic()
     rates = _LLM_RATE if bucket is None else bucket
     rows = rates.setdefault(identity, [])
@@ -143,7 +136,7 @@ def _rate_retry(identity: str, limit: int,
     if len(rows) >= limit:
         return max(1, int(60.0 - (now - rows[0])) + 1)
     rows.append(now)
-    if len(rates) > 1000:  # chống phình bộ nhớ nếu nhiều IP giả
+    if len(rates) > 1000:
         for key in list(rates):
             if not rates[key] or rates[key][-1] <= cutoff:
                 rates.pop(key, None)
@@ -158,39 +151,32 @@ def _security_error(status: int, message: str, headers: dict | None = None) -> J
 
 @app.middleware("http")
 async def release_security(request: Request, call_next):
-    # Browser preflight không gửi Authorization; CORS middleware sẽ quyết định origin.
-    # Release mặc định không có CORS middleware nên request lạ vẫn không được quyền gì thêm.
-    if config.is_release_mode() and request.method != "OPTIONS":
-        if not secretstore.has_release_auth():
-            return _security_error(503, "Release chưa có mật khẩu — chạy python scripts/setup_keys.py")
-        host = request.client.host if request.client else "unknown"
-        if request.headers.get("authorization"):
-            retry = _rate_retry(f"auth|{host}", 10, _AUTH_RATE)
-            if retry:
-                return _security_error(429, "Quá nhiều lần đăng nhập — thử lại sau",
-                                       {"Retry-After": str(retry)})
-        username, _ = _release_identity(request)
-        if username is None:
-            return _security_error(
-                401, "Cần đăng nhập Forge (username: forge)",
-                {"WWW-Authenticate": 'Basic realm="Forge", charset="UTF-8"'},
-            )
-        _AUTH_RATE.pop(f"auth|{host}", None)
-        path = request.url.path
+    path = request.url.path
+    if path.startswith("/api/"):
+        user = auth_web.optional_user(request)
+        if (request.method in {"POST", "PUT", "PATCH", "DELETE"}
+                and not csrf_valid(request.headers.get("x-csrf-token"),
+                                   request.cookies.get(CSRF_COOKIE),
+                                   request.headers.get("sec-fetch-site"))):
+            return _security_error(403, "CSRF token không hợp lệ")
+        public = path == "/api/health" or path.startswith("/api/auth/")
+        if not public and user is None and request.method != "OPTIONS":
+            return _security_error(401, "Cần đăng nhập")
         expensive = (
             path in {"/api/battle", "/api/batch"}
             or (path.startswith("/api/sessions/")
                 and path.rsplit("/", 1)[-1] in {"chat", "compact", "init", "loop"})
         )
-        if request.method == "POST" and expensive:
-            retry = _rate_retry(f"{username}|{host}", config.get_rate_limit_per_min())
+        if user and request.method == "POST" and expensive:
+            host = request.client.host if request.client else "unknown"
+            retry = _rate_retry(f"{user.id}|{host}", config.get_rate_limit_per_min())
             if retry:
                 return _security_error(429, "Quá nhiều request LLM — thử lại sau",
                                        {"Retry-After": str(retry)})
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
-    if request.url.path.startswith("/api/"):
+    if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -212,6 +198,13 @@ APP_VERSION = _pkg_version()
 
 @app.get("/api/health")
 async def health():
+    """Public liveness: không trả model/key/settings hay dữ liệu user."""
+    return {"ok": True, "version": APP_VERSION, "demo": not config.has_any_llm_credentials(),
+            "release_mode": config.is_release_mode(), "multi_user": True,
+            "auth": "google_or_email"}
+
+
+async def _settings_payload():
     provider = config.get_provider()
     key = config.get_active_api_key()
     cfg = config.load_config()
@@ -219,15 +212,17 @@ async def health():
     return {
         "ok": True,
         "version": APP_VERSION,
-        "demo": not config.has_llm_credentials(),
+        "demo": not config.has_any_llm_credentials(),
         "provider": provider,
         "release_mode": release,
         "settings_locked": release,
         "web_key_input": not release,
-        "model": config.get_model(),
-        "key_masked": config.mask_key(key),
-        "default_models": (["gemini-3.8-flash", "gemini-3.6-flash"] if provider == "google"
-                           else config.DEFAULT_MODELS),
+        "model": model_router.default_model(),
+        "key_masked": "••••••••" if key else "",
+        "provider_keys": {"openrouter": bool(config.get_api_key()),
+                          "google": bool(config.get_google_api_key()),
+                          "custom": bool(config.get_custom_api_key())},
+        "default_models": [spec.id for spec in model_registry.list()],
         "approval_mode": cfg.get("approval_mode", "guarded"),
         "docker_sandbox": bool(cfg.get("docker_sandbox")),
         "docker_available": guard.DOCKER_AVAILABLE,
@@ -254,34 +249,50 @@ def _lsp_available() -> dict:
 
 
 @app.get("/api/settings")
-async def get_settings():
-    return await health()
+async def get_settings(user: User = Depends(require_user)):
+    payload = await _settings_payload()
+    if user.role != "admin":
+        payload.update({"settings_locked": True, "web_key_input": False,
+                        "key_masked": "", "custom_base_url": ""})
+        payload.pop("provider_keys", None)
+    return payload
 
 
 class KeyCheckBody(BaseModel):
+    provider: str = "openrouter"
     api_key: str | None = None
 
 
 @app.post("/api/keycheck")
-async def keycheck(body: KeyCheckBody | None = None):
+async def keycheck(body: KeyCheckBody | None = None, user: User = Depends(require_admin)):
     """Verify key theo provider; release khóa endpoint để Settings chỉ qua terminal."""
     if config.is_release_mode():
         raise HTTPException(403, "Release mode: key chỉ được quản lý qua terminal")
+    provider = (body.provider if body else "openrouter").strip().lower()
+    if provider not in ("openrouter", "google"):
+        raise HTTPException(400, "Key check hỗ trợ openrouter hoặc google")
     provided = body.api_key.strip() if (body and body.api_key) else None
-    return await llm.check_key(provided)
+    return await llm.check_key(provided, provider=provider)
 
 
 @app.post("/api/settings")
-async def set_settings(body: SettingsBody):
+async def set_settings(body: SettingsBody, user: User = Depends(require_admin)):
     if config.is_release_mode():
         raise HTTPException(403, "Release mode: Settings bị khóa — cấu hình qua scripts/setup_keys.py")
     patch: dict = {}
     if body.api_key is not None and body.api_key.strip():
-        # UI gửi một ô key chung; route theo provider hiện tại vào secret store.
-        key_field = config.provider_secret_field()
-        patch[key_field] = body.api_key.strip()
+        # Provider của key độc lập với default routing; không ghi nhầm vào active provider.
+        key_provider = (body.provider or config.get_provider()).strip().lower()
+        key_fields = {"openrouter": "api_key", "google": "google_api_key",
+                      "custom": "custom_api_key"}
+        if key_provider not in key_fields:
+            raise HTTPException(400, "Provider của API key không hợp lệ")
+        patch[key_fields[key_provider]] = body.api_key.strip()
     if body.model is not None and body.model.strip():
-        patch["model"] = body.model.strip()
+        try:
+            patch["model"] = model_registry.route("code", body.model).id
+        except (ValueError, ModelCapabilityError) as exc:
+            raise HTTPException(400, str(exc)) from exc
     if body.approval_mode is not None and body.approval_mode in ("guarded", "ask", "auto"):
         patch["approval_mode"] = body.approval_mode
     if body.docker_sandbox is not None:
@@ -304,7 +315,7 @@ async def set_settings(body: SettingsBody):
         e = body.reasoning_effort.strip().lower()
         patch["reasoning_effort"] = e if e in ("low", "medium", "high") else ""
     config.save_config(patch)
-    return await health()
+    return await _settings_payload()
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +327,7 @@ class OAuthStartBody(BaseModel):
 
 
 @app.get("/api/connectors/presets")
-async def connector_presets():
+async def connector_presets(user: User = Depends(require_admin)):
     from engine import connectors as fc
     from engine import oauth as fo
     installed = {fc._sanitize_name(c.get("preset", "")) for c in fc.load_servers()}
@@ -337,7 +348,7 @@ class InstallBody(BaseModel):
 
 
 @app.post("/api/connectors/install")
-async def connector_install(body: InstallBody, id: str):
+async def connector_install(body: InstallBody, id: str, user: User = Depends(require_admin)):
     from engine import connectors as fc
     pid = (id or "").strip().lower()
     if pid not in fc.PRESETS:
@@ -350,7 +361,7 @@ async def connector_install(body: InstallBody, id: str):
 
 
 @app.delete("/api/connectors/{id}/installed")
-async def connector_uninstall(id: str):
+async def connector_uninstall(id: str, user: User = Depends(require_admin)):
     from engine import connectors as fc
     pid = (id or "").strip().lower()
     for cfg in fc.load_servers():
@@ -360,7 +371,7 @@ async def connector_uninstall(id: str):
 
 
 @app.post("/api/connectors/{name}/oauth/start")
-async def oauth_start(name: str, body: OAuthStartBody):
+async def oauth_start(name: str, body: OAuthStartBody, user: User = Depends(require_admin)):
     from engine import connectors as fc
     from engine import oauth as fo
     pid = (name or "").strip().lower()
@@ -374,7 +385,7 @@ async def oauth_start(name: str, body: OAuthStartBody):
 
 
 @app.get("/api/connectors/{name}/oauth/status")
-async def oauth_status(name: str):
+async def oauth_status(name: str, user: User = Depends(require_admin)):
     from engine import connectors as fc
     from engine import oauth as fo
     if (name or "").strip().lower() not in fc.PRESETS:
@@ -383,7 +394,7 @@ async def oauth_status(name: str):
 
 
 @app.delete("/api/connectors/{name}/oauth")
-async def oauth_disconnect(name: str):
+async def oauth_disconnect(name: str, user: User = Depends(require_admin)):
     from engine import oauth as fo
     return {"ok": fo.forget(name)}
 
@@ -392,12 +403,12 @@ async def oauth_disconnect(name: str):
 # MCP servers management
 # ---------------------------------------------------------------------------
 @app.get("/api/mcp")
-async def mcp_status():
+async def mcp_status(user: User = Depends(require_admin)):
     return {"servers": mcp_manager.status()}
 
 
 @app.post("/api/mcp")
-async def mcp_add(body: McpServerBody):
+async def mcp_add(body: McpServerBody, user: User = Depends(require_admin)):
     servers = load_servers()
     if any(s["name"] == body.name for s in servers):
         raise HTTPException(400, f"Server '{body.name}' đã tồn tại")
@@ -407,13 +418,13 @@ async def mcp_add(body: McpServerBody):
 
 
 @app.post("/api/mcp/{name}/refresh")
-async def mcp_refresh(name: str):
+async def mcp_refresh(name: str, user: User = Depends(require_admin)):
     await mcp_manager.refresh(name if name != "all" else None)
     return {"servers": mcp_manager.status()}
 
 
 @app.delete("/api/mcp/{name}")
-async def mcp_remove(name: str):
+async def mcp_remove(name: str, user: User = Depends(require_admin)):
     servers = load_servers()
     kept = [s for s in servers if s["name"] != name]
     if len(kept) == len(servers):
@@ -431,8 +442,9 @@ async def mcp_remove(name: str):
 # Sessions
 # ---------------------------------------------------------------------------
 @app.get("/api/sessions")
-async def list_sessions(q: str = ""):
-    return {"sessions": store.list(q=q)}
+async def list_sessions(q: str = "", user: User = Depends(require_user)):
+    db = _db(user)
+    return {"sessions": db.list(q=q)}
 
 
 class RenameBody(BaseModel):
@@ -440,33 +452,42 @@ class RenameBody(BaseModel):
 
 
 @app.post("/api/sessions/{sid}/rename")
-async def rename_session(sid: str, body: RenameBody):
-    if not store.rename(sid, body.title):
+async def rename_session(sid: str, body: RenameBody, user: User = Depends(require_user)):
+    db = _db(user)
+    if not db.rename(sid, body.title):
         raise HTTPException(404, "Session not found")
     return {"ok": True, "title": body.title.strip()[:80]}
 
 
 @app.post("/api/sessions")
-async def create_session(body: dict | None = None):
+async def create_session(body: dict | None = None, user: User = Depends(require_user)):
+    db = _db(user)
     model = (body or {}).get("model")
-    s = store.create(model=model or "")
+    try:
+        canonical = model_router.canonical(str(model)) if model else model_router.default_model()
+        model_registry.route("code", canonical)
+    except (ValueError, ModelCapabilityError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    s = db.create(model=canonical)
     return {"session": {"id": s.id, "title": s.title, "model": s.model,
                         "message_count": 0, "updated_at": s.updated_at}}
 
 
 @app.get("/api/sessions/{sid}")
-async def get_session(sid: str):
-    s = store.get(sid)
+async def get_session(sid: str, user: User = Depends(require_user)):
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     return {"session": s.to_dict()}
 
 
 @app.get("/api/usage")
-async def usage_totals():
+async def usage_totals(user: User = Depends(require_user)):
+    db = _db(user)
     tot = {"sessions": 0, "prompt_tokens": 0, "completion_tokens": 0,
            "total_tokens": 0, "cost": 0.0}
-    for meta in store.list():
+    for meta in db.list():
         tot["sessions"] += 1
         u = meta.get("usage") or {}
         for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
@@ -480,9 +501,9 @@ async def usage_totals():
 # Interactive command approvals ("ask" mode)
 # ---------------------------------------------------------------------------
 @app.post("/api/approvals/{aid}")
-async def resolve_approval(aid: str, body: ApprovalBody):
+async def resolve_approval(aid: str, body: ApprovalBody, user: User = Depends(require_user)):
     from engine import approvals
-    ok = approvals.resolve(aid, body.decision)
+    ok = approvals.resolve(aid, body.decision, owner_id=user.id)
     if not ok:
         raise HTTPException(404, "Yêu cầu phê duyệt không tồn tại hoặc đã xử lý")
     return {"ok": True, "decision": body.decision}
@@ -494,38 +515,33 @@ class ElicitBody(BaseModel):
 
 
 @app.get("/api/elicitations")
-async def pending_elicitations():
+async def pending_elicitations(user: User = Depends(require_user)):
     """Danh sách elicitation MCP đang chờ người dùng (poll fallback cho UI)."""
     from engine import elicitations
-    return {"pending": elicitations.snapshot()}
+    return {"pending": elicitations.snapshot(owner_id=user.id)}
 
 
 @app.post("/api/elicitation/{eid}")
-async def resolve_elicitation(eid: str, body: ElicitBody):
+async def resolve_elicitation(eid: str, body: ElicitBody, user: User = Depends(require_user)):
     """Trả lời elicitation MCP (spec: action = accept|decline|cancel + content)."""
     from engine import elicitations
-    ok = elicitations.resolve(eid, body.action, body.content)
+    ok = elicitations.resolve(eid, body.action, body.content, owner_id=user.id)
     if not ok:
         raise HTTPException(404, "Elicitation không tồn tại hoặc đã xử lý")
     return {"ok": True, "action": body.action}
 
 
 @app.get("/api/models")
-async def list_models():
-    """Catalog theo provider; OpenRouter tự sync 1 giờ, Google dùng ID API trực tiếp."""
-    provider = config.get_provider()
-    if provider == "google":
-        data = [
-            {"id": "gemini-3.8-flash", "name": "Google Gemini 3.8 Flash", "context": 1_000_000,
-             "prompt_price": 0.0, "completion_price": 0.0, "free": True},
-            {"id": "gemini-3.6-flash", "name": "Google Gemini 3.6 Flash", "context": 1_000_000,
-             "prompt_price": 0.0, "completion_price": 0.0, "free": True},
-        ]
-        return {"models": data, "count": len(data)}
-    if provider == "custom":
-        data = [{"id": config.get_model(), "name": "Custom OpenAI-compatible model",
-                 "context": None, "prompt_price": 0.0, "completion_price": 0.0, "free": True}]
-        return {"models": data, "count": 1}
+async def list_models(user: User = Depends(require_user), provider: str | None = None,
+                      capability: str | None = None):
+    """Model catalog nhiều provider; client nhận ID/metadata, không nhận endpoint/key."""
+    if capability is not None and capability not in CAPABILITIES:
+        raise HTTPException(400, "Capability không hợp lệ")
+    if capability == "image_generation":
+        return {"models": [], "count": 0, "image_generation_adapter": False,
+                "detail": "Capability contract đã có; image adapter thuộc phase sau"}
+    if provider is not None and provider not in ("openrouter", "google", "custom"):
+        raise HTTPException(400, "Provider không hợp lệ")
     if time.time() - _MODELS_CACHE["ts"] > 3600 or not _MODELS_CACHE["data"]:
         try:
             async with httpx.AsyncClient(timeout=25) as c:
@@ -534,42 +550,66 @@ async def list_models():
                 items = r.json().get("data", [])
             data = []
             for m in items:
+                model_id = str(m.get("id", "")).strip()
+                if not model_id:
+                    continue
                 pr = m.get("pricing") or {}
                 try:
                     prompt_p = float(pr.get("prompt") or 0)
                     comp_p = float(pr.get("completion") or 0)
-                except ValueError:
+                except (TypeError, ValueError):
                     prompt_p = comp_p = 0.0
-                data.append({
-                    "id": m.get("id", ""),
-                    "name": m.get("name", ""),
-                    "context": m.get("context_length"),
-                    "prompt_price": prompt_p,   # USD per token
-                    "completion_price": comp_p,
-                    "free": prompt_p == 0 and comp_p == 0,
-                })
+                spec = model_registry.get(f"openrouter:{model_id}")
+                capabilities = set(spec.capabilities)
+                modalities = (m.get("architecture") or {}).get("input_modalities") or []
+                if "image" in modalities:
+                    capabilities.update({"vision", "design"})
+                data.append({"id": spec.id, "provider": "openrouter", "model": model_id,
+                             "name": m.get("name", model_id), "label": m.get("name", model_id),
+                             "capabilities": sorted(capabilities), "adapter": "chat",
+                             "context": m.get("context_length"), "prompt_price": prompt_p,
+                             "completion_price": comp_p, "free": prompt_p == 0 and comp_p == 0})
             data.sort(key=lambda x: x["id"])
             _MODELS_CACHE["data"] = data
             _MODELS_CACHE["ts"] = time.time()
-        except Exception as e:
+        except Exception:
+            # Catalog tĩnh vẫn dùng được khi mất mạng; không chặn Google direct.
             if not _MODELS_CACHE["data"]:
-                raise HTTPException(502, f"Không tải được danh sách model: {e}") from e
-    return {"models": _MODELS_CACHE["data"], "count": len(_MODELS_CACHE["data"])}
+                _MODELS_CACHE["ts"] = 0
+    rows = list(_MODELS_CACHE["data"])
+    known = {row["id"] for row in rows}
+    for spec in model_registry.list():
+        if spec.id not in known:
+            rows.append({**spec.public(), "name": spec.label, "context": None,
+                         "prompt_price": 0.0, "completion_price": 0.0, "free": False})
+            known.add(spec.id)
+    if config.get_provider() == "custom":
+        spec = model_registry.get(model_registry.canonical(config.get_model(), "custom"))
+        if spec.id not in known:
+            rows.append({**spec.public(), "name": spec.label, "context": None,
+                         "prompt_price": 0.0, "completion_price": 0.0, "free": True})
+    rows = [row for row in rows if (provider is None or row["provider"] == provider)
+            and (capability is None or capability in row.get("capabilities", []))]
+    rows.sort(key=lambda x: x["id"])
+    return {"models": rows, "count": len(rows), "image_generation_adapter": False,
+            "capabilities": sorted(CAPABILITIES)}
 
 
 @app.delete("/api/sessions/{sid}")
-async def delete_session(sid: str):
-    ok = store.delete(sid)
+async def delete_session(sid: str, user: User = Depends(require_user)):
+    db = _db(user)
+    ok = db.delete(sid)
     return {"ok": ok}
 
 
 # ----------------------------------------------------- S8: Skills catalog (web tab)
 @app.get("/api/skills")
-async def skills_list(sid: str):
-    if not store.get(sid):
+async def skills_list(sid: str, user: User = Depends(require_user)):
+    db = _db(user)
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
     from engine.skills import list_skills
-    skills, diags = list_skills(store.workspace(sid))
+    skills, diags = list_skills(db.workspace(sid))
     rows = []
     for x in skills:
         rows.append({
@@ -589,11 +629,19 @@ class SkillToggleBody(BaseModel):
 
 
 @app.post("/api/skills/toggle")
-async def skills_toggle(sid: str, body: SkillToggleBody):
+async def skills_toggle(sid: str, body: SkillToggleBody, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import skillmgr
-    if not store.get(sid):
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
-    msg = skillmgr.set_model_invocable(store.workspace(sid), body.path, body.invocable)
+    ws = db.workspace(sid)
+    if user.role != "admin":
+        from engine.skills import list_skills
+        skills, _ = list_skills(ws)
+        match = next((x for x in skills if str(x.get("path")) == str(Path(body.path))), None)
+        if match is not None and match.get("source") != "project":
+            raise HTTPException(403, "Member chỉ đổi skill trong project workspace của mình")
+    msg = skillmgr.set_model_invocable(ws, body.path, body.invocable)
     code = 400 if msg.startswith("❌") else 200
     if code == 400:
         raise HTTPException(400, msg)
@@ -605,11 +653,12 @@ class SkillTrustBody(BaseModel):
 
 
 @app.post("/api/skills/trust")
-async def skills_trust(sid: str, body: SkillTrustBody):
+async def skills_trust(sid: str, body: SkillTrustBody, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import skillmgr
-    if not store.get(sid):
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
-    msg = skillmgr.trust(store.workspace(sid), body.name)
+    msg = skillmgr.trust(db.workspace(sid), body.name)
     code = 400 if msg.startswith("❌") else 200
     if code == 400:
         raise HTTPException(400, msg)
@@ -623,20 +672,25 @@ class MessageBody(BaseModel):
 
 
 @app.post("/api/sessions/{sid}/messages")
-async def message_send(sid: str, body: MessageBody):
+async def message_send(sid: str, body: MessageBody, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import bus as fbus
-    if not store.get(sid):
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
     if not body.text.strip():
         raise HTTPException(400, "Empty message")
-    ent = fbus.send(sid, body.from_session or "web", body.text)
+    from_session = body.from_session or "web"
+    if from_session != "web" and db.get(from_session) is None:
+        raise HTTPException(404, "Source session not found")
+    ent = fbus.send(sid, from_session, body.text)
     return {"ok": True, "entry": ent}
 
 
 @app.get("/api/sessions/{sid}/messages")
-async def message_inbox(sid: str, peek: bool = False):
+async def message_inbox(sid: str, peek: bool = False, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import bus as fbus
-    if not store.get(sid):
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
     rows = fbus.peek(sid) if peek else fbus.inbox(sid)
     return {"messages": rows, "count": len(rows)}
@@ -644,24 +698,27 @@ async def message_inbox(sid: str, peek: bool = False):
 
 # ----------------------------------------------------- B2: worktree sub-agent
 @app.get("/api/worktrees")
-async def worktree_list():
+async def worktree_list(user: User = Depends(require_user)):
     from engine import worktree as fwt
-    return {"worktrees": await fwt.list_all()}
+    own = {row["id"] for row in _db(user).list()}
+    return {"worktrees": [row for row in await fwt.list_all() if row.get("session") in own]}
 
 
 @app.post("/api/worktrees/{sub_sid}/merge")
-async def worktree_merge(sub_sid: str, sid: str):
+async def worktree_merge(sub_sid: str, sid: str, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import worktree as fwt
-    st = store.get(sid)
-    if not st:
+    st = db.get(sid)
+    if not st or db.get(sub_sid) is None:
         raise HTTPException(404, "Session not found")
-    return await fwt.merge(sub_sid, sid, store.workspace(sid))
+    return await fwt.merge(sub_sid, sid, sid, db.workspace(sid))
 
 
 @app.delete("/api/worktrees/{sub_sid}")
-async def worktree_discard(sub_sid: str, sid: str):
+async def worktree_discard(sub_sid: str, sid: str, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import worktree as fwt
-    if not store.get(sid):
+    if not db.get(sid) or db.get(sub_sid) is None:
         raise HTTPException(404, "Session not found")
     return await fwt.discard(sub_sid, sid)
 
@@ -674,13 +731,14 @@ class LoopBody(BaseModel):
     max_runs: int = 0  # 0 = tới khi /loop stop hoặc restart server
 
 
-async def _loop_turn(sid: str, text: str, mode: str) -> str:
-    """Chạy 1 lượt agent cho loop (không stream — kết quả persist vào session)."""
-    st = store.get(sid)
+async def _loop_turn(sid: str, text: str, mode: str, owner_id: str, allow_mcp: bool) -> str:
+    """Mỗi nhịp tự mở scoped store; không giữ quyền/global store trong closure."""
+    db = ScopedSessionStore(store, owner_id, allow_mcp=allow_mcp)
+    st = db.get(sid)
     if not st:
         return "(phiên đã xoá)"
-    demo = not config.has_llm_credentials()
-    agent = Agent(store, sid)
+    demo = not config.has_provider_credentials(llm.split_model_id(st.model)[0])
+    agent = Agent(db, sid, router=model_router)
     source = send_demo(agent, text) if demo else agent.send(text, chat_mode=mode)
     last = ""
     async for ev in source:
@@ -689,29 +747,40 @@ async def _loop_turn(sid: str, text: str, mode: str) -> str:
     return last
 
 
+def _loop_runner(owner_id: str, allow_mcp: bool):
+    async def run(sid: str, text: str, mode: str) -> str:
+        return await _loop_turn(sid, text, mode, owner_id, allow_mcp)
+    return run
+
+
 @app.post("/api/sessions/{sid}/loop")
-async def loop_start(sid: str, body: LoopBody):
+async def loop_start(sid: str, body: LoopBody, user: User = Depends(require_user)):
+    db = _db(user)
     from engine import scheduler as fsched
-    if not store.get(sid):
+    if not db.get(sid):
         raise HTTPException(404, "Session not found")
     if not body.text.strip():
         raise HTTPException(400, "Loop cần nội dung tác vụ")
     every_s = fsched.parse_interval(body.every, default_minutes=30)
     mode = body.mode if body.mode in ("direct", "agent", "plan", "architect") else "agent"
     max_runs = max(0, min(int(body.max_runs), 10000))
-    status = fsched.manager.start(sid, every_s, body.text.strip(), mode, _loop_turn, max_runs)
+    status = fsched.manager.start(sid, every_s, body.text.strip(), mode, _loop_runner(user.id, user.role == "admin"), max_runs)
     return {"ok": True, "status": status,
             "note": "Loop sống trong tiến trình server — restart là dừng"}
 
 
 @app.get("/api/sessions/{sid}/loop")
-async def loop_status(sid: str):
+async def loop_status(sid: str, user: User = Depends(require_user)):
+    if not _db(user).get(sid):
+        raise HTTPException(404, "Session not found")
     from engine import scheduler as fsched
     return fsched.manager.status(sid)
 
 
 @app.delete("/api/sessions/{sid}/loop")
-async def loop_stop(sid: str):
+async def loop_stop(sid: str, user: User = Depends(require_user)):
+    if not _db(user).get(sid):
+        raise HTTPException(404, "Session not found")
     from engine import scheduler as fsched
     return {"ok": fsched.manager.stop(sid)}
 
@@ -723,9 +792,10 @@ class RerunBody(BaseModel):
 
 
 @app.post("/api/sessions/{sid}/rerun")
-async def rerun_session(sid: str, body: RerunBody):
+async def rerun_session(sid: str, body: RerunBody, user: User = Depends(require_user)):
     """Cắt session từ tin user thứ `index` và thay nội dung mới — web sẽ gọi /chat rerun=true."""
-    st = store.get(sid)
+    db = _db(user)
+    st = db.get(sid)
     if not st:
         raise HTTPException(404, "Session not found")
     if not (0 <= body.index < len(st.messages)):
@@ -733,53 +803,57 @@ async def rerun_session(sid: str, body: RerunBody):
     if st.messages[body.index].get("role") != "user":
         raise HTTPException(400, "index không trỏ vào tin nhắn của người dùng")
     st.messages = st.messages[:body.index] + [{"role": "user", "content": body.text}]
-    store.save(st)
+    db.save(st)
     return {"ok": True, "messages": len(st.messages)}
 
 
 # ----------------------------------------------------- comfort: undo/compact/init
 @app.post("/api/sessions/{sid}/undo")
-async def undo_session(sid: str):
+async def undo_session(sid: str, user: User = Depends(require_user)):
     """↩ Hoàn tác thay đổi gần nhất của agent trong workspace (checkpoint git nội bộ)."""
-    s = store.get(sid)
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     from engine import checkpoints
     if not checkpoints.available():
         raise HTTPException(409, "git không có mặt trên máy — checkpoint không khả dụng")
-    ws = store.workspace(sid)
+    ws = db.workspace(sid)
     res = await checkpoints.undo(checkpoints.key_for(ws), ws)
     return {"ok": bool(res.get("ok")), "message": str(res.get("message", ""))}
 
 
 @app.post("/api/sessions/{sid}/compact")
-async def compact_session_ep(sid: str, body: dict | None = None):
+async def compact_session_ep(sid: str, body: dict | None = None, user: User = Depends(require_user)):
     """🧹 Nén hội thoại: LLM tóm tắt các tin nhắn cũ, giữ vài tin cuối."""
-    s = store.get(sid)
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     from engine.agent import compact_session
-    agent = Agent(store, sid)
+    agent = Agent(db, sid, router=model_router)
     res = await compact_session(agent, (body or {}).get("instructions") or "")
     return res
 
 
 @app.post("/api/sessions/{sid}/init")
-async def init_agents_ep(sid: str):
+async def init_agents_ep(sid: str, user: User = Depends(require_user)):
     """🚀 /init — phân tích workspace, sinh AGENTS.md (demo-mode khi chưa có key)."""
-    s = store.get(sid)
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     from engine.agent import init_agents_md
-    agent = Agent(store, sid)
+    agent = Agent(db, sid, router=model_router)
     res = await init_agents_md(agent)
     return res
 
 
 @app.post("/api/sessions/{sid}/fork")
-async def fork_session(sid: str):
+async def fork_session(sid: str, user: User = Depends(require_user)):
     """🍴 Fork — nhân bản phiên: copy messages + workspace thành bản mới."""
-    ns = store.fork(sid)
+    db = _db(user)
+    ns = db.fork(sid)
     if ns is None:
         raise HTTPException(404, "Session not found")
     return {"session": {"id": ns.id, "title": ns.title, "model": ns.model,
@@ -788,34 +862,40 @@ async def fork_session(sid: str):
 
 
 @app.get("/api/sessions/{sid}/context")
-async def session_context(sid: str):
+async def session_context(sid: str, user: User = Depends(require_user)):
     """🧠 Mức dùng context của phiên (cho /context + footer web)."""
-    s = store.get(sid)
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
-    return Agent(store, sid).context_stats()
+    return Agent(db, sid).context_stats()
+
+
+def _audit_rows(user: User, n: int) -> list[dict]:
+    from engine import auditlog
+    own = {row["id"] for row in _db(user).list()}
+    scan = min(10000, max(200, n * 20))
+    return [e for e in auditlog.tail(scan) if e.get("session") in own][:n]
 
 
 @app.get("/api/audit")
-async def audit_tail(n: int = 120):
+async def audit_tail(n: int = 120, user: User = Depends(require_user)):
     """Nhật ký tool call (JSONL data/audit/) — n giới hạn 1..500."""
-    from engine import auditlog
-    return {"entries": auditlog.tail(max(1, min(n, 500)))}
+    return {"entries": _audit_rows(user, max(1, min(n, 500)))}
 
 
 @app.get("/api/audit/export")
-async def audit_export():
+async def audit_export(user: User = Depends(require_user)):
     """Xuất audit log CSV (tối đa 2000 mục mới nhất) — Excel/Sheets đọc trực tiếp."""
     import csv as _csv
     import io as _io
 
     from fastapi.responses import Response
 
-    from engine import auditlog
     buf = _io.StringIO()
     w = _csv.writer(buf)
     w.writerow(["ts", "session", "tool", "source", "ok", "ms", "args", "note"])
-    for e in auditlog.tail(2000):
+    for e in _audit_rows(user, 2000):
         w.writerow([e.get("ts", ""), e.get("session", ""), e.get("tool", ""),
                     e.get("source", ""), "1" if e.get("ok") else "0",
                     "" if e.get("ms") is None else e.get("ms"),
@@ -826,16 +906,18 @@ async def audit_export():
 
 
 @app.get("/api/doctor")
-async def doctor_endpoint():
+async def doctor_endpoint(user: User = Depends(require_admin)):
     """🩺 Chẩn đoán toàn hệ thống (python/git/key/model/MCP/LSP/dữ liệu…)."""
+    db = _db(user)
     from engine.diagnostics import doctor
-    return await doctor(store)
+    return await doctor(db)
 
 
 @app.get("/api/sessions/{sid}/export")
-async def export_session(sid: str):
+async def export_session(sid: str, user: User = Depends(require_user)):
     """⤓ /export — tải hội thoại dạng Markdown."""
-    s = store.get(sid)
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     from urllib.parse import quote
@@ -854,18 +936,18 @@ async def export_session(sid: str):
 # Chat streaming (SSE)
 # ---------------------------------------------------------------------------
 @app.post("/api/sessions/{sid}/chat")
-async def chat(sid: str, body: ChatBody, request: Request):
-    s = store.get(sid)
+async def chat(sid: str, body: ChatBody, request: Request, user: User = Depends(require_user)):
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
     text = body.text.strip()
     if not text and not body.rerun:
         raise HTTPException(400, "Empty message")
 
-    demo = not config.has_llm_credentials()
     model = body.model or None
     chat_mode = body.mode if body.mode in ("direct", "agent", "plan", "architect") else "agent"
-    ws = store.workspace(sid)
+    ws = db.workspace(sid)
 
     # /run <tên> <task> — custom agent từ .forge/agents/<name>.md (đè model/mode nếu có)
     from engine import agents as fagents
@@ -876,14 +958,15 @@ async def chat(sid: str, body: ChatBody, request: Request):
             model = ag_model
         if ag_mode:
             chat_mode = ag_mode
+    demo = not config.has_provider_credentials(llm.split_model_id(model or s.model)[0])
     # /audit [n] — xem nhật ký tool call, không cần LLM
     audit_synthetic: list[dict] | None = None
     if text == "/audit" or text.startswith("/audit "):
         from engine import auditlog
         a_arg = text[6:].strip()
-        a_n = int(a_arg) if a_arg.isdigit() else 20
+        a_n = min(200, max(1, int(a_arg))) if a_arg.isdigit() else 20
         audit_synthetic = [{"type": "assistant_message",
-                            "content": auditlog.format_listing(a_n)}]
+                            "content": auditlog.format_listing(a_n, rows=_audit_rows(user, a_n))}]
     # /msg <phiên> <nội dung> + /inbox — F2 cross-session messaging
     msg_synthetic: list[dict] | None = None
     if text.startswith("/msg ") or text == "/inbox":
@@ -903,7 +986,7 @@ async def chat(sid: str, body: ChatBody, request: Request):
             if not to_sid or not m_text:
                 msg_synthetic = [{"type": "assistant_message",
                                   "content": "❌ Cú pháp: `/msg <id-phiên> <nội dung>`"}]
-            elif store.get(to_sid) is None:
+            elif db.get(to_sid) is None:
                 msg_synthetic = [{"type": "assistant_message",
                                   "content": f"❌ Không có phiên '{to_sid}'."}]
             else:
@@ -917,6 +1000,8 @@ async def chat(sid: str, body: ChatBody, request: Request):
         w_arg = text[9:].strip()
         if w_arg.startswith("merge "):
             sub = w_arg[6:].strip()
+            if db.get(sub) is None:
+                raise HTTPException(404, "Session not found")
             res = await fwt.merge(sub, sid, sid, ws)
             if res["ok"]:
                 try:
@@ -927,12 +1012,16 @@ async def chat(sid: str, body: ChatBody, request: Request):
             wt_synthetic = [{"type": "assistant_message",
                              "content": ("✅ " if res["ok"] else "❌ ") + res["message"]}]
         elif w_arg.startswith("discard "):
-            res = await fwt.discard(w_arg[8:].strip(), sid)
+            sub = w_arg[8:].strip()
+            if db.get(sub) is None:
+                raise HTTPException(404, "Session not found")
+            res = await fwt.discard(sub, sid)
             wt_synthetic = [{"type": "assistant_message",
                              "content": ("🗑 Đã bỏ worktree: " + ", ".join(res["removed"]))
                                         if res["ok"] else "(không có worktree nào để bỏ)"}]
         else:
-            rows = await fwt.list_all()
+            own = {row["id"] for row in db.list()}
+            rows = [row for row in await fwt.list_all() if row.get("session") in own]
             if not rows:
                 wt_synthetic = [{"type": "assistant_message",
                                  "content": "Không có worktree nào. Dùng: spawn_subagent với isolation=worktree, rồi `/worktree merge <phiên-con>` để gộp."}]
@@ -968,13 +1057,15 @@ async def chat(sid: str, body: ChatBody, request: Request):
                                    "content": "❌ Thiếu tác vụ: `/loop <30m|1h> <tác vụ>`"}]
             else:
                 mode_l = chat_mode if chat_mode != "plan" else "agent"
-                status_l = fsched.manager.start(sid, every_s, task_text, mode_l, _loop_turn)
+                status_l = fsched.manager.start(sid, every_s, task_text, mode_l, _loop_runner(user.id, user.role == "admin"))
                 loop_synthetic = [{"type": "assistant_message",
                                    "content": f"🔁 Loop BẬT — mỗi `{fsched.fmt_interval(status_l['every'])}` chạy «{task_text}» "
                                               "(tool + audit như chat thường; sống trong tiến trình server, restart là dừng; `/loop off` để tắt)"}]
     # /connectors [add|auth|allow|deny|remove] — quản lý connector MCP, không cần LLM
     connectors_synthetic: list[dict] | None = None
     if text == "/connectors" or text.startswith("/connectors "):
+        if user.role != "admin":
+            raise HTTPException(403, "Chỉ admin được quản lý connector toàn server")
         from engine import connectors as fconn
         c_arg = text[11:].strip()
         if c_arg.startswith("add "):
@@ -999,6 +1090,8 @@ async def chat(sid: str, body: ChatBody, request: Request):
     if text == "/skills" or text.startswith("/skills "):
         from engine import skillmgr
         s_arg = text[7:].strip()
+        if user.role != "admin" and s_arg.startswith(("add ", "remove ")):
+            raise HTTPException(403, "Skill global chỉ admin được cài/xoá; member dùng /skills new trong workspace")
         if s_arg.startswith("add "):
             # git clone có thể tới 90s — đẩy sang thread để không khoá event loop
             s_out = await asyncio.to_thread(skillmgr.add, ws, s_arg[4:].strip())
@@ -1050,9 +1143,9 @@ async def chat(sid: str, body: ChatBody, request: Request):
         d_arg = text[len("/diff"):].strip()
         try:
             diff_text, label = await freview.collect_diff(ws, sid, d_arg)
-            body = diff_text if len(diff_text) <= 12000 else diff_text[:12000] + "\n… (cắt ở 12KB)"
+            diff_body = diff_text if len(diff_text) <= 12000 else diff_text[:12000] + "\n… (cắt ở 12KB)"
             synthetic = [{"type": "assistant_message",
-                          "content": f"📄 **Diff — {label}:**\n\n```diff\n{body}\n```"}]
+                          "content": f"📄 **Diff — {label}:**\n\n```diff\n{diff_body}\n```"}]
         except ValueError as e:
             synthetic = [{"type": "assistant_message", "content": f"📄 {e}"}]
     elif text == "/memory" or text.startswith("/memory "):
@@ -1074,6 +1167,14 @@ async def chat(sid: str, body: ChatBody, request: Request):
     if images and not demo:
         content = [{"type": "text", "text": text}] + [
             {"type": "image_url", "image_url": {"url": u}} for u in images]
+    capability = "vision" if images and not demo else body.capability
+    if capability == "image_generation":
+        raise HTTPException(501, "Image generation mới có contract; adapter thuộc phase sau")
+    try:
+        model = model_registry.route(capability, model or s.model).id
+    except (ValueError, ModelCapabilityError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    demo = not config.has_provider_credentials(llm.split_model_id(model)[0])
 
     async def gen():
         try:
@@ -1083,7 +1184,7 @@ async def chat(sid: str, body: ChatBody, request: Request):
                         return
                     yield sse(ev)
                 return
-            agent = Agent(store, sid, model=model)
+            agent = Agent(db, sid, model=model, router=model_router)
             if demo:
                 demo_text = text
                 if images:
@@ -1130,16 +1231,21 @@ async def chat(sid: str, body: ChatBody, request: Request):
 # Batch: parallel sub-agents
 # ---------------------------------------------------------------------------
 @app.post("/api/batch")
-async def batch(body: BatchBody, request: Request):
+async def batch(body: BatchBody, request: Request, user: User = Depends(require_user)):
+    db = _db(user)
     prompts = [p.strip() for p in body.prompts if p.strip()][:5]
     if not prompts:
         raise HTTPException(400, "Không có tác vụ nào")
-    demo = not config.has_llm_credentials()
+    try:
+        batch_model = model_registry.route("code", body.model).id if body.model else model_router.default_model()
+    except (ValueError, ModelCapabilityError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    demo = not config.has_provider_credentials(llm.split_model_id(batch_model)[0])
 
     async def gen():
         try:
-            async for ev in run_batch(store, [{"prompt": p, "model": body.model or ""} for p in prompts],
-                                      demo=demo):
+            async for ev in run_batch(db, [{"prompt": p, "model": batch_model} for p in prompts],
+                                      demo=demo, router=model_router):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
@@ -1155,16 +1261,20 @@ async def batch(body: BatchBody, request: Request):
 
 
 @app.post("/api/battle")
-async def battle(body: BattleBody, request: Request):
+async def battle(body: BattleBody, request: Request, user: User = Depends(require_user)):
     """⚔ Cùng 1 prompt chạy trên nhiều model song song."""
+    db = _db(user)
     prompt = body.prompt.strip()
     if not prompt:
         raise HTTPException(400, "Thiếu prompt")
-    demo = not config.has_llm_credentials()
+    try:
+        battle_models = [model_registry.route("code", m).id for m in body.models]
+    except (ValueError, ModelCapabilityError) as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     async def gen():
         try:
-            async for ev in run_battle(store, prompt, body.models, demo=demo):
+            async for ev in run_battle(db, prompt, battle_models, demo=None, router=model_router):
                 if await request.is_disconnected():
                     return
                 yield sse(ev)
@@ -1180,9 +1290,9 @@ async def battle(body: BattleBody, request: Request):
 
 
 @app.post("/api/workspace/exec")
-async def workspace_exec(sid: str, body: ExecBody):
+async def workspace_exec(sid: str, body: ExecBody, user: User = Depends(require_user)):
     """Terminal tích hợp: NGƯỜI DÙNG chạy lệnh trực tiếp trong workspace."""
-    ws = _ws(sid)
+    ws = _ws(sid, user)
     cmd = body.command.strip()
     if not cmd:
         raise HTTPException(400, "Thiếu lệnh")
@@ -1196,35 +1306,40 @@ async def workspace_exec(sid: str, body: ExecBody):
 
 
 @app.post("/api/workspace/open")
-async def workspace_open(sid: str, body: OpenWorkspaceBody):
+async def workspace_open(sid: str, body: OpenWorkspaceBody, user: User = Depends(require_admin)):
     """Mở một thư mục dự án thật làm workspace. Yêu cầu env FORGE_ALLOW_OPEN=1."""
+    db = _db(user)
     import os
     if os.environ.get("FORGE_ALLOW_OPEN", "").strip() != "1":
         raise HTTPException(403,
                             "Tính năng mở dự án thật đang TẮT vì lý do an toàn. "
                             "Chạy server với biến môi trường FORGE_ALLOW_OPEN=1 để bật.")
-    _ws(sid)  # ensure session exists
+    _ws(sid, user)  # ensure session exists
     try:
-        target = store.open_workspace(sid, body.path)
+        target = db.open_workspace(sid, body.path)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True, "workspace": str(target)}
 
 
 @app.post("/api/workspace/close")
-async def workspace_close(sid: str):
-    store.close_workspace(sid)
+async def workspace_close(sid: str, user: User = Depends(require_user)):
+    db = _db(user)
+    if not db.get(sid):
+        raise HTTPException(404, "Session not found")
+    db.close_workspace(sid)
     return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
 # Workspace files
 # ---------------------------------------------------------------------------
-def _ws(sid: str) -> Path:
-    s = store.get(sid)
+def _ws(sid: str, user: User) -> Path:
+    db = _db(user)
+    s = db.get(sid)
     if not s:
         raise HTTPException(404, "Session not found")
-    return store.workspace(sid)
+    return db.workspace(sid)
 
 
 def _safe_path(ws: Path, rel: str) -> Path:
@@ -1235,11 +1350,11 @@ def _safe_path(ws: Path, rel: str) -> Path:
 
 
 @app.get("/api/workspace/tree")
-async def workspace_tree(sid: str):
-    ws = _ws(sid)
+async def workspace_tree(sid: str, user: User = Depends(require_user)):
+    ws = _ws(sid, user)
 
     def node(path: Path, depth: int) -> list[dict]:
-        items = []
+        items: list[dict] = []
         try:
             entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
         except Exception:  # noqa: BLE001 — tree lỗi trả rỗng, không chết request
@@ -1259,8 +1374,8 @@ async def workspace_tree(sid: str):
 
 
 @app.get("/api/workspace/file")
-async def read_workspace_file(sid: str, path: str):
-    ws = _ws(sid)
+async def read_workspace_file(sid: str, path: str, user: User = Depends(require_user)):
+    ws = _ws(sid, user)
     p = _safe_path(ws, path)
     if not p.exists() or not p.is_file():
         raise HTTPException(404, "File not found")
@@ -1271,8 +1386,8 @@ async def read_workspace_file(sid: str, path: str):
 
 
 @app.put("/api/workspace/file")
-async def save_workspace_file(sid: str, body: FileSaveBody):
-    ws = _ws(sid)
+async def save_workspace_file(sid: str, body: FileSaveBody, user: User = Depends(require_user)):
+    ws = _ws(sid, user)
     p = _safe_path(ws, body.path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body.content, encoding="utf-8")
@@ -1280,8 +1395,8 @@ async def save_workspace_file(sid: str, body: FileSaveBody):
 
 
 @app.delete("/api/workspace/file")
-async def delete_workspace_file(sid: str, path: str):
-    ws = _ws(sid)
+async def delete_workspace_file(sid: str, path: str, user: User = Depends(require_user)):
+    ws = _ws(sid, user)
     p = _safe_path(ws, path)
     if p.exists():
         p.unlink()
@@ -1290,8 +1405,8 @@ async def delete_workspace_file(sid: str, path: str):
 
 
 @app.post("/api/workspace/upload")
-async def upload_files(sid: str, files: list[UploadFile] = File(...)):  # noqa: B008 — DI chuẩn FastAPI
-    ws = _ws(sid)
+async def upload_files(sid: str, files: list[UploadFile] = File(...), user: User = Depends(require_user)):
+    ws = _ws(sid, user)
     saved, skipped = [], []
     MAX_SIZE = 20 * 1024 * 1024
     for f in files[:20]:
@@ -1313,8 +1428,8 @@ async def upload_files(sid: str, files: list[UploadFile] = File(...)):  # noqa: 
 
 
 @app.get("/api/workspace/export")
-async def export_workspace(sid: str):
-    ws = _ws(sid)
+async def export_workspace(sid: str, user: User = Depends(require_user)):
+    ws = _ws(sid, user)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in tools._iter_files(ws):

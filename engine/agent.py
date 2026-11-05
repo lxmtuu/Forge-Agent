@@ -14,7 +14,8 @@ from . import config, guard, llm, tools
 from .auditlog import log_tool, monotonic_ms
 from .llm import LLMError
 from .mcp import manager as mcp_manager
-from .session import Session, SessionStore
+from .models import ModelRouter
+from .session import ScopedSessionStore, Session, SessionStore
 
 MAX_ITERATIONS = 30
 MAX_SUBAGENTS_PER_TURN = 6   # chống phình (Anthropic: lead từng spawn 50 subagent vô ích)
@@ -113,18 +114,23 @@ def _agents_md_block(workspace: Path) -> str:
 
 
 class Agent:
-    def __init__(self, store: SessionStore, session_id: str, model: str | None = None,
-                 depth: int = 0):
+    def __init__(self, store: SessionStore | ScopedSessionStore, session_id: str, model: str | None = None,
+                 depth: int = 0, router: ModelRouter | None = None):
         self.depth = depth
         self._bg_child = False   # A4: sub-agent nền — tắt hook user_prompt_submit/stop
         self.store = store
+        self.router = router
         s0 = store.get(session_id)
         if s0 is None:
             raise ValueError(f"Session {session_id} not found")
         self.session: Session = s0  # narrow cho mypy: sau raise trên, luôn khác None
         if model:
-            self.session.model = model
-        self.model = self.session.model or config.get_model()
+            self.session.model = router.canonical(model) if router else model
+        if router:
+            self.model = router.canonical(self.session.model) if self.session.model else router.default_model()
+            self.session.model = self.model
+        else:
+            self.model = self.session.model or config.get_model()
         self.workspace: Path = store.workspace(session_id)
 
     async def _llm_with_fallback(self, messages, tools, model):
@@ -132,25 +138,35 @@ class Agent:
 
         Chỉ fallback khi stream CHƯA yield gì (tránh nhân đôi nội dung nếu model
         chết giữa chừng sau vài delta — khi đó raise cho vòng lặp xử lý lỗi)."""
-        cur = llm.resolve_model(model)
+        cur = self.router.resolve(model) if self.router else llm.resolve_model(model)
         fb = None
         reason = ""
         yielded_any = False
         try:
-            async for ev in llm.stream_chat(messages, tools=tools, model=model):
+            async for ev in self._stream_chat(messages, tools=tools, model=model):
                 yielded_any = True
                 yield ev
             return
         except llm.LLMError as e:
             if yielded_any:
                 raise
-            fb = llm.pick_fallback(cur, e)
+            fb = self.router.pick_fallback(cur, e) if self.router else llm.pick_fallback(cur, e)
             if not fb:
                 raise
             reason = str(e)[:200]
         yield {"type": "model_fallback", "from": cur, "to": fb, "reason": reason}
-        async for ev in llm.stream_chat(messages, tools=tools, model=fb):
+        async for ev in self._stream_chat(messages, tools=tools, model=fb):
             yield ev
+
+    def _stream_chat(self, messages, tools=None, model=None, temperature: float = 0.3):
+        if self.router:
+            return self.router.stream_chat(messages, tools=tools, model=model, temperature=temperature)
+        return llm.stream_chat(messages, tools=tools, model=model, temperature=temperature)
+
+    def _resolve_sub_model(self, model: str | None, parent: str | None = None) -> str | None:
+        if self.router:
+            return self.router.resolve_sub_model(model, parent)
+        return llm.resolve_sub_model(model, parent)
 
     async def _run_subagent(self, tc_id: str, task: str, sub_model: str | None,
                             isolation: str = "shared"):
@@ -159,7 +175,8 @@ class Agent:
         isolation="worktree": sub làm việc trong bản sao git-worktree từ checkpoint
         của cha (B2) — sửa/xoá không đụng workspace cha; báo cáo kèm hướng gộp/bỏ.
         """
-        sub_sid = self.store.create(model=sub_model or "", title=f"\U0001F9E9 {task[:46]}").id
+        sub_sid = self.store.create(model=sub_model or self.model,
+                                    title=f"\U0001F9E9 {task[:46]}").id
         iso_note = ""
         if isolation == "worktree":
             from . import worktree as fwt
@@ -185,7 +202,8 @@ class Agent:
                 pass
         yield {"type": "subagent_started", "id": tc_id, "session_id": sub_sid,
                "task": task[:200], "model": sub_model or "inherit"}
-        sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
+        sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1,
+                    router=self.router)
         texts: list[str] = []
         n_tools = 0
         error: str | None = None
@@ -208,7 +226,8 @@ class Agent:
         if isolation == "worktree" and iso_note:
             from . import worktree as fwt
             stat = await fwt.diff_stat(sub_sid, self.session.id, iso_note)
-            tail = (f"\n\n📁 Cô lập worktree: {iso_note}\n{('Diff:\n' + stat) if stat else '(không khác gì điểm rẽ nhánh)'}\n"
+            diff_text = f"Diff:\n{stat}" if stat else "(không khác gì điểm rẽ nhánh)"
+            tail = (f"\n\n📁 Cô lập worktree: {iso_note}\n{diff_text}\n"
                     f"Gộp về đây: /worktree merge {sub_sid} · Bỏ: /worktree discard {sub_sid}")
             summary = summary[:4200] + tail
         yield {"type": "subagent_done", "id": tc_id, "session_id": sub_sid,
@@ -270,7 +289,7 @@ class Agent:
                     messages.append(s.messages[-1])
                     continue
                 turn_state["spawns"] += 1
-                resolved = llm.resolve_sub_model(str(args.get("model") or ""), self.model)
+                resolved = self._resolve_sub_model(str(args.get("model") or ""), self.model)
                 batch.append((tc, args, task, resolved))
         self.store.save(s)
 
@@ -392,8 +411,8 @@ class Agent:
             return {"ok": False,
                     "output": f"Đã có {running}/{MAX_BG_AGENTS_PER_LEAD} bg-agent đang chạy — "
                               "dùng check_background_agents, chờ xong rồi giao tiếp."}
-        resolved = llm.resolve_sub_model(sub_model or "", self.model)
-        sub_sid = self.store.create(model=resolved or "", title=f"🌙 {task[:46]}").id
+        resolved = self._resolve_sub_model(sub_model or "", self.model)
+        sub_sid = self.store.create(model=resolved or self.model, title=f"🌙 {task[:46]}").id
         if isolation == "worktree":
             from . import worktree as fwt
             wt = await fwt.make(self.session.id, sub_sid)
@@ -424,7 +443,8 @@ class Agent:
         if entry is None:
             return
         try:
-            sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1)
+            sub = Agent(self.store, sub_sid, model=sub_model or None, depth=self.depth + 1,
+                    router=self.router)
         except ValueError as _ve:
             entry.update(status="error", summary=f"không tạo được phiên phụ: {_ve}",
                          finished=time.strftime("%H:%M:%S"))
@@ -547,7 +567,7 @@ class Agent:
         total_usage = None
         mcp_specs: list[dict] = []
         mcp_routing: dict = {}
-        if chat_mode != "direct":
+        if chat_mode != "direct" and getattr(self.store, "allow_mcp", True):
             try:
                 mcp_specs, mcp_routing = await mcp_manager.get_tool_specs()
                 if mcp_routing:
@@ -564,7 +584,7 @@ class Agent:
 
         turn_model = self.model
         if chat_mode == "architect":
-            strong = llm.resolve_model("strong")
+            strong = (self._resolve_sub_model("strong", self.model) or self.model) if self.router else llm.resolve_model("strong")
             yield {"type": "phase", "phase": "plan", "model": strong}
             plan_parts: list[str] = []
             p_usage = None
@@ -582,7 +602,8 @@ class Agent:
             s.messages.append({"role": "assistant", "content": plan_text})
             messages.append(s.messages[-1])
             messages.append({"role": "user", "content": ARCHITECT_EXEC_PROMPT})
-            turn_model = llm.resolve_model("cheap")
+            turn_model = ((self._resolve_sub_model("cheap", self.model) or self.model)
+                          if self.router else llm.resolve_model("cheap"))
             self.store.save(s)
             yield {"type": "phase", "phase": "execute", "model": turn_model,
                    "plan_chars": len(plan_text), "usage": p_usage}
@@ -675,7 +696,7 @@ class Agent:
                             result = {"ok": False, "output": "Error: thiếu task cho sub-agent"}
                         else:
                             turn_state["spawns"] += 1
-                            resolved = llm.resolve_sub_model(str(args.get("model") or ""),
+                            resolved = self._resolve_sub_model(str(args.get("model") or ""),
                                                              self.model)
                             result = {"ok": False, "output": "sub-agent không trả kết quả"}
                             async for _sev in self._run_subagent(tc["id"], sub_task, resolved):
@@ -705,7 +726,7 @@ class Agent:
                         verdict = guard.assess_command(cmd)
                         if (mode == "ask" and verdict["level"] in ("warn", "danger")
                                 and cmd not in self.session.allowed_commands):
-                            aid = approvals.create(cmd, verdict["level"], verdict["reasons"])
+                            aid = approvals.create(cmd, verdict["level"], verdict["reasons"], owner_id=s.owner_id)
                             await self._notify("approval_request", str(cmd)[:200])
                             yield {"type": "approval_request", "id": aid, "command": cmd,
                                    "level": verdict["level"], "reasons": verdict["reasons"]}
@@ -740,12 +761,13 @@ class Agent:
                         if (not _conn.tool_allowed(_srv.name, _tool)) and _mode != "auto":
                             _disp = f"mcp:{_srv.name}:{_tool}"
                             aid = _ap.create(_disp, "warn",
-                                             ["Tool MCP — hành động thật trên dịch vụ ngoài"])
+                                             ["Tool MCP — hành động thật trên dịch vụ ngoài"],
+                                             owner_id=s.owner_id)
                             await self._notify("approval_request", str(_disp)[:200])
                             yield {"type": "approval_request", "id": aid, "command": _disp,
                                    "level": "warn",
-                                   "reasons": [f"Tool MCP chưa allowlist — "
-                                               f"/connectors allow {_srv.name} {_tool} để bỏ duyệt"]}
+                                   "reasons": [(f"Tool MCP chưa allowlist — "
+                                                f"/connectors allow {_srv.name} {_tool} để bỏ duyệt")]}
                             _decision = await _ap.wait(aid)
                             yield {"type": "approval_decision", "id": aid, "decision": _decision}
                         if _decision == "approve_always":
@@ -764,10 +786,14 @@ class Agent:
                             from . import elicitations as _el
                             seen: set[str] = set()
                             base = set(_el.PENDING.keys())
+                            _el_tokens = _el.bind_session(s.owner_id, s.id)
                             task = _aio2.create_task(
                                 mcp_manager.call_namespaced(mcp_routing, name, args))
+                            _el.reset_session(_el_tokens)
                             while not task.done():
-                                fresh = [e for e in _el.PENDING if e not in base and e not in seen]
+                                fresh = [e for e in _el.PENDING if e not in base and e not in seen
+                                         and (_el.PENDING[e].get("owner_id", "") == s.owner_id)
+                                         and (_el.PENDING[e].get("session_id", "") == s.id)]
                                 for eid in fresh:
                                     seen.add(eid)
                                     ent = _el.PENDING.get(eid) or {}
@@ -979,7 +1005,7 @@ async def compact_session(agent: "Agent", instructions: str = "") -> dict:
               + f"\n=== TRANSCRIPT ===\n{transcript}")
     parts: list[str] = []
     try:
-        async for ev in llm.stream_chat(
+        async for ev in agent._stream_chat(
                 [{"role": "system", "content": COMPACT_SYSTEM},
                  {"role": "user", "content": prompt}],
                 tools=None, model=agent.model, temperature=0.2):
@@ -1024,7 +1050,7 @@ async def init_agents_md(agent: "Agent") -> dict:
         pass
     overview = overview_parts[0]["output"][:2500] + "\n\n" + "\n\n".join(sample)[:8000]
 
-    demo = not config.has_llm_credentials()
+    demo = not config.has_provider_credentials(llm.split_model_id(agent.model)[0])
     if demo:
         content = (f"# AGENTS.md — quy tắc dự án\n\n"
                    f"(Sinh ở DEMO MODE — chưa có API key. Nhập key rồi chạy /init lại "
@@ -1041,7 +1067,7 @@ async def init_agents_md(agent: "Agent") -> dict:
             f"\n\n=== WORKSPACE OVERVIEW ===\n{overview}")
         parts = []
         try:
-            async for ev in llm.stream_chat(
+            async for ev in agent._stream_chat(
                     [{"role": "system", "content": "You write concise, high-signal AGENTS.md files."},
                      {"role": "user", "content": prompt}],
                     tools=None, model=agent.model, temperature=0.3):
@@ -1057,7 +1083,8 @@ async def init_agents_md(agent: "Agent") -> dict:
     return {"ok": True, "path": str(target), "content": content}
 
 
-async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):
+async def run_batch(store: SessionStore | ScopedSessionStore, tasks: list[dict], demo: bool | None = False,
+                    router: ModelRouter | None = None):
     """Parallel sub-agents. tasks: [{prompt, model?, title?}] (tối đa 5).
 
     Yields: task_created, task_event {index, event}, batch_done {tasks}.
@@ -1069,6 +1096,8 @@ async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):
     for i, t in enumerate(tasks):
         prompt = t["prompt"].strip()
         model = (t.get("model") or "").strip()
+        if router:
+            model = router.canonical(model)
         title = t.get("title") or f"Task {i + 1}: {prompt[:40]}"
         s = store.create(model=model, title=title)
         created.append((i, s, prompt, model))
@@ -1079,8 +1108,10 @@ async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):
 
     async def pump(i: int, sid: str, prompt: str, model: str) -> None:
         try:
-            ag = Agent(store, sid, model=model or None)
-            src = send_demo(ag, prompt) if demo else ag.send(prompt)
+            ag = Agent(store, sid, model=model or None, router=router)
+            use_demo = demo if demo is not None else not config.has_provider_credentials(
+                llm.split_model_id(model)[0])
+            src = send_demo(ag, prompt) if use_demo else ag.send(prompt)
             async for ev in src:
                 await queue.put((i, ev))
         except Exception as e:
@@ -1102,15 +1133,15 @@ async def run_batch(store: SessionStore, tasks: list[dict], demo: bool = False):
                      for i, s, p, m in created]}
 
 
-async def run_battle(store: SessionStore, prompt: str, models: list[str],
-                     demo: bool = False):
+async def run_battle(store: SessionStore | ScopedSessionStore, prompt: str, models: list[str],
+                     demo: bool | None = False, router: ModelRouter | None = None):
     """⚔ Battle: cùng 1 prompt chạy trên nhiều model song song (mỗi model 1 session + workspace)."""
     models = [m.strip() for m in models if m.strip()][:4]
     if not models:
         models = [config.get_model()]
     tasks = [{"prompt": prompt, "model": m,
               "title": f"⚔ {m.split('/')[-1]}: {prompt[:36]}"} for m in models]
-    async for ev in run_batch(store, tasks, demo=demo):
+    async for ev in run_batch(store, tasks, demo=demo, router=router):
         yield ev
 
 
@@ -1137,11 +1168,11 @@ async def send_demo(agent: Agent, user_text: str):
         return
 
     yield {"type": "reasoning_delta",
-           "text": "Demo mode: chưa có API key. Tôi sẽ chạy một kịch bản mẫu để bạn "
+           "text": "Demo mode: chưa có API key cho provider của model này. Tôi sẽ chạy một kịch bản mẫu để bạn "
                    "thấy cách agent làm việc: ghi file → chạy lệnh → tổng kết."}
     await _aio.sleep(0.4)
     demo_text = (
-        f"Đây là **chế độ Demo** (chưa cấu hình API key OpenRouter) — nhưng mọi thứ "
+        f"Đây là **chế độ Demo** (chưa cấu hình API key cho provider đang chọn) — nhưng mọi thứ "
         f"bạn thấy đều chạy thật trong workspace `{agent.workspace.name}`.\n\n"
         "Tôi sẽ tạo một script Python nhỏ rồi chạy nó để minh họa vòng lặp agent:"
     )

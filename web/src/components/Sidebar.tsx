@@ -17,6 +17,9 @@ export function Sidebar(props: {
   onDelete: (id: string) => void
   demo: boolean
   model: string
+  userEmail: string
+  userRole: string
+  onLogout: () => void
   onOpenSettings: () => void
 }) {
   const [q, setQ] = React.useState('')
@@ -66,6 +69,10 @@ export function Sidebar(props: {
         </div>
         {props.demo && <div className="demo-badge">DEMO (chưa có key)</div>}
         <button className="btn-ghost" onClick={props.onOpenSettings}>⚙ Cài đặt</button>
+        <div className="account-row" title={props.userEmail}>
+          <span>👤 {props.userEmail}</span><em>{props.userRole}</em>
+          <button className="btn-ghost btn-sm" onClick={props.onLogout}>Đăng xuất</button>
+        </div>
       </div>
     </aside>
   )

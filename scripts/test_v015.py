@@ -15,6 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v015-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")

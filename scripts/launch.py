@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """forge-agent launcher — 1 lệnh từ đầu đến cuối: venv (lần đầu) → cài deps → server → mở browser.
 
 run_forge.bat (Windows) / run_forge.sh (macOS/Linux) chỉ là wrapper mỏng pure-ASCII
@@ -44,7 +43,7 @@ def ensure_utf8() -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:  # noqa: BLE001 — console lạ vẫn phải chạy tiếp
+        except Exception:  # noqa: S110, BLE001 — console lạ vẫn phải chạy tiếp
             pass
 
 
@@ -55,8 +54,8 @@ def venv_ready() -> bool:
 def deps_installed() -> bool:
     if not venv_ready():
         return False
-    r = subprocess.run([str(VPY), "-c", "import fastapi, uvicorn, httpx, rich"],
-                       capture_output=True, env=sanitized_env())
+    r = subprocess.run([str(VPY), "-c", "import fastapi, uvicorn, httpx, rich, authlib"],
+                       check=False, capture_output=True, env=sanitized_env())
     return r.returncode == 0
 
 
@@ -71,7 +70,7 @@ def setup_venv() -> None:
     if not deps_installed():
         say("② Cài dependencies (pip install -e .) — lần đầu khoảng 1 phút…")
         r = subprocess.run([str(VPY), "-m", "pip", "install", "-e", str(ROOT),
-                            "--quiet", "--disable-pip-version-check"], env=sanitized_env())
+                            "--quiet", "--disable-pip-version-check"], check=False, env=sanitized_env())
         if r.returncode != 0:
             say("❌ Cài dependencies THẤT BẠI — xem lỗi phía trên.")
             say("   Kiểm tra mạng rồi chạy lại; vẫn hỏng thì xoá thư mục .venv và chạy lại từ đầu.")
@@ -96,7 +95,7 @@ def wait_port(timeout: float = 40.0) -> bool:
 def open_browser() -> None:
     try:
         if IS_WIN:
-            os.startfile(URL)  # noqa: S606 — mở tab trình duyệt cục bộ
+            os.startfile(URL)  # mở tab trình duyệt cục bộ
         else:
             webbrowser.open(URL)
     except Exception as e:  # noqa: BLE001 — không mở được browser không phải lỗi chết
@@ -152,11 +151,21 @@ def main() -> int:
     setup_venv()
     sys.path.insert(0, str(ROOT))
     from engine import config
-    from engine import secrets as secretstore
+    from engine.auth import AuthStore
+    users = AuthStore()
+    if not users.has_users():
+        if not sys.stdin.isatty():
+            say("❌ Chưa có user. Chạy python scripts/setup_auth.py trong terminal tương tác.")
+            return 1
+        say("👤 Lần đầu cần tạo admin (email + password ≥16 ký tự; không có public registration).")
+        from scripts.setup_auth import main as auth_setup
+        rc = auth_setup([])
+        if rc != 0:
+            return rc
     if config.is_release_mode():
-        if not config.has_llm_credentials() or not secretstore.has_release_auth():
-            say("❌ RELEASE MODE chưa sẵn sàng: cần provider key + release password.")
-            say("   Chạy: python scripts/setup_keys.py --release")
+        if not config.has_any_llm_credentials() or not users.has_users():
+            say("❌ RELEASE MODE chưa sẵn sàng: cần ít nhất một provider key + một user.")
+            say("   Chạy: python scripts/setup_keys.py --release (hoặc scripts/setup_auth.py)")
             return 1
         say("🔒 Release mode: đăng nhập bắt buộc · Settings khóa · CORS same-origin.")
     if port_busy():
@@ -177,7 +186,7 @@ def main() -> int:
         return 1
     say("✓ Server đã lên · provider:", config.get_provider(), "· model:", config.get_model())
     if config.is_release_mode():
-        say("  Đăng nhập username `forge` bằng release password; nên mở qua HTTPS reverse-proxy.")
+        say("  Đăng nhập bằng tài khoản email/Google đã được mời; bắt buộc HTTPS reverse-proxy.")
     else:
         say("  Chưa có key? DEMO MODE vẫn chạy. Cấu hình an toàn: python scripts/setup_keys.py")
     say("  Hướng dẫn đầy đủ từng bước: USER_GUIDE.md")

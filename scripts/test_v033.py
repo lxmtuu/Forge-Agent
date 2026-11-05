@@ -74,7 +74,15 @@ def reset() -> None:
     if "server.main" in sys.modules:
         sm = sys.modules["server.main"]
         sm._LLM_RATE.clear()
-        sm._AUTH_RATE.clear()
+    if "server.auth" in sys.modules:
+        from engine.auth import AuthStore
+        aw = sys.modules["server.auth"]
+        try:
+            aw.auth_store.db_path.unlink()
+        except FileNotFoundError:
+            pass
+        aw.auth_store = AuthStore()
+        aw._LOGIN_RATE.clear()
 
 
 def fake_env() -> None:
@@ -89,9 +97,17 @@ def fake_env() -> None:
     })
 
 
-def basic(password: str = PASSWORD, username: str = "forge") -> dict[str, str]:
-    token = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
+def login(client, email="admin-v033@forge.local", role="admin"):
+    from engine.auth import SESSION_COOKIE
+    from server.auth import auth_store
+    user = auth_store.get_by_email(email)
+    if user is None:
+        user = auth_store.create_user(email, PASSWORD, "Test admin", role)
+    client.cookies.set(SESSION_COOKIE, auth_store.create_session(user.id))
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    client.headers["X-CSRF-Token"] = me.json()["csrf_token"]
+    return user
 
 
 def reload_server():
@@ -357,6 +373,7 @@ async def t7():
     reset()
     sm = reload_server()
     with TestClient(sm.app) as client:
+        login(client)
         response = client.post("/api/settings", json={"api_key": FAKE_OR})
         assert response.status_code == 200, response.text
         assert FAKE_OR not in response.text
@@ -364,7 +381,8 @@ async def t7():
         settings = client.get("/api/settings")
         assert health.status_code == settings.status_code == 200
         assert FAKE_OR not in health.text + settings.text
-        assert health.json()["key_masked"] == config.mask_key(FAKE_OR)
+        assert settings.json()["key_masked"] == "••••••••"
+        assert "key_masked" not in health.json()
         # MCP config có explicit env nhưng status API không serialize env/secret.
         from engine.mcp import save_servers
         save_servers([{"name": "fake", "command": "x", "args": [], "enabled": False,
@@ -383,7 +401,7 @@ async def t7():
                     f"credential browser storage: {path}: {line}"
 
 
-@check("T8 release fail-closed: thiếu auth 503 · thiếu/sai login 401 · Basic/Bearer đúng 200 · Settings/keycheck 403 · static cũng bị khóa")
+@check("T8 release: health/login static public · API 401 khi anonymous · Basic/Bearer không thay user session · settings/keycheck vẫn khoá")
 async def t8():
     from fastapi.testclient import TestClient
     reset()
@@ -391,30 +409,33 @@ async def t8():
     os.environ["FORGE_RELEASE_MODE"] = "1"
     sm = reload_server()
     with TestClient(sm.app) as client:
-        missing = client.get("/api/health")
-        assert missing.status_code == 503, missing.text
-        assert missing.headers["X-Content-Type-Options"] == "nosniff"
-        secretstore.write_release_password(PASSWORD)
-        anonymous = client.get("/api/health")
-        assert anonymous.status_code == 401 and "WWW-Authenticate" in anonymous.headers
-        wrong = client.get("/api/health", headers=basic("wrong-fake-password-000"))
+        public = client.get("/api/health")
+        assert public.status_code == 200 and public.json()["release_mode"]
+        assert public.headers["X-Content-Type-Options"] == "nosniff"
+        assert client.get("/api/settings").status_code == 401
+        basic_header = {"Authorization": "Basic Zm9yZzp3cm9uZw=="}
+        denied = client.get("/api/settings", headers=basic_header)
+        assert denied.status_code == 401 and "WWW-Authenticate" not in denied.headers
+        assert client.get("/").status_code == 200  # login UI không thể bị khoá phía sau chính nó
+        from server.auth import auth_store
+        auth_store.create_user("admin-v033@forge.local", PASSWORD, "Admin", "admin")
+        me = client.get("/api/auth/me")
+        csrf = me.json()["csrf_token"]
+        wrong = client.post("/api/auth/login", json={"email": "admin-v033@forge.local", "password": "wrong"},
+                            headers={"X-CSRF-Token": csrf})
         assert wrong.status_code == 401
-        ok = client.get("/api/health", headers=basic())
+        ok = client.post("/api/auth/login", json={"email": "admin-v033@forge.local", "password": PASSWORD},
+                         headers={"X-CSRF-Token": csrf})
         assert ok.status_code == 200, ok.text
-        body = ok.json()
-        assert body["release_mode"] and body["settings_locked"] and not body["web_key_input"]
-        assert FAKE_OR not in ok.text and PASSWORD not in ok.text
-        bearer = client.get("/api/health", headers={"Authorization": f"Bearer {PASSWORD}"})
-        assert bearer.status_code == 200
-        locked = client.post("/api/settings", json={"model": "blocked"}, headers=basic())
+        client.headers["X-CSRF-Token"] = ok.json()["csrf_token"]
+        settings = client.get("/api/settings")
+        assert settings.status_code == 200 and settings.json()["settings_locked"]
+        assert FAKE_OR not in settings.text and PASSWORD not in settings.text
+        locked = client.post("/api/settings", json={"model": "blocked"})
         assert locked.status_code == 403
-        keycheck = client.post("/api/keycheck", json={"api_key": FAKE_OR}, headers=basic())
+        keycheck = client.post("/api/keycheck", json={"api_key": FAKE_OR})
         assert keycheck.status_code == 403 and FAKE_OR not in keycheck.text
-        static_locked = client.get("/")
-        assert static_locked.status_code == 401
-        static_ok = client.get("/", headers=basic())
-        assert static_ok.status_code == 200
-        evil = client.get("/api/health", headers={**basic(), "Origin": "https://evil.example"})
+        evil = client.get("/api/health", headers={"Origin": "https://evil.example"})
         assert "access-control-allow-origin" not in evil.headers
         assert evil.headers["Cache-Control"] == "no-store"
 
@@ -425,7 +446,7 @@ async def t9():
     reset()
     wild_data = TMP / "wild-data"
     env = {**os.environ, "FORGE_DATA_DIR": str(wild_data), "FORGE_RELEASE_MODE": "1",
-           "FORGE_CORS_ORIGINS": "*", "FORGE_ADMIN_TOKEN": "fake-admin-v033"}
+           "FORGE_CORS_ORIGINS": "*"}
     proc = await run_process(
         [sys.executable, "-c", "import server.main"], cwd=ROOT, env=env,
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
@@ -433,7 +454,6 @@ async def t9():
     assert "không được chứa" in proc.stderr
 
     config.save_config({"provider": "openrouter", "api_key": FAKE_OR, "release_mode": True})
-    secretstore.write_release_password(PASSWORD)
     os.environ["FORGE_RELEASE_MODE"] = "1"
     os.environ["FORGE_CORS_ORIGINS"] = "https://app.example"
     sm = reload_server()
@@ -444,49 +464,63 @@ async def t9():
         assert preflight.status_code == 200, preflight.text
         assert preflight.headers["access-control-allow-origin"] == "https://app.example"
         assert preflight.headers["access-control-allow-origin"] != "*"
+        protected = client.options("/api/settings", headers={
+            "Origin": "https://app.example", "Access-Control-Request-Method": "GET",
+        })
+        assert protected.status_code == 200, protected.text
+        assert client.get("/api/settings").status_code == 401
         evil = client.options("/api/health", headers={
             "Origin": "https://evil.example", "Access-Control-Request-Method": "GET",
         })
         assert evil.status_code == 400
         assert "access-control-allow-origin" not in evil.headers
-        ok = client.get("/api/health", headers={**basic(), "Origin": "https://app.example"})
+        ok = client.get("/api/health", headers={"Origin": "https://app.example"})
         assert ok.status_code == 200
         assert ok.headers["access-control-allow-origin"] == "https://app.example"
 
 
-@check("T10 rate limit: chat/loop request thứ 3 → 429 + Retry-After · GET vẫn hoạt động · brute-force auth bị chặn")
+@check("T10 rate limit theo user: chat/loop request thứ 3 → 429 · batch/battle cùng bị chặn · brute-force email login bị chặt")
 async def t10():
     from fastapi.testclient import TestClient
     reset()
     config.save_config({"provider": "openrouter", "api_key": FAKE_OR,
                         "release_mode": True, "rate_limit_per_min": 2})
-    secretstore.write_release_password(PASSWORD)
     os.environ["FORGE_RELEASE_MODE"] = "1"
     sm = reload_server()
     with TestClient(sm.app) as client:
+        login(client)
         for expected in (404, 404, 429):
-            response = client.post("/api/sessions/no-such/chat", json={"text": "x"}, headers=basic())
+            response = client.post("/api/sessions/no-such/chat", json={"text": "x"})
             assert response.status_code == expected, (expected, response.status_code, response.text)
         assert int(response.headers["Retry-After"]) >= 1
-        assert client.get("/api/health", headers=basic()).status_code == 200
+        assert client.get("/api/settings").status_code == 200
         sm._LLM_RATE.clear()
         for expected in (404, 404, 429):
             response = client.post("/api/sessions/no-such/loop",
-                                   json={"text": "x", "every": "1h"}, headers=basic())
+                                   json={"text": "x", "every": "1h"})
             assert response.status_code == expected
-        sm._AUTH_RATE.clear()
-        for _ in range(10):
-            assert client.get("/api/health", headers=basic("bad-fake-password-000")).status_code == 401
-        blocked = client.get("/api/health", headers=basic("bad-fake-password-000"))
+        assert client.post("/api/batch", json={"prompts": ["x"]}).status_code == 429
+        assert client.post("/api/battle", json={"prompt": "x", "models": ["openrouter:vendor/code"]}).status_code == 429
+    with TestClient(sm.app) as anonymous:
+        from server import auth as aw
+        aw._LOGIN_RATE.clear()
+        me = anonymous.get("/api/auth/me")
+        anonymous.headers["X-CSRF-Token"] = me.json()["csrf_token"]
+        for _ in range(8):
+            assert anonymous.post("/api/auth/login", json={
+                "email": "admin-v033@forge.local", "password": "bad-fake-password-000"}).status_code == 401
+        blocked = anonymous.post("/api/auth/login", json={
+            "email": "admin-v033@forge.local", "password": "bad-fake-password-000"})
         assert blocked.status_code == 429 and "Retry-After" in blocked.headers
-        assert client.get("/api/health", headers=basic()).status_code == 429
+        assert anonymous.post("/api/auth/login", json={
+            "email": "admin-v033@forge.local", "password": PASSWORD}).status_code == 429
 
 
 @check("T11 terminal setup Google+release: nhập ẩn giả lập · stdout/check không echo key/password · config sạch")
 async def t11():
     from scripts import setup_keys
     reset()
-    answers = iter(["gemini-3.8-flash"])
+    answers = iter(["gemini-3.8-flash", "admin-v033@forge.local"])
     secrets = iter([FAKE_GOOGLE, PASSWORD, PASSWORD])
     original_ask, original_secret = setup_keys._ask, setup_keys._secret
     setup_keys._ask = lambda prompt, default="": next(answers)
@@ -500,9 +534,13 @@ async def t11():
     printed = output.getvalue()
     assert FAKE_GOOGLE not in printed and PASSWORD not in printed
     assert config.get_provider() == "google" and config.has_llm_credentials()
-    assert config.is_release_mode() and secretstore.has_release_auth()
+    assert config.is_release_mode()
+    from engine.auth import AuthStore
+    users = AuthStore()
+    assert users.has_users() and users.list_users()[0].role == "admin"
     assert FAKE_GOOGLE not in config.CONFIG_FILE.read_text(encoding="utf-8")
-    assert PASSWORD not in secretstore.AUTH_FILE.read_text(encoding="utf-8")
+    assert PASSWORD.encode() not in users.db_path.read_bytes()
+    assert not secretstore.AUTH_FILE.exists()
     proc = await run_process(
         [sys.executable, str(ROOT / "scripts" / "setup_keys.py"), "--check"],
         cwd=ROOT, env={**os.environ}, capture_output=True, text=True,

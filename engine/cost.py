@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Ước lượng chi phí ($): usage tokens × giá model từ OpenRouter /models.
 
 - Cache giá 1 giờ (đủ dùng, không spam API public).
@@ -50,8 +49,10 @@ def price_for(model: str | None, prices: dict[str, tuple[float, float]]):
 async def estimate(model: str | None, usage: dict | None) -> float | None:
     """$ cho 1 lượt gọi. Trả None nếu thiếu dữ liệu (không ném lỗi)."""
     from . import config as _c
-    if _c.get_provider() != "openrouter":
-        return None  # custom/local/Google: không áp bảng giá OpenRouter
+    from . import llm as _llm
+    provider, bare_model = _llm.split_model_id(model or _c.get_model())
+    if provider != "openrouter":
+        return None  # custom/local/Google direct: không áp bảng giá OpenRouter
     u = usage or {}
     p = int(u.get("prompt_tokens") or 0)
     c = int(u.get("completion_tokens") or 0)
@@ -61,7 +62,7 @@ async def estimate(model: str | None, usage: dict | None) -> float | None:
         prices = await _fetch_prices()
     except Exception:
         return None
-    pr = price_for(model, prices)
+    pr = price_for(bare_model, prices)
     if not pr:
         return None
     return round(p * pr[0] + c * pr[1], 6)

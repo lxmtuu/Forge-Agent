@@ -17,9 +17,9 @@ from . import config
 _CAP = 200  # mỗi giá trị args cắt ở 200 ký tự
 _MAX_LINE = 4000
 # token có prefix đặc trưng (ghp_…, sk-…) → mask cả đuôi
-_SECRET_PREFIX = re.compile(r"((?:ghp_|github_pat_|gho_|sk-or-v1-|sk-|xoxb-|AIza)\S+)", re.I)
+_SECRET_PREFIX = re.compile(r"((?:ghp_|github_pat_|gho_|sk-or-v1-|sk-|xoxb-|AIza)\S+)", re.IGNORECASE)
 # token sau nhãn (Bearer X · token=Y · key: Z) → giữ nhãn, mask giá trị
-_SECRET_KV = re.compile(r"(\b(?:Bearer|token|key|password|passwd|secret)\s*[:=]?\s*\"?)(\S{4,})", re.I)
+_SECRET_KV = re.compile(r"(\b(?:Bearer|token|key|password|passwd|secret)\s*[:=]?\s*\"?)(\S{4,})", re.IGNORECASE)
 
 
 def scrub(text) -> str:
@@ -81,7 +81,7 @@ def tail(n: int = 20) -> list[dict]:
         except OSError:
             continue
         for ln in reversed(lines):
-            if len(out) >= max(1, min(n, 200)):
+            if len(out) >= max(1, min(n, 10000)):
                 return out
             try:
                 out.append(json.loads(ln))
@@ -90,9 +90,9 @@ def tail(n: int = 20) -> list[dict]:
     return out
 
 
-def format_listing(n: int = 20) -> str:
-    """Chuỗi hiển thị cho /audit."""
-    rows = tail(n)
+def format_listing(n: int = 20, rows: list[dict] | None = None) -> str:
+    """Chuỗi hiển thị cho /audit; caller multi-user có thể truyền rows đã lọc owner."""
+    rows = tail(n) if rows is None else rows[:n]
     if not rows:
         return ("(chưa có tool call nào được ghi)\n"
                 "Audit log ghi mọi tool call của agent vào data/audit/<ngày>.jsonl "

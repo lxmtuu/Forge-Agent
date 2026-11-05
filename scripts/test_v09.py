@@ -14,6 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v09-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -262,7 +264,7 @@ async def t7():
     from server.main import app
     from engine import elicitations as el
     with TestClient(app) as client:
-        h = client.get("/api/health").json()
+        h = client.get("/api/settings").json()
         assert "profiles" in h and "lsp_available" in h and "active_profile" in h, h.keys()
         eid = el.create("srv-test", "câu hỏi test",
                         {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]})

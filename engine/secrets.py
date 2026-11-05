@@ -23,7 +23,7 @@ PBKDF2_ITERATIONS = 240_000
 SENSITIVE_ENV = frozenset({
     "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY",
     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FORGE_CUSTOM_API_KEY",
-    "FORGE_ADMIN_TOKEN", "FORGE_SETUP_TOKEN",
+    "FORGE_ADMIN_TOKEN", "FORGE_SETUP_TOKEN", "FORGE_GOOGLE_CLIENT_SECRET",
 })
 
 
@@ -82,6 +82,30 @@ def write_provider_key(provider: str, key: str) -> None:
     data = _read_json(PROVIDER_FILE)
     data[provider] = key
     _write_json_private(PROVIDER_FILE, data)
+
+
+def make_password_record(password: str, iterations: int = PBKDF2_ITERATIONS) -> dict:
+    """Password record có salt; plaintext không bao giờ được lưu."""
+    if len(password) < 16 or len(password) > 512:
+        raise ValueError("Mật khẩu phải từ 16 đến 512 ký tự")
+    salt = os.urandom(24)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return {"scheme": "pbkdf2_sha256", "iterations": iterations,
+            "salt": salt.hex(), "hash": digest.hex()}
+
+
+def verify_password_record(password: str, record: dict) -> bool:
+    try:
+        salt = bytes.fromhex(str(record["salt"]))
+        expected = bytes.fromhex(str(record["hash"]))
+        iterations = int(record["iterations"])
+        if (not 100_000 <= iterations <= 2_000_000
+                or record.get("scheme") != "pbkdf2_sha256"):
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except (KeyError, ValueError, TypeError):
+        return False
 
 
 def has_release_auth() -> bool:

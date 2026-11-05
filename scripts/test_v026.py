@@ -15,6 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v026-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -166,7 +168,8 @@ async def t4():
     from server.main import app
     with TestClient(app) as c:
         sid = c.post("/api/sessions", json={}).json()["session"]["id"]
-        r = c.post(f"/api/sessions/{sid}/messages", json={"text": "tin từ web", "from_session": "phiên-khác"})
+        source = c.post("/api/sessions", json={}).json()["session"]["id"]
+        r = c.post(f"/api/sessions/{sid}/messages", json={"text": "tin từ web", "from_session": source})
         assert r.status_code == 200 and r.json()["ok"], r.text[:120]
         d = c.get(f"/api/sessions/{sid}/messages", params={"peek": "true"}).json()
         assert d["count"] == 1 and d["messages"][0]["text"] == "tin từ web"

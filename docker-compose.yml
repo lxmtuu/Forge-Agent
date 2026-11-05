@@ -7,7 +7,7 @@ services:
       # Không expose public trực tiếp; dùng HTTPS proxy theo DEPLOY.md.
       - "127.0.0.1:8000:8000"
     volumes:
-      # Provider key + release password hash chỉ nằm ở volume này, không trong image.
+      # Provider key + Auth DB (password/session hash) chỉ nằm ở volume này, không trong image.
       - ./data:/app/data
     restart: unless-stopped
     security_opt:

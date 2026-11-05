@@ -207,6 +207,19 @@ def has_llm_credentials() -> bool:
     return bool(get_api_key())
 
 
+def has_provider_credentials(provider: str) -> bool:
+    """Credential cho đúng provider của một model request, không theo active global."""
+    if provider == "custom":
+        return bool(get_base_url())
+    if provider == "google":
+        return bool(get_google_api_key())
+    return bool(get_api_key())
+
+
+def has_any_llm_credentials() -> bool:
+    return bool(get_api_key() or get_google_api_key() or get_base_url())
+
+
 def is_release_mode() -> bool:
     """Khóa Settings + bắt buộc auth cho server dùng chung; chỉ terminal/env đổi được."""
     env = os.environ.get("FORGE_RELEASE_MODE", "").strip().lower()

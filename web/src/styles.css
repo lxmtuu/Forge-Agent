@@ -769,3 +769,34 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .audit-sid { color: var(--dim, #8b8d96); font-variant-numeric: tabular-nums; min-width: 44px; }
 .audit-detail { padding: 8px 12px 10px 34px; border-bottom: 1px solid var(--border, #232428); background: rgba(0, 0, 0, 0.18); font-size: 12.5px; display: grid; gap: 4px; }
 .audit-detail pre { margin: 4px 0 0; padding: 8px; background: rgba(0, 0, 0, 0.25); border-radius: 6px; overflow-x: auto; font-size: 12px; }
+
+/* ── v0.34 Phase 1: private-team auth + per-session model ── */
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 10%, rgba(217,119,87,.12), transparent 38%), var(--bg); }
+.login-card { width: min(440px, 100%); display: flex; flex-direction: column; gap: 15px; padding: 30px; border: 1px solid var(--border); border-radius: 18px; background: var(--panel); box-shadow: 0 24px 80px rgba(0,0,0,.28); }
+.login-brand { font-size: 22px; font-weight: 750; letter-spacing: -.4px; }
+.login-brand em { color: var(--accent); font-style: normal; font-weight: 500; }
+.login-bolt { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 7px; border-radius: 9px; background: var(--panel2); }
+.login-card h1 { margin: 3px 0 0; font-size: 23px; }
+.login-sub { margin: -7px 0 2px; color: var(--dim); font-size: 13px; line-height: 1.55; }
+.login-setup { padding: 11px 13px; border: 1px solid var(--warn); border-radius: 10px; color: var(--text); background: rgba(220,160,60,.07); font-size: 12px; line-height: 1.55; }
+.login-setup code { display: block; margin: 7px 0; color: var(--accent); user-select: all; }
+.login-error { padding: 10px 12px; border: 1px solid var(--red); border-radius: 9px; color: var(--red); font-size: 13px; }
+.login-form { display: flex; flex-direction: column; gap: 13px; }
+.login-form label { display: flex; flex-direction: column; gap: 6px; color: var(--dim); font-size: 12px; }
+.login-form input { width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-in); color: var(--text); font-size: 14px; }
+.login-form input:focus { outline: none; border-color: var(--accent); }
+.login-submit { padding: 11px; justify-content: center; }
+.google-login { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel2); color: var(--text); text-decoration: none; font-weight: 650; }
+.google-login:hover { border-color: var(--accent); }
+.google-login span { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; background: #fff; color: #4285f4; font-weight: 800; }
+.login-divider { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 11px; }
+.login-divider::before, .login-divider::after { content: ''; height: 1px; flex: 1; background: var(--border-soft); }
+.login-foot { color: var(--faint); line-height: 1.5; text-align: center; }
+.auth-loading { color: var(--dim); }
+.account-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px 8px; align-items: center; margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--border-soft); font-size: 11px; }
+.account-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.account-row em { color: var(--faint); font-style: normal; }
+.account-row button { grid-column: 1 / -1; justify-content: flex-start; }
+.session-model { margin-left: auto; width: min(290px, 32vw); min-width: 150px; padding: 5px 8px; border: 1px solid var(--border-soft); border-radius: 7px; background: var(--bg-in); color: var(--dim); font: 11px ui-monospace, monospace; }
+.session-model:focus { outline: none; border-color: var(--accent); color: var(--text); }
+@media (max-width: 760px) { .session-model { width: 100%; min-width: 0; margin: 4px 0 0; } .mode-chips { flex-wrap: wrap; } .login-card { padding: 23px; } }

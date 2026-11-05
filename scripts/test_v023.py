@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v023-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -160,7 +162,7 @@ async def t4():
         #     tính năng ĐÚNG THIẾT KẾ phải tự tắt, xem nhánh (c))
         import engine.llm as fllm
         orig_ep = fllm._endpoint
-        fllm._endpoint = lambda k: (srv.base + "/chat/completions",
+        fllm._endpoint = lambda k, p=None: (srv.base + "/chat/completions",
                                     {"Authorization": f"Bearer {k}", "Content-Type": "application/json"})
         fcfg.load_config = lambda: {"reasoning_effort": "high"}
         evs = [e async for e in stream_chat([{"role": "user", "content": "x"}], api_key="sk-or-v1-fake")]

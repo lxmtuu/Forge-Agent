@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v030-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -45,13 +47,14 @@ def check(name):
 async def t1():
     from engine import auditlog as al
     tok = "sk-UIV2TEST9999secretzz"
-    al.log_tool("sid-20261105-abcdef", "write_file", {"path": "a.py"}, True, 7)
-    al.log_tool("sid-20261105-abcdef", "run_command",
-                {"command": f"curl -H 'Authorization: Bearer {tok}' http://x"}, False, 250,
-                source="internal", note="fail có chủ đích cho test")
     from fastapi.testclient import TestClient
     from server.main import app
     with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={"title": "sid-20261105-abcdef"}).json()["session"]["id"]
+        al.log_tool(sid, "write_file", {"path": "a.py"}, True, 7)
+        al.log_tool(sid, "run_command",
+                    {"command": f"curl -H 'Authorization: Bearer {tok}' http://x"}, False, 250,
+                    source="internal", note="fail có chủ đích cho test")
         r = c.get("/api/audit")
         assert r.status_code == 200, r.text[:150]
         rows = r.json()["entries"]
@@ -60,7 +63,7 @@ async def t1():
         for k in ("ts", "session", "tool", "source", "ok", "ms", "args"):
             assert k in e, f"thiếu '{k}' — UI cột/quick-filter sẽ vỡ: {e}"
         assert isinstance(e["ok"], bool)
-        assert e["session"].startswith("sid-20261105"), e["session"]
+        assert e["session"] == sid, e["session"]
         blob = json.dumps(rows, ensure_ascii=False)
         assert tok not in blob, "TOKEN LỘ QUA /api/audit!"
         assert rows[0]["ok"] is False and rows[1]["ok"] is True  # nguyên liệu cho quick-filter ✅/❌

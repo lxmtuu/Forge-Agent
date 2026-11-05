@@ -14,6 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v019-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -42,12 +44,13 @@ def check(name):
 async def t1():
     from engine import auditlog as al
     tok = "ghp_ENDPOINTTEST9999zz"
-    al.log_tool("s1", "write_file", {"path": "a.py"}, True, 7)
-    al.log_tool("s1", "run_command", {"command": f"curl -H 'Authorization: Bearer {tok}' http://x"},
-                True, 250, source="internal")
     from fastapi.testclient import TestClient
     from server.main import app
     with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={}).json()["session"]["id"]
+        al.log_tool(sid, "write_file", {"path": "a.py"}, True, 7)
+        al.log_tool(sid, "run_command", {"command": f"curl -H 'Authorization: Bearer {tok}' http://x"},
+                    True, 250, source="internal")
         r = c.get("/api/audit")
         assert r.status_code == 200, r.text[:150]
         rows = r.json()["entries"]

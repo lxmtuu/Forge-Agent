@@ -45,6 +45,9 @@ export interface SessionFull {
 export interface ModelInfo {
   id: string
   name: string
+  provider?: 'openrouter' | 'google' | 'custom' | string
+  capabilities?: string[]
+  adapter?: string
   context: number | null
   prompt_price: number
   completion_price: number
@@ -65,6 +68,7 @@ export interface Settings {
   model: string
   key_masked: string | null
   provider?: 'openrouter' | 'google' | 'custom'
+  provider_keys?: Record<string, boolean>
   release_mode?: boolean
   settings_locked?: boolean
   web_key_input?: boolean

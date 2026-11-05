@@ -3,7 +3,7 @@
 > 🪟 **Windows**: mọi lỗi encode (`charmap codec`, ký tự tiếng Việt) đã được vá từ v0.3.1. Nếu lệnh `python` không có sẵn, thử `py -3` thay thế.
 
 ## ⚡ CÁNH NHANH NHẤT: Windows double-click `run_forge.bat`
-Tự tạo .venv → cài dependencies → chạy server → mở trình duyệt. macOS/Linux: `./run_forge.sh`. Bản local chỉ listen `127.0.0.1`. Hướng dẫn đầy đủ: **USER_GUIDE.md**.
+Tự tạo .venv → cài dependencies → hỏi tạo admin nếu chưa có user → chạy server → mở trình duyệt. macOS/Linux: `./run_forge.sh`. Bản local chỉ listen `127.0.0.1`. Hướng dẫn đầy đủ: **USER_GUIDE.md**.
 
 ## 0. Muốn có “phần mềm” như Claude Code/OpenCode?
 ```bash
@@ -17,11 +17,13 @@ Chi tiết: **BUILD_DESKTOP.md** (gồm cách build file .exe độc lập).
 pip install -r requirements.txt
 ```
 
-## 2. Chạy local
+## 2. Tạo admin và chạy local
 ```bash
+# Lần đầu: hỏi email, password nhập ẩn ≥16 ký tự.
+python scripts/setup_auth.py
 python -m uvicorn server.main:app --host 127.0.0.1 --port 8000
 ```
-Mở **http://localhost:8000**.
+Mở **http://localhost:8000** và đăng nhập bằng account vừa tạo. Nếu chạy bằng `run_forge.bat`/`run_forge.sh`, launcher tự hỏi bước tạo admin này.
 
 ## 3. Dùng ngay (Demo mode — không cần key)
 Agent vẫn chạy tool THẬT (tạo file, chạy lệnh) nhưng “não” là kịch bản mẫu. Bấm thử **⚡ Song song**, hoặc cấu hình provider để dùng model thật.
@@ -51,10 +53,12 @@ python scripts/setup_keys.py --provider openrouter --release
 python scripts/launch.py --release --no-browser
 ```
 
-- Đăng nhập username **`forge`** bằng release password vừa tạo.
-- Settings/key input trên Web bị khóa; chỉ operator đổi qua terminal.
-- Bắt buộc HTTPS reverse proxy khi truy cập qua mạng. Đọc **SECURITY.md + DEPLOY.md** trước khi public.
-- Nếu cần listen mọi interface: đặt `FORGE_HOST=0.0.0.0` **chỉ sau khi** release auth và proxy đã sẵn sàng.
+- Nếu chưa có user, setup yêu cầu tạo **email + password admin đầu tiên** (password nhập ẩn, ≥16 ký tự). Có thể tạo thêm bằng `python scripts/setup_auth.py --email member@example.com`.
+- Đăng nhập bằng tài khoản email/password riêng hoặc Google OIDC đã cấu hình; **không còn username chung `forge`**. Admin mời user trong ⚙ → Team, không có public registration.
+- Mỗi user chỉ thấy session/workspace của mình; member chọn model theo session nhưng không đổi default/settings toàn server.
+- Settings/key input toàn server bị khóa ở release; chỉ operator đổi qua terminal.
+- Bắt buộc HTTPS reverse proxy khi truy cập qua mạng. Đặt `FORGE_PUBLIC_URL=https://...` hoặc `FORGE_COOKIE_SECURE=1`. Đọc **SECURITY.md + DEPLOY.md** trước khi public.
+- Nếu cần listen mọi interface: đặt `FORGE_HOST=0.0.0.0` **chỉ sau khi** user auth và proxy đã sẵn sàng.
 
 ## 6. CLI (tùy chọn)
 ```bash
@@ -66,6 +70,6 @@ python cli/main.py --parallel "task A" "task B"
 ## An toàn
 - Mặc định **Guarded**: lệnh nguy hiểm bị chặn. Có thể đổi **ASK** hoặc **AUTO** (AUTO chỉ nên dùng trong sandbox).
 - Shell/hook/git/MCP không tự thừa kế provider key; MCP chỉ nhận secret được khai báo explicit.
-- Release có authentication, CORS same-origin và rate-limit; vẫn chỉ nên cấp cho nhóm tin cậy, không phải multi-tenant isolation.
+- Release có per-user cookie auth + owner ACL, CSRF, CORS same-origin và rate-limit; vẫn chỉ nên cấp cho nhóm tin cậy vì không phải OS sandbox.
 
 Chi tiết: **README.md · USER_GUIDE.md · SECURITY.md · DEPLOY.md**.

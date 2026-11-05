@@ -193,18 +193,20 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
-### 🔐 Shared-server security + Google Gemini (v0.33)
+### 🔐 Private team + multi-provider routing (v0.34)
 
 | Tính năng | Hành vi |
 |---|---|
-| **Terminal secure setup** | `python scripts/setup_keys.py --provider openrouter|google --release`: nhập key/password ẩn, không có `--key`, không nhúng developer key vào source/Web/ZIP |
-| **Provider-aware** | OpenRouter, Google Gemini qua OpenAI-compatible endpoint, custom/Ollama; demo detection, model fallback, cost và keycheck theo đúng provider |
-| **Secret store** | Provider key ở `data/provider-secrets.json`; `config.json` không chứa key. Release password chỉ lưu salt + PBKDF2 hash trong `data/release-auth.json` |
-| **Không rò sang subprocess** | Shell/hook/background/git/checkpoint/LSP dùng sanitized env; MCP mặc định không nhận provider/admin key, chỉ nhận secret khai báo explicit |
-| **Release auth + lock** | Toàn bộ Web/API/static cần Basic/Bearer auth; thiếu auth setup fail-closed 503. Settings/keycheck bị khóa, đổi cấu hình qua terminal |
-| **CORS + rate-limit** | Release same-origin mặc định, wildcard bị từ chối; LLM request có 429 + Retry-After, có chống brute-force login |
+| **Account riêng, không public registration** | Admin đầu tiên tạo bằng `scripts/setup_auth.py` hoặc `setup_keys.py --release`; admin mời member trong ⚙ → **Team**. Email/password + Google OIDC, không còn shared Basic/Bearer password |
+| **Cookie + CSRF** | Session cookie HttpOnly/SameSite=Lax/Secure qua HTTPS, DB chỉ lưu token hash; mutation và SSE POST cần CSRF. Logout/disable revoke session |
+| **Owner ACL** | Session/workspace, fork/export, batch/battle/sub-agent, loop, inbox, audit/usage, approval/elicitation đều lọc theo user. Session legacy `owner_id=""` chỉ hiện sau `scripts/migrate_sessions.py --apply` tường minh |
+| **Model theo session** | Canonical `openrouter:vendor/model`, `google:gemini-...`, `custom:...`; provider key chỉ ở server. Demo/cost/fallback/sub-agent route theo model của từng request, không mutate default toàn server |
+| **Admin/member boundary** | Chỉ admin đổi settings/default/Team/MCP/connectors/global skills. Member vẫn chọn model và quản lý project workspace của mình, nhưng không nạp MCP credential toàn server |
+| **Google OIDC** | Authorization Code + PKCE/state/nonce, RS256/JWKS; scope chỉ `openid email profile`, **không cấp Gmail/offline access** |
+| **Release security** | Settings/keycheck toàn server khóa qua terminal; CORS same-origin mặc định, auth/LLM rate-limit, API `no-store`, sanitized subprocess env |
+| **Image generation** | Mới có capability contract; chưa có adapter, API báo `image_generation_adapter=false` và request tạo ảnh trả 501 |
 
-**Shared server là cho nhóm tin cậy, không phải multi-tenant isolation.** Quy trình HTTPS, Docker/systemd, rotation và checklist: **SECURITY.md · DEPLOY.md**.
+Private team vẫn chạy cùng OS account và provider quota; đây là owner ACL ở application layer cho nhóm tin cậy, không phải OS sandbox chống user độc hại. Quy trình HTTPS, migration, Docker/systemd và checklist: **SECURITY.md · DEPLOY.md**.
 
 ### 🌙 Autonomy nâng cao (v0.32)
 
@@ -214,7 +216,7 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 | **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
 | **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
 
-### 🚀 Chạy nhanh (v0.33)
+### 🚀 Chạy nhanh (v0.34)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 
@@ -334,9 +336,10 @@ Kết quả hiển thị theo nhóm Task 1/2/3… với trạng thái riêng t�
 ```bash
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..   # build 1 lần
+python scripts/setup_auth.py          # lần đầu: tạo admin, password nhập ẩn
 uvicorn server.main:app --host 127.0.0.1 --port 8000
 # mở http://localhost:8000
-# hoặc: ./run.sh  (tự cài + tự build + chạy)
+# hoặc: ./run_forge.sh  (tự cài + tự build + chạy)
 # hoặc: docker compose up -d --build
 ```
 Deploy VPS/PaaS chi tiết: **DEPLOY.md**.

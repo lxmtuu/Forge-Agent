@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts import _test_auth
+_test_auth.install()
 
 TMP = Path(tempfile.mkdtemp(prefix="forge-v024-"))
 os.environ["FORGE_DATA_DIR"] = str(TMP / "data")
@@ -129,9 +131,10 @@ async def t4():
     from fastapi.testclient import TestClient
     from server.main import app
     from engine import auditlog
-    auditlog.log_tool("sess-csv", "run_command",
-                      {"command": "git commit -m 'feat: a, b và c'", "flags": "-q"}, True, 123)
     with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={}).json()["session"]["id"]
+        auditlog.log_tool(sid, "run_command",
+                          {"command": "git commit -m 'feat: a, b và c'", "flags": "-q"}, True, 123)
         r = c.get("/api/audit/export")
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/csv"), r.headers["content-type"]
@@ -139,7 +142,7 @@ async def t4():
         text = r.text
         rows = list(csv.reader(io.StringIO(text)))
         assert rows[0] == ["ts", "session", "tool", "source", "ok", "ms", "args", "note"], rows[0]
-        target = [r for r in rows if len(r) > 2 and r[2] == "run_command" and r[1] == "sess-csv"]
+        target = [r for r in rows if len(r) > 2 and r[2] == "run_command" and r[1] == sid]
         assert target, rows[:3]
         row = target[-1]
         assert row[4] == "1" and row[5] == "123"

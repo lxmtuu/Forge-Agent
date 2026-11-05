@@ -15,13 +15,14 @@ TIMEOUT_SEC = 180.0
 VALID_DECISIONS = ("approve", "approve_always", "deny")
 
 
-def create(command: str, level: str, reasons: list[str]) -> str:
+def create(command: str, level: str, reasons: list[str], owner_id: str = "") -> str:
     cleanup()
     aid = "appr_" + secrets.token_hex(5)
     PENDING[aid] = {
         "command": command,
         "level": level,
         "reasons": reasons,
+        "owner_id": owner_id,
         "future": asyncio.get_event_loop().create_future(),
         "ts": time.time(),
     }
@@ -41,9 +42,10 @@ async def wait(aid: str, timeout: float = TIMEOUT_SEC) -> str:
         PENDING.pop(aid, None)
 
 
-def resolve(aid: str, decision: str) -> bool:
+def resolve(aid: str, decision: str, owner_id: str | None = None) -> bool:
     entry = PENDING.get(aid)
-    if not entry or entry["future"].done():
+    if (not entry or entry["future"].done()
+            or (owner_id is not None and entry.get("owner_id", "") != owner_id)):
         return False
     if decision not in VALID_DECISIONS:
         decision = "deny"

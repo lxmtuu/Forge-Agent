@@ -33,9 +33,10 @@
 **Bước 2.** **Double-click `run_forge.bat`.** Lần đầu nó sẽ:
 1. tự tạo môi trường ảo `.venv`;
 2. tự `pip install` dependencies (~1 phút);
-3. chạy server và **tự mở trình duyệt** `http://localhost:8000`.
+3. nếu chưa có user, hỏi **email + password admin** (password nhập ẩn, ≥16 ký tự);
+4. chạy server và **tự mở trình duyệt** `http://localhost:8000` để đăng nhập.
 
-Xong! Những lần sau chỉ mất vài giây (bỏ qua setup).
+Xong! Những lần sau chỉ mất vài giây (bỏ qua setup). Có thể tạo trước bằng `py -3 scripts\setup_auth.py` nếu muốn.
 
 - Muốn chạy tay trong PowerShell (để xem log rõ):
   ```powershell
@@ -119,14 +120,16 @@ Mỗi tool MCP lần đầu chạy đều **hỏi duyệt** (allowlist) — khô
 - **Provider key** lưu tại `data/provider-secrets.json`; **connector token** lưu riêng tại `data/secrets.json`. Cả hai đều nằm ngoài git/ZIP, listing chỉ hiện bản mask.
 - Shell/hook/background/git/LSP không thừa kế provider/admin key. MCP chỉ nhận secret được khai báo explicit trong `env` của server đó.
 
-### Một server dùng chung — release mode (v0.33)
+### Private team — release mode (v0.34)
 
-1. Operator chạy `python scripts/setup_keys.py --provider openrouter --release` (hoặc `--provider google`) **trước khi phát hành**.
-2. Tạo release password ≥16 ký tự. Password không lưu thô — chỉ PBKDF2 hash trong `data/release-auth.json`.
-3. Khởi động `python scripts/launch.py --release --no-browser`. Người dùng đăng nhập username **`forge`** và password đó.
-4. Ở release, Web Settings/keycheck bị khóa; đổi key/model bằng terminal setup. Thiếu auth setup server trả 503, sai đăng nhập 401, Settings bị khóa 403.
-5. CORS mặc định same-origin và có rate-limit LLM/auth. Khi qua mạng **bắt buộc HTTPS reverse proxy** — đọc `SECURITY.md` và `DEPLOY.md`.
-6. Local chỉ listen `127.0.0.1`; chỉ đặt `FORGE_HOST=0.0.0.0` sau khi release/proxy sẵn sàng. Đây là shared server cho nhóm tin cậy, không phải cô lập multi-tenant.
+1. Operator chạy `python scripts/setup_keys.py --provider openrouter --release` (hoặc `--provider google`) **trước khi phát hành**. Nếu chưa có user, setup hỏi email + password admin đầu tiên.
+2. Tạo thêm user bằng `python scripts/setup_auth.py --email member@example.com`, hoặc admin vào **⚙ → Team → Tạo / mời user**. Password ≥16 ký tự chỉ lưu PBKDF2 hash trong `data/auth.db`; không có public registration hay username chung.
+3. Khởi động `python scripts/launch.py --release --no-browser`. Mỗi người đăng nhập bằng email/password riêng; có thể bật Google OIDC trong Team (chỉ login, không cấp Gmail).
+4. Cookie session là HttpOnly; mutation cần CSRF. Logout/disable revoke session. User A không đọc được session/workspace/audit/inbox của user B.
+5. Member chọn canonical model theo session; chỉ admin đổi default/settings/Team/MCP/connectors/global skills. Release khoá key settings toàn server qua terminal.
+6. CORS mặc định same-origin và có rate-limit LLM/auth. Khi qua mạng **bắt buộc HTTPS reverse proxy**, đặt `FORGE_PUBLIC_URL=https://...` hoặc `FORGE_COOKIE_SECURE=1`; đọc `SECURITY.md` và `DEPLOY.md`.
+7. Local chỉ listen `127.0.0.1`; chỉ đặt `FORGE_HOST=0.0.0.0` sau khi auth/proxy sẵn sàng. Owner ACL không phải OS sandbox, vẫn chỉ cấp cho nhóm tin cậy.
+8. Nâng cấp từ v0.33: session cũ bị ẩn cho tới khi chạy dry-run rồi `python scripts/migrate_sessions.py --email admin@example.com --apply` tường minh.
 
 ## 10. Sự cố thường gặp
 

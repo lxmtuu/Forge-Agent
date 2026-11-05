@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
+import type { AuthUser } from './api'
 import { uid } from './types'
-import type { AgentEvent, BatchEvent, ChatMode, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage } from './types'
+import type { AgentEvent, BatchEvent, ChatMode, FileNode, Item, SessionSummary, Settings, TaskGroup, Usage, ModelInfo } from './types'
 import { Sidebar } from './components/Sidebar'
 import { FilesPane } from './components/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
@@ -10,6 +11,7 @@ import { ApprovalCard } from './components/ApprovalCard'
 import type { ContextStats } from './types'
 import { ElicitationCard } from './components/ElicitationCard'
 import { Markdown } from './md'
+import { LoginScreen } from './components/LoginScreen'
 
 /** Pure reducer: apply one agent event to an item timeline. */
 function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
@@ -130,6 +132,12 @@ function buildTimeline(messages: { role: string; content: string | null; tool_ca
 }
 
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [googleEnabled, setGoogleEnabled] = useState(false)
+  const [needsSetup, setNeedsSetup] = useState(false)
+  const [activeModel, setActiveModel] = useState('')
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sid, setSid] = useState<string | null>(null)
@@ -174,7 +182,7 @@ export default function App() {
     try {
       await api.streamChat(sid as string, text, mode, (ev) => {
         setItems((prev) => applyEvent(prev, ev))
-      }, ac.signal, imgs, rerunMode)
+      }, ac.signal, imgs, rerunMode, activeModel || undefined)
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setErrorBanner((e as Error).message)
     } finally {
@@ -187,7 +195,7 @@ export default function App() {
       if (sid) refreshTree(sid)
     }
   }
-  const [battleModels, setBattleModels] = useState('openrouter/free, google/gemini-3.8-flash, deepseek/deepseek-v4.1-flash')
+  const [battleModels, setBattleModels] = useState('openrouter:openrouter/free, google:gemini-3.8-flash, openrouter:deepseek/deepseek-v4.1-flash')
   const [info, setInfo] = useState<string | null>(null)
   const [busyTool, setBusyTool] = useState<string | null>(null)
   const [pendingImages, setPendingImages] = useState<string[]>([])
@@ -272,6 +280,7 @@ export default function App() {
       const s = await api.getSession(id)
       setItems(buildTimeline(s.messages ?? []))
       setSessionUsage(s.usage ?? null)
+      setActiveModel(s.model)
       setBatch(null)
       api.context(id).then(setCtx).catch(() => {})
     } catch (e) { setErrorBanner(String(e)) }
@@ -281,19 +290,50 @@ export default function App() {
     try { setTree(await api.tree(id)) } catch { /* ignore */ }
   }, [])
 
-  // initial load
+  // Auth bootstrap trước; tuyệt đối không tải/tạo session khi chưa biết user.
   useEffect(() => {
-    api.health().then((s) => { setSettings(s); if (s.demo) setSettingsOpen(true) }).catch(() => {})
-    refreshSessions()
-    api.listSessions().then(async (list) => {
-      if (list.length > 0) { setSid(list[0].id); await loadSession(list[0].id); refreshTree(list[0].id) }
-      else {
-        const s = await api.createSession()
-        setSid(s.id); refreshSessions()
-      }
-    }).catch(() => {})
+    let live = true
+    api.authMe().then((d) => {
+      if (!live) return
+      setGoogleEnabled(d.google_enabled)
+      setNeedsSetup(d.needs_setup)
+      setUser(d.user)
+      setAuthLoading(false)
+    }).catch(() => { if (live) { setUser(null); setAuthLoading(false) } })
+    const expired = () => {
+      abortRef.current?.abort()
+      setUser(null); setAuthLoading(false); setSessions([]); setSid(null); setItems([])
+    }
+    window.addEventListener('forge:unauthorized', expired)
+    return () => { live = false; window.removeEventListener('forge:unauthorized', expired) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Chỉ load dữ liệu sau khi auth; reset state để user kế tiếp không thấy dữ liệu user trước.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    setSessions([]); setSid(null); setItems([]); setTree([]); setActiveModel(''); setSettings(null); setAvailableModels([])
+    api.health().then((s) => {
+      if (cancelled) return
+      setSettings(s)
+      setActiveModel((cur) => cur || s.model)
+      if (s.demo && user.role === 'admin') setSettingsOpen(true)
+    }).catch(() => {})
+    api.models().then((d) => { if (!cancelled) setAvailableModels(d.models) }).catch(() => {})
+    api.listSessions().then(async (list) => {
+      if (cancelled) return
+      setSessions(list)
+      if (list.length > 0) { setSid(list[0].id); await loadSession(list[0].id); refreshTree(list[0].id) }
+      else {
+        const created = await api.createSession()
+        if (cancelled) return
+        setSid(created.id); setActiveModel(created.model); refreshSessions()
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
   const refreshCtx = (sessionId: string | null) => {
     if (!sessionId) { setCtx(null); return }
@@ -360,7 +400,7 @@ export default function App() {
           }
         }
         if (isBattle) await api.battleStream(text, battleModels.split(',').map((s) => s.trim()).filter(Boolean), onBatch, ac.signal)
-        else await api.batchStream(prompts, onBatch, ac.signal)
+        else await api.batchStream(prompts, onBatch, ac.signal, activeModel || undefined)
       } else {
         setItems((prev) => [...prev, { kind: 'user', id: uid(), text, images: pendingImages.length ? pendingImages : undefined }])
         const imgs = pendingImages
@@ -371,7 +411,7 @@ export default function App() {
             return
           }
           setItems((prev) => applyEvent(prev, ev))
-        }, ac.signal, imgs)
+        }, ac.signal, imgs, false, activeModel || undefined)
         await loadSession(sid)
         refreshCtx(sid)
       }
@@ -414,8 +454,9 @@ export default function App() {
   // ------------------------------------------------------------ sessions
   async function newSession() {
     if (streaming) stop()
-    const s = await api.createSession()
+    const s = await api.createSession(activeModel || undefined)
     setSid(s.id)
+    setActiveModel(s.model)
     setItems([])
     setBatch(null)
     setSessionUsage(null)
@@ -549,9 +590,10 @@ export default function App() {
   }
 
   // ------------------------------------------------------------- settings
-  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) {
+  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string; provider?: string }) {
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
+    setActiveModel(s.model)
   }
 
   // --------------------------------------------------------------- render
@@ -662,6 +704,18 @@ export default function App() {
     return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
   }
 
+  async function logout() {
+    abortRef.current?.abort()
+    try { await api.logout() } catch { /* session có thể đã hết hạn */ }
+    setUser(null); setSessions([]); setSid(null); setItems([]); setTree([]); setSettings(null)
+  }
+
+  if (authLoading) return <main className="login-page"><div className="auth-loading">⚡ Đang kiểm tra phiên…</div></main>
+  if (!user) {
+    return <LoginScreen googleEnabled={googleEnabled} needsSetup={needsSetup}
+      onLoggedIn={(u) => { setNeedsSetup(false); setUser(u) }} />
+  }
+
   return (
     <div className={`app ${showSb ? 'show-sb' : ''}`}>
       {settings && (
@@ -672,7 +726,10 @@ export default function App() {
           onNew={newSession}
           onDelete={deleteSession}
           demo={settings.demo}
-          model={settings.model}
+          model={activeModel || settings.model}
+          userEmail={user.email}
+          userRole={user.role}
+          onLogout={logout}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
@@ -737,7 +794,7 @@ export default function App() {
         <div className="composer">
           {settings?.demo && (
             <div className="demo-banner">
-              DEMO MODE — chưa có OpenRouter API key. Agent vẫn chạy tool thật, nhưng "não" là kịch bản mẫu. Nhập key ở ⚙ để kích hoạt model thật.
+              DEMO MODE — chưa có provider key. Agent vẫn chạy tool thật, nhưng "não" là kịch bản mẫu. Admin nhập key ở ⚙ hoặc terminal để kích hoạt model thật.
             </div>
           )}
           {editing && (
@@ -775,6 +832,12 @@ export default function App() {
             <button className={`mode-chip ${parallel ? 'on' : ''}`}
               title="Mỗi dòng trong ô nhập là 1 tác vụ song song (không phụ thuộc chế độ trên)"
               onClick={() => setParallel(!parallel)}>⚡ Song song</button>
+            <input className="session-model" list="session-models" value={activeModel}
+              onChange={(e) => setActiveModel(e.target.value)} title="Model cho phiên này — server tự route provider"
+              aria-label="Model cho phiên này" />
+            <datalist id="session-models">
+              {availableModels.map((m) => <option key={m.id} value={m.id}>{m.provider ?? ''}</option>)}
+            </datalist>
           </div>
           {chatMode === 'battle' && (
             <input className="battle-models" value={battleModels}
@@ -850,7 +913,7 @@ export default function App() {
           </div>
           <div className="composer-foot">
             <span>Phiên: <code>{sid ?? '—'}</code></span>
-            <span>Model: <code>{settings?.model ?? '—'}</code></span>
+            <span>Model: <code>{activeModel || '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
             {sessionUsage?.cost_usd != null && (
               <span title="Chi phí ước lượng theo giá OpenRouter — chỉ tính các lượt đã chạy trong phiên này">
@@ -899,6 +962,7 @@ export default function App() {
         <SettingsModal
           settings={settings}
           sid={sid}
+          isAdmin={user.role === 'admin'}
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
         />
