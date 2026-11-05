@@ -5,21 +5,23 @@
 
 ---
 
-## 1. Thực trạng forge-agent (audit code)
+## 1. Thực trạng forge-agent (audit code — *bản chụp lúc research, trước v0.17*)
 
-| Thành phần | Trạng thái | Ghi chú |
-|---|---|---|
-| MCP client **stdio** (`McpServer`) | ✅ có (`engine/mcp.py`) | chạy `npx`/`docker` server local, JSON-RPC |
-| MCP client **HTTP** (`McpHttpServer`) | ✅ có | trỏ URL + `headers` (Bearer token) — **đủ nói chuyện với remote MCP chính thức** |
-| Gắn tool MCP vào vòng lặp agent | ✅ có | tool prefix `mcp_<srv>_…`, event `mcp_ready` |
-| MCP **elicitation** (server hỏi giữa chừng) | ✅ có | đẩy `elicitation_request` lên UI |
-| Cấu hình | ⚠️ tay | `data/mcp.json` `{"servers":[…]}` — phải tự soạn JSON |
-| **Token/secrets** | ❌ chưa có | chưa có chỗ lưu token connector riêng, chưa mask |
-| **Approval cho tool MCP** | ❌ **lỗ hổng** | tool MCP gọi THẲNG, không qua approval như `run_command` → một tool "gửi email/xoá bảng" có thể chạy không hỏi |
-| OAuth 2.1 (đăng nhập remote server) | ❌ chưa | Notion/Supabase/Vercel mặc định OAuth |
-| Lệnh/UI quản lý connector | ❌ chưa | chỉ `/mcp` xem danh sách |
+> ⚠️ **Đây là bản chụp lịch sử.** Cột "Hiện trạng v0.31" ghi lại từng dòng ĐÃ ĐÓNG ở version nào — kiểm chứng lại 05/11/2026 bằng code + test thật (test_v017 T3/T4 xanh): gate approval thực thi tại `engine/agent.py:609`, secrets mask tại `engine/connectors.py` (`mask_token`, `auth()`), OAuth tại `engine/oauth.py`.
 
-**Kết luận audit:** "engine" đã xong ~70%; thiếu là **lớp trải nghiệm + an toàn**: preset, quản lý token, approval cho MCP, OAuth.
+| Thành phần | Trạng thái *lúc audit* | Ghi chú *lúc audit* | Hiện trạng v0.31 |
+|---|---|---|---|
+| MCP client **stdio** (`McpServer`) | ✅ có (`engine/mcp.py`) | chạy `npx`/`docker` server local, JSON-RPC | ✅ giữ nguyên + `$VAR` expansion lúc spawn (v0.28) |
+| MCP client **HTTP** (`McpHttpServer`) | ✅ có | trỏ URL + `headers` (Bearer token) | ✅ giữ nguyên — Stripe/Atlassian/Vercel/Supabase remote |
+| Gắn tool MCP vào vòng lặp agent | ✅ có | tool prefix `mcp_<srv>_…`, event `mcp_ready` | ✅ giữ nguyên |
+| MCP **elicitation** (server hỏi giữa chừng) | ✅ có | đẩy `elicitation_request` lên UI | ✅ giữ nguyên |
+| Cấu hình | ⚠️ tay | `data/mcp.json` — phải tự soạn JSON | ✅ **ĐÓNG v0.17 (C1) + v0.29**: 18 preset — `/connectors add <tên>`, REST + tab ⚙ (không ai phải soạn JSON nữa) |
+| **Token/secrets** | ❌ chưa có | chưa có chỗ lưu, chưa mask | ✅ **ĐÓNG v0.17 (C3)**: `data/secrets.json` chmod 600 + `mask_token()` mọi listing — test T2 chứng minh token thật 0 lần echo |
+| **Approval cho tool MCP** | ❌ **lỗ hổng** | tool MCP gọi THẲNG không qua duyệt | ✅ **ĐÓNG v0.17 (C4)**: tool chưa allowlist → `approval_request` như `run_command` (gate `agent.py:609`); allow per-tool/`*`; deny rút phép — test T3/T4 chứng minh live |
+| OAuth 2.1 (đăng nhập remote server) | ❌ chưa | Notion/Supabase/Vercel mặc định OAuth | ✅ **ĐÓNG v0.20/v0.21 (C6)**: `engine/oauth.py` — authorization code + **PKCE S256** (RFC 7636) trên loopback (RFC 8252), `/connectors oauth <tên> <client_id> [secret]` |
+| Lệnh/UI quản lý connector | ❌ chưa | chỉ `/mcp` xem danh sách | ✅ **ĐÓNG v0.17 (C2) + v0.21 (C7)**: `/connectors add|auth|allow|deny|remove|oauth` đủ CLI/TUI/Web + tab ⚙ 📡 Kết nối / 🔗 Dịch vụ |
+
+**Kết luận audit lúc đó:** "engine" đã xong ~70%; thiếu lớp trải nghiệm + an toàn. **→ Đã bổ sung xong toàn bộ ở v0.17/v0.20/v0.21 (C1→C7), mở rộng 11→18 preset ở v0.28/v0.29.** Không còn mục nào đỏ.
 
 ## 2. Bản đồ connectors 2026 (ai cung cấp gì)
 
