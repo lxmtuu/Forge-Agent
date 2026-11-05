@@ -3,6 +3,8 @@ import asyncio
 import os
 from pathlib import Path
 
+from .secrets import sanitized_env
+
 MAX_READ = 60_000          # chars returned to the model
 MAX_CMD_OUTPUT = 12_000    # chars returned to the model
 MAX_SEARCH_MATCHES = 100
@@ -546,7 +548,7 @@ async def _run_command(workspace: Path, args: dict, override: bool = False) -> s
     if config.load_config().get("docker_sandbox") and guard.DOCKER_AVAILABLE:
         cmd = guard.docker_wrap(cmd)
     timeout = min(int(args.get("timeout_sec") or 30), 120)
-    env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1"}
+    env = sanitized_env({"TERM": "dumb", "NO_COLOR": "1"})
     try:
         proc = await asyncio.create_subprocess_shell(
             cmd, cwd=str(workspace), stdout=asyncio.subprocess.PIPE,
@@ -795,10 +797,9 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
             from . import config as _cfg_mod
             hook_cmd = _cfg_mod.load_config().get("on_file_change")
             if hook_cmd and str(hook_cmd).strip():
-                import os as _os
-                env = {**_os.environ,
-                       "FORGE_CHANGED_FILE": str(changed_path),
-                       "FORGE_WORKSPACE": str(workspace)}
+                env = sanitized_env({
+                    "FORGE_CHANGED_FILE": str(changed_path),
+                    "FORGE_WORKSPACE": str(workspace)})
                 proc = await asyncio.create_subprocess_shell(
                     str(hook_cmd), cwd=str(workspace), env=env,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)

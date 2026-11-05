@@ -17,6 +17,7 @@ import shutil
 from pathlib import Path
 
 from . import config
+from .secrets import sanitized_env
 
 GIT = shutil.which("git")
 
@@ -34,7 +35,8 @@ async def _run(*args: str, timeout: float = 60) -> tuple[int, str]:
     if git is None:
         return 127, "git không có"
     proc = await asyncio.create_subprocess_exec(
-        git, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        git, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        env=sanitized_env())
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -102,7 +104,7 @@ async def merge(sub_sid: str, src_sid: str, parent_sid: str, parent_ws) -> dict:
     # patch phải lấy bằng BYTES nguyên bản — --binary chứa NUL, đi qua decode text là hỏng
     proc = await asyncio.create_subprocess_exec(
         GIT, *env_wt, "diff", "--binary", f"iso/{sub_sid}", "--",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=sanitized_env())
     raw, err = await proc.communicate()
     if proc.returncode != 0:
         return {"ok": False, "message": f"diff lỗi: {err.decode()[:150]}", "files": 0}
@@ -115,7 +117,7 @@ async def merge(sub_sid: str, src_sid: str, parent_sid: str, parent_ws) -> dict:
     proc = await asyncio.create_subprocess_exec(
         GIT, "-C", str(parent_ws), "apply", "--whitespace=nowarn", "-",
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT)
+        stderr=asyncio.subprocess.STDOUT, env=sanitized_env())
     out, _ = await proc.communicate(raw)  # bytes nguyên bản
     if proc.returncode != 0:
         return {"ok": False,
@@ -174,7 +176,7 @@ async def export_tree(src_sid: str, dst_dir) -> bool:
         return False
     proc = await asyncio.create_subprocess_exec(
         GIT, "--git-dir", str(_repo(src_sid)), "archive", "forge", "--",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=sanitized_env())
     out, _err = await proc.communicate()
     if proc.returncode != 0 or not out:
         return False
@@ -192,7 +194,7 @@ def export_tree_sync(src_sid: str, dst_dir) -> bool:
         return False
     import subprocess
     r = subprocess.run([GIT, "--git-dir", str(_repo(src_sid)), "archive", "forge", "--"],
-                       capture_output=True, timeout=120, check=False)
+                       capture_output=True, timeout=120, check=False, env=sanitized_env())
     if r.returncode != 0 or not r.stdout:
         return False
     import io

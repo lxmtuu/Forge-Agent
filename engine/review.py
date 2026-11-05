@@ -13,14 +13,15 @@ finding", loại bug pre-existing) + verdict template.
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
+
+from .secrets import sanitized_env
 
 DIFF_CAP = 40_000
 
 
 async def _git(ws: Path, *args: str, git_dir: str | None = None) -> tuple[int, str]:
-    env = {k: v for k, v in os.environ.items()
+    env = {k: v for k, v in sanitized_env().items()
            if not k.startswith("GIT_") or k in ("GIT_CONFIG_GLOBAL",)}
     if git_dir:
         env["GIT_DIR"] = git_dir

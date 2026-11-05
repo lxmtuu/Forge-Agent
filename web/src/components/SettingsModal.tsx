@@ -29,6 +29,9 @@ export function SettingsModal(props: {
   onClose: () => void
   onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) => Promise<void>
 }) {
+  const locked = props.settings.settings_locked ?? false
+  const provider = props.settings.provider ?? 'openrouter'
+  const providerLabel = provider === 'google' ? 'Google / Gemini' : provider === 'custom' ? 'Custom OpenAI-compatible' : 'OpenRouter'
   const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
   const [model, setModel] = useState(props.settings.model)
@@ -166,6 +169,7 @@ export function SettingsModal(props: {
   }, [dirty])
 
   async function doSave() {
+    if (locked) { setSaveErr('Release mode: Settings chỉ được thay đổi qua terminal.'); return }
     setSaving(true); setSaveErr(null)
     try {
       const mt = parseInt(maxTokens, 10)
@@ -221,6 +225,12 @@ export function SettingsModal(props: {
         <div className="settings-body">
         {tab === 'conn' && (
           <>
+            {locked && (
+              <div className="field release-lock-banner" role="status">
+                🔒 <b>Release mode</b> — cấu hình chỉ được sửa qua terminal trên server.
+                Người dùng không thể đọc hoặc thay API key từ trang này.
+              </div>
+            )}
             <div className="field">
               <span>Base URL tuỳ chỉnh <em>(model cục bộ — Ollama/LM Studio/vLLM; để trống = OpenRouter)</em></span>
               <input
@@ -239,30 +249,49 @@ export function SettingsModal(props: {
                 <option value="high">High — suy luận sâu, chậm hơn</option>
               </select>
             </div>
-            <label className="field">
-              <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
-              <div className="key-row">
-                <input type="password" placeholder="sk-or-v1-..." value={key}
-                  onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
-                <button className="btn-ghost btn-sm" disabled={checking}
-                  onClick={() => doKeyCheck(key || undefined)}>
-                  {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
-                </button>
+            {props.settings.web_key_input === false ? (
+              <div className="field release-key-status">
+                <span>🔐 {providerLabel} credentials</span>
+                <small>
+                  Trạng thái: <b>{props.settings.key_masked || 'chưa có key'}</b>.
+                  Key chỉ được nhập bằng terminal trên server: <code>python scripts/setup_keys.py</code>.
+                </small>
               </div>
-              <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy trên trang đó, để trống nếu không đổi.</small>
-              {keyCheck && (keyCheck.valid ? (
-                <div className="key-result ok">
-                  ✅ Key hợp lệ — «{keyCheck.label}» · đã dùng ${keyCheck.usage ?? 0}
-                  {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ' · không giới hạn'}
-                  {keyCheck.is_free_tier && ' · free tier'}
+            ) : (
+              <label className="field">
+                <span>{providerLabel} API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
+                <div className="key-row">
+                  <input type="password" placeholder={provider === 'google' ? 'AIza...' : provider === 'custom' ? 'API key (nếu cần)' : 'sk-or-v1-...'} value={key}
+                    onChange={(e) => { setKey(e.target.value); setKeyCheck(null) }} />
+                  {provider !== 'custom' && (
+                    <button className="btn-ghost btn-sm" disabled={checking}
+                      onClick={() => doKeyCheck(key || undefined)}>
+                      {checking ? 'Đang kiểm tra…' : key.trim() ? '🔍 Kiểm tra key mới' : '🔍 Kiểm tra key đã lưu'}
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <div className="key-result bad">
-                  ❌ {keyCheck.error}
-                  {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
-                </div>
-              ))}
-            </label>
+                {provider === 'google' ? (
+                  <small>Tạo key tại <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio</a>. Free Tier có thể dùng dữ liệu để cải thiện sản phẩm — không gửi code bí mật.</small>
+                ) : provider === 'custom' ? (
+                  <small>Key cho server OpenAI-compatible hiện tại; để trống nếu không đổi. Ollama thường không cần key.</small>
+                ) : (
+                  <small>Lấy key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a> — dùng nút Copy, để trống nếu không đổi.</small>
+                )}
+                {keyCheck && (keyCheck.valid ? (
+                  <div className="key-result ok">
+                    ✅ Key hợp lệ — «{keyCheck.label}»
+                    {keyCheck.usage != null && <> · đã dùng ${keyCheck.usage}</>}
+                    {keyCheck.limit != null ? ` / hạn mức $${keyCheck.limit}` : ''}
+                    {keyCheck.is_free_tier && ' · free tier'}
+                  </div>
+                ) : (
+                  <div className="key-result bad">
+                    ❌ {keyCheck.error}
+                    {keyCheck.hint && <div className="key-hint">💡 {keyCheck.hint}</div>}
+                  </div>
+                ))}
+              </label>
+            )}
 
             <div className="field">
               <span>Model <em>({models.length > 0 ? `${models.length} model đồng bộ từ OpenRouter` : 'đang đồng bộ…'})</em></span>
@@ -602,7 +631,8 @@ export function SettingsModal(props: {
             <div className="field">
               <span>Bảo mật & dữ liệu</span>
               <small style={{ lineHeight: 1.7 }}>
-                🔐 Key lưu trong <code>data/config.json</code> trên server của bạn (chmod 600), chỉ gọi thẳng OpenRouter — không qua trung gian.<br />
+                🔐 Provider key lưu trong <code>data/provider-secrets.json</code> trên server (chmod 600 khi hỗ trợ), không đưa vào git/zip. Release password chỉ lưu hash.<br />
+                🧩 Shell/hook/subprocess của agent bị loại key LLM/admin khỏi environment.<br />
                 🛡 Guarded mode chặn lệnh nguy hiểm (<code>sudo</code>, <code>rm -rf /</code>, pipe-từ-mạng…).<br />
                 💾 Checkpoint: mọi thay đổi file của agent đều có bản git nội bộ — nút ↩ Undo hoàn tác được.
               </small>
@@ -617,10 +647,10 @@ export function SettingsModal(props: {
           <button className="btn-ghost btn-sm" onClick={tryClose}>Đóng</button>
           <button
             className="btn-primary"
-            disabled={saving || !dirty}
-            title={dirty ? 'Áp dụng các thay đổi' : 'Chưa có thay đổi nào'}
+            disabled={saving || !dirty || locked}
+            title={locked ? 'Release mode: cấu hình qua terminal' : dirty ? 'Áp dụng các thay đổi' : 'Chưa có thay đổi nào'}
             onClick={doSave}
-          >{saving ? 'Đang lưu…' : dirty ? '💾 Lưu thay đổi' : 'Lưu cài đặt'}</button>
+          >{locked ? '🔒 Settings đã khóa' : saving ? 'Đang lưu…' : dirty ? '💾 Lưu thay đổi' : 'Lưu cài đặt'}</button>
         </div>
       </div>
     </div>

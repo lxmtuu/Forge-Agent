@@ -18,10 +18,20 @@ async def doctor(store) -> dict:
         f"{sys.version.split()[0]} ({sys.platform})")
     add("Nền tảng", True, f"{os.name} · cwd {Path.cwd()}")
 
-    # key + model
-    key = config.get_api_key()
-    add("API key OpenRouter", key is not None,
-        f"{config.mask_key(key)}" if key else "DEMO MODE — chưa có key (agent vẫn chạy kịch bản mẫu)")
+    # provider + key (không bao giờ in secret thô)
+    provider = config.get_provider()
+    key = config.get_active_api_key()
+    credential_check = {"openrouter": "API key OpenRouter", "google": "API key Google Gemini",
+                        "custom": "Custom provider credentials"}[provider]
+    add("Provider", True, provider)
+    add(credential_check, config.has_llm_credentials(),
+        (config.mask_key(key) or "đã cấu hình") if config.has_llm_credentials()
+        else "DEMO MODE — chạy python scripts/setup_keys.py để cấu hình key")
+    if config.is_release_mode():
+        from . import secrets as secretstore
+        add("Release auth", secretstore.has_release_auth(),
+            "bắt buộc đăng nhập · Settings bị khóa" if secretstore.has_release_auth()
+            else "THIẾU mật khẩu — chạy scripts/setup_keys.py trước khi mở server")
     add("Model", True, config.get_model() + (f" · profile {config.load_config().get('active_profile')}"
                                              if config.load_config().get("active_profile") else ""))
 
@@ -88,7 +98,7 @@ async def doctor(store) -> dict:
     hook = cfg.get("on_file_change")
     add("Hook on_file_change", True, hook if hook else "chưa đặt (tuỳ chọn — formatter sau khi sửa file)")
 
-    ok = all(c["ok"] for c in checks if c["name"] not in ("API key OpenRouter", "LSP diagnostics"))
+    ok = all(c["ok"] for c in checks if c["name"] not in (credential_check, "LSP diagnostics"))
     return {"checks": checks, "ok": ok,
             "summary": f"{sum(1 for c in checks if c['ok'])}/{len(checks)} mục OK"}
 

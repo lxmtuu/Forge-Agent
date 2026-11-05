@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .secrets import sanitized_env
 from .skills import validate_skill_text as validate_skill_path
 
 
@@ -93,7 +94,7 @@ def add(workspace: Path, src: str) -> str:
         tmp = Path(tempfile.mkdtemp(prefix="forge-skill-"))
         r = subprocess.run(
             ["git", "clone", "--depth", "1", "--quiet", url, str(tmp / "repo")],
-            capture_output=True, text=True, timeout=90, check=False,
+            capture_output=True, text=True, timeout=90, check=False, env=sanitized_env(),
         )
         if r.returncode != 0:
             err = (r.stderr or "").strip().splitlines()

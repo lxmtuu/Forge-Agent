@@ -48,10 +48,10 @@ def price_for(model: str | None, prices: dict[str, tuple[float, float]]):
 
 
 async def estimate(model: str | None, usage: dict | None) -> float | None:
-    from . import config as _c
-    if _c.get_base_url():
-        return None  # model cục bộ/khác — không có giá OpenRouter để tính
     """$ cho 1 lượt gọi. Trả None nếu thiếu dữ liệu (không ném lỗi)."""
+    from . import config as _c
+    if _c.get_provider() != "openrouter":
+        return None  # custom/local/Google: không áp bảng giá OpenRouter
     u = usage or {}
     p = int(u.get("prompt_tokens") or 0)
     c = int(u.get("completion_tokens") or 0)

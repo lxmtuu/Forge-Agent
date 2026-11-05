@@ -15,9 +15,9 @@ Một engine duy nhất, **ba hình thái phần mềm** (chi tiết: BUILD_DESK
 
 ```
                     ┌─────────────────────────┐
-   OpenRouter API   │      forge engine       │
+ Provider API     │      forge engine       │
 ◄──────────────────►│  agent loop + tools     │
-  (Claude/GPT/...)  │  sessions + workspace   │
+ OpenRouter/Google│  sessions + workspace   │
                     └───────────┬─────────────┘
               ┌─────────────────┼──────────────────┐
               ▼                                    ▼
@@ -193,6 +193,19 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 
 6 gói phổ biến (Playwright · File System · Postgres · Github · Context7 · Sequential Thinking) + 7 mở rộng (**Stripe · Atlassian · Vercel · Supabase · Memory · Fetch · Brave Search**) + OAuth 2.1 (Notion/Sentry/Linear) + hub Composio 500+ app. Thêm nhanh `/connectors add <tên>` — biến môi trường resolve lúc spawn, đổi env xong `/mcp refresh` là ăn.
 
+### 🔐 Shared-server security + Google Gemini (v0.33)
+
+| Tính năng | Hành vi |
+|---|---|
+| **Terminal secure setup** | `python scripts/setup_keys.py --provider openrouter|google --release`: nhập key/password ẩn, không có `--key`, không nhúng developer key vào source/Web/ZIP |
+| **Provider-aware** | OpenRouter, Google Gemini qua OpenAI-compatible endpoint, custom/Ollama; demo detection, model fallback, cost và keycheck theo đúng provider |
+| **Secret store** | Provider key ở `data/provider-secrets.json`; `config.json` không chứa key. Release password chỉ lưu salt + PBKDF2 hash trong `data/release-auth.json` |
+| **Không rò sang subprocess** | Shell/hook/background/git/checkpoint/LSP dùng sanitized env; MCP mặc định không nhận provider/admin key, chỉ nhận secret khai báo explicit |
+| **Release auth + lock** | Toàn bộ Web/API/static cần Basic/Bearer auth; thiếu auth setup fail-closed 503. Settings/keycheck bị khóa, đổi cấu hình qua terminal |
+| **CORS + rate-limit** | Release same-origin mặc định, wildcard bị từ chối; LLM request có 429 + Retry-After, có chống brute-force login |
+
+**Shared server là cho nhóm tin cậy, không phải multi-tenant isolation.** Quy trình HTTPS, Docker/systemd, rotation và checklist: **SECURITY.md · DEPLOY.md**.
+
 ### 🌙 Autonomy nâng cao (v0.32)
 
 | Tính năng | Cách dùng và giới hạn |
@@ -201,7 +214,7 @@ Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ t
 | **Repo map kiểu Aider** | `/repomap [budget]` (CLI/TUI) hoặc tool `repo_map`: file + symbol Python/JS/TS/Go/Rust, xếp hạng theo tham chiếu chéo, cache theo nội dung/mtime. Workspace nhỏ (≤60 file, map ≤4.000 ký tự, không bị cắt) tự nạp vào system prompt; repo lớn gọi tool chủ động, budget 500–20.000 |
 | **Thêm 4 hook events** | `user_prompt_submit` (exit 2 chặn prompt, không gọi LLM) · `pre_compact` (exit 2 chặn nén) · `stop` (cuối lượt) · `notification` (duyệt lệnh + sub-agent nền xong). Cấu hình cùng khối `hooks` hiện có; script nhận JSON qua stdin |
 
-### 🚀 Chạy nhanh (v0.32)
+### 🚀 Chạy nhanh (v0.33)
 
 Windows: **double-click `run_forge.bat`** — tự tạo .venv, tự cài deps, chạy server, mở trình duyệt. macOS/Linux: `./run_forge.sh`. Kiểm tra môi trường: `python scripts/launch.py --check`. Mới bắt đầu? Đọc **USER_GUIDE.md** — hướng dẫn tiếng Việt từng bước.
 
@@ -321,7 +334,7 @@ Kết quả hiển thị theo nhóm Task 1/2/3… với trạng thái riêng t�
 ```bash
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..   # build 1 lần
-uvicorn server.main:app --host 0.0.0.0 --port 8000
+uvicorn server.main:app --host 127.0.0.1 --port 8000
 # mở http://localhost:8000
 # hoặc: ./run.sh  (tự cài + tự build + chạy)
 # hoặc: docker compose up -d --build
@@ -339,13 +352,15 @@ forge --list-sessions
 # hoặc không cài: python cli/main.py / python -m tui.launch
 ```
 
-### API key (OpenRouter)
-- Cách 1: `export OPENROUTER_API_KEY=sk-or-v1-...`
-- Cách 2: nhập trong Web UI (⚙ Settings) hoặc gõ `/key sk-or-...` trong CLI.
-  Key lưu ở `data/config.json` (chmod 600), chỉ gửi thẳng tới OpenRouter.
+### Provider key (OpenRouter / Google Gemini)
+```bash
+python scripts/setup_keys.py --provider openrouter   # nhập ẩn trong terminal
+# hoặc: python scripts/setup_keys.py --provider google
+python scripts/setup_keys.py --check
+```
+Key lưu ở `data/provider-secrets.json` (chmod 600 khi hỗ trợ), không nằm trong `config.json`, git hoặc ZIP. Trên máy cá nhân vẫn có thể nhập qua ⚙ Settings hoặc `/key`; shared release khóa Web Settings.
 
-Lấy key miễn phí tại **https://openrouter.ai/keys** — một key dùng được cho
-Claude, GPT, Gemini, DeepSeek, Qwen, Kimi… (model mã hoá `provider/model`).
+OpenRouter: **https://openrouter.ai/keys** — một key dùng cho Claude, GPT, Gemini, DeepSeek, Qwen, Kimi… Google AI Studio: **https://aistudio.google.com/api-keys**. Environment/secret manager vẫn được hỗ trợ cho deployment; không ghi secret vào source hay shell history.
 
 Model mặc định: `anthropic/claude-sonnet-5.5`. Đổi tuỳ thích trong Settings.
 Model rẻ để test: `google/gemini-3.8-flash` hoặc `deepseek/deepseek-v4.1-flash`.
@@ -356,19 +371,20 @@ Model rẻ để test: `google/gemini-3.8-flash` hoặc `deepseek/deepseek-v4.1-
 forge-agent/
 ├── engine/               # lõi dùng chung — không phụ thuộc UI
 │   ├── agent.py          # vòng lặp: LLM → tool_calls → thực thi → lặp (tối đa 30 vòng)
-│   ├── llm.py            # OpenRouter SSE streaming, tích luỹ tool_calls từng delta
+│   ├── llm.py            # OpenAI-compatible SSE: OpenRouter/Google/custom
 │   ├── tools.py          # tool lõi + schema OpenAI + sandbox đường dẫn/timeout
 │   ├── repomap.py        # repo map nén gọn, rank refs chéo + cache (v0.32)
 │   ├── guard.py          # phân loại lệnh shell + Docker sandbox wrapper
 │   ├── mcp.py            # MCP client (stdio JSON-RPC) + manager
 │   ├── session.py        # phiên JSON: messages chuẩn OpenAI, workspace riêng
-│   └── config.py         # key/model, approval mode, thư mục data/
+│   ├── secrets.py        # provider secret store + PBKDF2 + sanitized env
+│   └── config.py         # provider/model, approval mode, thư mục data/
 ├── server/main.py        # FastAPI: /api/... + /api/mcp + static web build
 ├── cli/main.py           # Rich TUI, chạy chung engine
 ├── web/                  # React + Vite + TypeScript (không dùng UI framework)
 ├── scripts/demo_mcp_server.py  # MCP server mẫu để test
 ├── Dockerfile / docker-compose.yml / DEPLOY.md
-└── data/                 # runtime: sessions/, workspaces/, config.json, mcp.json
+└── data/                 # runtime ngoài git/ZIP: config, provider/auth secrets, sessions/
 ```
 
 Sự kiện engine phát ra (CLI và web cùng tiêu thụ):
@@ -379,8 +395,8 @@ Sự kiện engine phát ra (CLI và web cùng tiêu thụ):
 
 - **Guarded mode** chặn sẵn các lệnh nguy hiểm nhất; bật **docker_sandbox** khi có
   Docker để cách ly hoàn toàn (không mạng, giới hạn tài nguyên).
-- Public server? Đặt sau reverse-proxy **có auth** — checklist đầy đủ trong DEPLOY.md.
-- API key không bao giờ gửi về browser (chỉ trả bản đã mask), lưu chmod 600.
+- Shared/public server? Chạy **release mode**, đặt sau HTTPS reverse-proxy — checklist trong SECURITY.md + DEPLOY.md.
+- Provider key không gửi full về browser (chỉ mask), không vào browser storage; subprocess bị sanitized env.
 - Session/workspace đặt tên file an toàn (sanitize), đường dẫn bị chặn thoát root.
 
 ## 🗺️ Roadmap gợi ý

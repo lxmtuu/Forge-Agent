@@ -18,6 +18,8 @@ Hợp đồng (theo Claude Code):
 - matcher: regex tên tool ("write_file|edit_file", hoặc bỏ/rỗng = khớp tất cả)
 """
 import asyncio
+
+from .secrets import sanitized_env
 import json
 import re
 from pathlib import Path
@@ -80,9 +82,7 @@ def _matched(entry: dict, tool_name: str) -> bool:
 
 
 async def _run_cmd(command: str, payload: dict, workspace: Path, env_extra: dict | None = None):
-    import os
-    env = {**os.environ, **(env_extra or {}),
-           "FORGE_WORKSPACE": str(workspace)}
+    env = sanitized_env({**(env_extra or {}), "FORGE_WORKSPACE": str(workspace)})
     try:
         proc = await asyncio.create_subprocess_shell(
             command, cwd=str(workspace), env=env,

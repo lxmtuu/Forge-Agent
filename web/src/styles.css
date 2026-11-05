@@ -436,6 +436,9 @@ a:hover { text-decoration: underline; }
 .key-result { margin-top: 9px; border-radius: 9px; padding: 9px 12px; font-size: 12.5px; line-height: 1.55; }
 .key-result.ok { background: var(--green-soft); border: 1px solid rgba(113, 194, 144, 0.4); color: var(--green); }
 .key-result.bad { background: var(--red-soft); border: 1px solid rgba(229, 83, 75, 0.4); color: #f2a09b; }
+.release-lock-banner { margin-bottom: 14px; padding: 10px 12px; border: 1px solid rgba(217, 167, 87, .42); border-radius: 9px; background: var(--yellow-soft); color: var(--yellow); line-height: 1.55; }
+.release-key-status { padding: 11px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel2); }
+.release-key-status code { color: var(--cyan); user-select: all; }
 .key-hint { margin-top: 6px; color: var(--dim); }
 
 /* ═══ MODE CHIPS + BATTLE + TERMINAL ═══ */

@@ -99,7 +99,7 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
     user_text, attached = atfiles.expand_at_refs(user_text, agent.workspace)
     if attached and not json_out:
         console.print(f"[dim]📎 Đã đính kèm: {', '.join('@' + a for a in attached)}[/dim]")
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
     if json_out:
         # ---- headless JSON mode: thu thập, không render ----
         import json as _json
@@ -234,7 +234,7 @@ def agent0_ws(store, session_id: str):
 
 async def run_batch_cli(tasks: list[dict], label: str = "⚡ tác vụ song song") -> None:
     """Parallel sub-agents in terminal, output tagged [T#]."""
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
     console.print(Panel(
         f"[bold]{len(tasks)} {label}[/bold] — mỗi tác vụ 1 session + workspace riêng",
         border_style="cyan"))
@@ -268,11 +268,11 @@ def print_sessions() -> None:
 
 async def interactive(session_id: str | None, model: str | None) -> None:
     console.print(Text(BANNER, style="bold cyan"))
-    key = config.get_api_key()
-    if key:
-        key_info = f"[green]✓ {config.mask_key(key)}[/green]"
+    key = config.get_active_api_key()
+    if config.has_llm_credentials():
+        key_info = (f"[green]✓ {config.get_provider()} · {config.mask_key(key) or 'không cần key'}[/green]")
     else:
-        key_info = "[yellow]DEMO MODE (chưa có key)[/yellow]"
+        key_info = "[yellow]DEMO MODE (chưa có credentials)[/yellow]"
     console.print(Panel(
         f"Model: [bold]{model or config.get_model()}[/bold]   Key: {key_info}\n"
         f"[dim]{HELP}[/dim]",
@@ -320,8 +320,9 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             console.print(f"[green]Model → {m}[/green]")
             continue
         if text.startswith("/key "):
-            config.save_config({"api_key": text[5:].strip()})
-            console.print(f"[green]Đã lưu key {config.mask_key(text[5:].strip())}[/green]")
+            config.save_config({config.provider_secret_field(): text[5:].strip()})
+            console.print(f"[green]Đã lưu key {config.get_provider()} "
+                          f"{config.mask_key(text[5:].strip())}[/green]")
             continue
         if text == "/mcp" or text.startswith("/mcp "):
             from engine.mcp import manager as mm
@@ -354,7 +355,7 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             continue
         if text == "/keytest":
             from engine.llm import check_key
-            console.print("  [dim]Đang kiểm tra key với OpenRouter…[/dim]")
+            console.print(f"  [dim]Đang kiểm tra key với {config.get_provider()}…[/dim]")
             r = await check_key()
             if r.get("valid"):
                 lim = f" / hạn mức ${r['limit']}" if r.get("limit") is not None else " · không giới hạn"

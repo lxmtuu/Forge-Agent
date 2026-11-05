@@ -9,6 +9,7 @@ import shutil
 import time
 
 from . import config
+from .secrets import sanitized_env
 
 GIT = shutil.which("git")
 EXCLUDES = ["node_modules", ".venv", "venv", "__pycache__", "dist", "build",
@@ -39,7 +40,7 @@ async def _run(args: list[str]) -> tuple[int, str]:
     if git is None:  # không có git binary — caller đã check available() nhưng đừng nổ
         return 127, "git không có"
     proc = await asyncio.create_subprocess_exec(
-        git, *args,
+        git, *args, env=sanitized_env(),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
     )
     try:
@@ -50,19 +51,13 @@ async def _run(args: list[str]) -> tuple[int, str]:
     return proc.returncode or 0, out.decode("utf-8", "replace").strip()
 
 
-def _env_clean() -> dict:
-    # tránh GIT_DIR/GIT_WORK_TREE rò rỉ từ môi trường
-    return {"GIT_DIR": "", "GIT_WORK_TREE": "", "HOME": __import__("os").environ.get("HOME", "")}
-
-
 async def snapshot(sid: str, workspace, label: str) -> str | None:
     """Commit current worktree state. Returns checkpoint id or None (disabled/failed)."""
     if not available() or not config.load_config().get("checkpoints_enabled", True):
         return None
     repo = str(_repo_dir(sid))
     base = _git_args(sid, workspace)
-    from os import environ
-    env = {**environ, "GIT_DIR": repo, "GIT_WORK_TREE": str(workspace)}
+    env = sanitized_env({"GIT_DIR": repo, "GIT_WORK_TREE": str(workspace)})
 
     async def run(*args: str) -> tuple[int, str]:
         return await _run_with_env(base + list(args), env)
@@ -118,8 +113,7 @@ async def undo(sid: str, workspace) -> dict:
         return {"ok": False, "message": "git không có trên máy — checkpoint không khả dụng"}
     repo = str(_repo_dir(sid))
     base = _git_args(sid, workspace)
-    from os import environ
-    env = {**environ, "GIT_DIR": repo, "GIT_WORK_TREE": str(workspace)}
+    env = sanitized_env({"GIT_DIR": repo, "GIT_WORK_TREE": str(workspace)})
 
     rc, cur = await _run_with_env(base + ["rev-parse", "refs/heads/forge"], env)
     if rc != 0:
@@ -141,6 +135,6 @@ async def list_checkpoints(sid: str, workspace) -> list[str]:
         return []
     rc, out = await _run_with_env(
         _git_args(sid, workspace) + ["log", "--oneline", f"-n{MAX_DIFF_LOG}", "refs/heads/forge"],
-        {**__import__("os").environ, "GIT_DIR": str(_repo_dir(sid)),
-         "GIT_WORK_TREE": str(workspace)})
+        sanitized_env({"GIT_DIR": str(_repo_dir(sid)),
+                       "GIT_WORK_TREE": str(workspace)}))
     return out.splitlines() if rc == 0 else []

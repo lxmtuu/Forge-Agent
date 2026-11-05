@@ -3,8 +3,11 @@
 Run:  uvicorn server.main:app --host 0.0.0.0 --port 8000
 """
 import asyncio
+import base64
+import binascii
 import io
 import json
+import os
 import sys
 import time
 import zipfile
@@ -21,15 +24,22 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine import config, guard, llm, tools
+from engine import secrets as secretstore
 from engine.agent import Agent, run_batch, run_battle, send_demo
 from engine.mcp import load_servers, save_servers
 from engine.mcp import manager as mcp_manager
 from engine.session import SessionStore
 
-app = FastAPI(title="Forge Agent", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
+app = FastAPI(title="Forge Agent", version="0.33.0")
+# Development giữ CORS mở cho tooling; release mặc định same-origin. Muốn mở
+# cross-origin phải liệt kê rõ FORGE_CORS_ORIGINS=https://app.example,...
+_cors = [x.strip() for x in os.environ.get("FORGE_CORS_ORIGINS", "").split(",") if x.strip()]
+if config.is_release_mode() and "*" in _cors:
+    raise RuntimeError("FORGE_CORS_ORIGINS không được chứa '*' ở release mode")
+if _cors or not config.is_release_mode():
+    app.add_middleware(
+        CORSMiddleware, allow_origins=_cors or ["*"], allow_methods=["*"], allow_headers=["*"],
+    )
 store = SessionStore()
 
 STATIC_DIR = ROOT / "server" / "static"
@@ -99,6 +109,90 @@ def sse(ev: dict) -> str:
 
 
 _MODELS_CACHE = {"ts": 0.0, "data": []}
+_LLM_RATE: dict[str, list[float]] = {}
+_AUTH_RATE: dict[str, list[float]] = {}
+
+
+def _release_identity(request: Request) -> tuple[str | None, str]:
+    """Xác thực Basic (browser) hoặc Bearer (API); trả (username, scheme)."""
+    header = request.headers.get("authorization", "")
+    scheme, _, credential = header.partition(" ")
+    try:
+        if scheme.lower() == "basic":
+            decoded = base64.b64decode(credential.strip(), validate=True).decode("utf-8")
+            username, password = decoded.split(":", 1)
+        elif scheme.lower() == "bearer":
+            username, password = "forge", credential.strip()
+        else:
+            return None, ""
+    except (ValueError, UnicodeError, binascii.Error):
+        return None, ""
+    if secretstore.verify_release_password(username, password):
+        return username, scheme.lower()
+    return None, scheme.lower()
+
+
+def _rate_retry(identity: str, limit: int,
+                bucket: dict[str, list[float]] | None = None) -> int:
+    """Sliding window 60s, in-process. Trả 0 nếu được phép, hoặc số giây chờ."""
+    now = time.monotonic()
+    rates = _LLM_RATE if bucket is None else bucket
+    rows = rates.setdefault(identity, [])
+    cutoff = now - 60.0
+    rows[:] = [t for t in rows if t > cutoff]
+    if len(rows) >= limit:
+        return max(1, int(60.0 - (now - rows[0])) + 1)
+    rows.append(now)
+    if len(rates) > 1000:  # chống phình bộ nhớ nếu nhiều IP giả
+        for key in list(rates):
+            if not rates[key] or rates[key][-1] <= cutoff:
+                rates.pop(key, None)
+    return 0
+
+
+def _security_error(status: int, message: str, headers: dict | None = None) -> JSONResponse:
+    return JSONResponse({"detail": message}, status_code=status, headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer", **(headers or {})})
+
+
+@app.middleware("http")
+async def release_security(request: Request, call_next):
+    # Browser preflight không gửi Authorization; CORS middleware sẽ quyết định origin.
+    # Release mặc định không có CORS middleware nên request lạ vẫn không được quyền gì thêm.
+    if config.is_release_mode() and request.method != "OPTIONS":
+        if not secretstore.has_release_auth():
+            return _security_error(503, "Release chưa có mật khẩu — chạy python scripts/setup_keys.py")
+        host = request.client.host if request.client else "unknown"
+        if request.headers.get("authorization"):
+            retry = _rate_retry(f"auth|{host}", 10, _AUTH_RATE)
+            if retry:
+                return _security_error(429, "Quá nhiều lần đăng nhập — thử lại sau",
+                                       {"Retry-After": str(retry)})
+        username, _ = _release_identity(request)
+        if username is None:
+            return _security_error(
+                401, "Cần đăng nhập Forge (username: forge)",
+                {"WWW-Authenticate": 'Basic realm="Forge", charset="UTF-8"'},
+            )
+        _AUTH_RATE.pop(f"auth|{host}", None)
+        path = request.url.path
+        expensive = (
+            path in {"/api/battle", "/api/batch"}
+            or (path.startswith("/api/sessions/")
+                and path.rsplit("/", 1)[-1] in {"chat", "compact", "init", "loop"})
+        )
+        if request.method == "POST" and expensive:
+            retry = _rate_retry(f"{username}|{host}", config.get_rate_limit_per_min())
+            if retry:
+                return _security_error(429, "Quá nhiều request LLM — thử lại sau",
+                                       {"Retry-After": str(retry)})
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -118,15 +212,22 @@ APP_VERSION = _pkg_version()
 
 @app.get("/api/health")
 async def health():
-    key = config.get_api_key()
+    provider = config.get_provider()
+    key = config.get_active_api_key()
     cfg = config.load_config()
+    release = config.is_release_mode()
     return {
         "ok": True,
         "version": APP_VERSION,
-        "demo": key is None,
+        "demo": not config.has_llm_credentials(),
+        "provider": provider,
+        "release_mode": release,
+        "settings_locked": release,
+        "web_key_input": not release,
         "model": config.get_model(),
         "key_masked": config.mask_key(key),
-        "default_models": config.DEFAULT_MODELS,
+        "default_models": (["gemini-3.8-flash", "gemini-3.6-flash"] if provider == "google"
+                           else config.DEFAULT_MODELS),
         "approval_mode": cfg.get("approval_mode", "guarded"),
         "docker_sandbox": bool(cfg.get("docker_sandbox")),
         "docker_available": guard.DOCKER_AVAILABLE,
@@ -163,16 +264,22 @@ class KeyCheckBody(BaseModel):
 
 @app.post("/api/keycheck")
 async def keycheck(body: KeyCheckBody | None = None):
-    """Verify the saved (or provided) OpenRouter key against /api/v1/auth/key."""
+    """Verify key theo provider; release khóa endpoint để Settings chỉ qua terminal."""
+    if config.is_release_mode():
+        raise HTTPException(403, "Release mode: key chỉ được quản lý qua terminal")
     provided = body.api_key.strip() if (body and body.api_key) else None
     return await llm.check_key(provided)
 
 
 @app.post("/api/settings")
 async def set_settings(body: SettingsBody):
+    if config.is_release_mode():
+        raise HTTPException(403, "Release mode: Settings bị khóa — cấu hình qua scripts/setup_keys.py")
     patch: dict = {}
     if body.api_key is not None and body.api_key.strip():
-        patch["api_key"] = body.api_key.strip()
+        # UI gửi một ô key chung; route theo provider hiện tại vào secret store.
+        key_field = config.provider_secret_field()
+        patch[key_field] = body.api_key.strip()
     if body.model is not None and body.model.strip():
         patch["model"] = body.model.strip()
     if body.approval_mode is not None and body.approval_mode in ("guarded", "ask", "auto"):
@@ -405,7 +512,20 @@ async def resolve_elicitation(eid: str, body: ElicitBody):
 
 @app.get("/api/models")
 async def list_models():
-    """Auto-sync model catalog from OpenRouter (cached 1 hour)."""
+    """Catalog theo provider; OpenRouter tự sync 1 giờ, Google dùng ID API trực tiếp."""
+    provider = config.get_provider()
+    if provider == "google":
+        data = [
+            {"id": "gemini-3.8-flash", "name": "Google Gemini 3.8 Flash", "context": 1_000_000,
+             "prompt_price": 0.0, "completion_price": 0.0, "free": True},
+            {"id": "gemini-3.6-flash", "name": "Google Gemini 3.6 Flash", "context": 1_000_000,
+             "prompt_price": 0.0, "completion_price": 0.0, "free": True},
+        ]
+        return {"models": data, "count": len(data)}
+    if provider == "custom":
+        data = [{"id": config.get_model(), "name": "Custom OpenAI-compatible model",
+                 "context": None, "prompt_price": 0.0, "completion_price": 0.0, "free": True}]
+        return {"models": data, "count": 1}
     if time.time() - _MODELS_CACHE["ts"] > 3600 or not _MODELS_CACHE["data"]:
         try:
             async with httpx.AsyncClient(timeout=25) as c:
@@ -559,7 +679,7 @@ async def _loop_turn(sid: str, text: str, mode: str) -> str:
     st = store.get(sid)
     if not st:
         return "(phiên đã xoá)"
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
     agent = Agent(store, sid)
     source = send_demo(agent, text) if demo else agent.send(text, chat_mode=mode)
     last = ""
@@ -742,7 +862,7 @@ async def chat(sid: str, body: ChatBody, request: Request):
     if not text and not body.rerun:
         raise HTTPException(400, "Empty message")
 
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
     model = body.model or None
     chat_mode = body.mode if body.mode in ("direct", "agent", "plan", "architect") else "agent"
     ws = store.workspace(sid)
@@ -1014,7 +1134,7 @@ async def batch(body: BatchBody, request: Request):
     prompts = [p.strip() for p in body.prompts if p.strip()][:5]
     if not prompts:
         raise HTTPException(400, "Không có tác vụ nào")
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
 
     async def gen():
         try:
@@ -1040,7 +1160,7 @@ async def battle(body: BattleBody, request: Request):
     prompt = body.prompt.strip()
     if not prompt:
         raise HTTPException(400, "Thiếu prompt")
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
 
     async def gen():
         try:

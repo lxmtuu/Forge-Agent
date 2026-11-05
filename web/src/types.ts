@@ -64,6 +64,10 @@ export interface Settings {
   demo: boolean
   model: string
   key_masked: string | null
+  provider?: 'openrouter' | 'google' | 'custom'
+  release_mode?: boolean
+  settings_locked?: boolean
+  web_key_input?: boolean
   default_models: string[]
   approval_mode: 'guarded' | 'ask' | 'auto'
   docker_sandbox: boolean

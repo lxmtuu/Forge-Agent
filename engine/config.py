@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 
+from . import secrets as secretstore
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("FORGE_DATA_DIR", ROOT / "data"))
 SESSIONS_DIR = DATA_DIR / "sessions"
@@ -108,8 +110,28 @@ def apply_profile(cfg: dict) -> dict:
 
 
 def save_config(patch: dict) -> dict:
+    """Lưu cấu hình KHÔNG-secret; key được tách sang provider-secrets.json.
+
+    Giữ tương thích: các caller cũ vẫn truyền api_key/custom_api_key. Nếu config
+    cũ còn key thô, lần save kế tiếp di chuyển key đó ra khỏi config.json.
+    """
     ensure_dirs()
+    patch = dict(patch)
+    secret_fields = {"api_key": "openrouter", "google_api_key": "google",
+                     "custom_api_key": "custom"}
+    provided: dict[str, str] = {}
+    for field, provider in secret_fields.items():
+        value = str(patch.pop(field, "") or "").strip()
+        if value:
+            provided[provider] = value
     cfg = load_config()
+    # Migrate legacy TRƯỚC: key operator vừa nhập phải thắng key cũ trong config.
+    for field, provider in secret_fields.items():
+        legacy = str(cfg.pop(field, "") or "").strip()
+        if legacy:
+            secretstore.write_provider_key(provider, legacy)
+    for provider, value in provided.items():
+        secretstore.write_provider_key(provider, value)
     cfg.update(patch)
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     try:
@@ -126,20 +148,92 @@ def get_base_url() -> str:
 
 def get_custom_api_key() -> str:
     """API key cho base URL tuỳ chỉnh (Ollama không cần)."""
-    return (load_config().get("custom_api_key") or "").strip()
+    env = os.environ.get("FORGE_CUSTOM_API_KEY", "").strip()
+    return (env or secretstore.read_provider_key("custom")
+            or (load_config().get("custom_api_key") or "").strip())
 
 
 def get_api_key() -> str | None:
-    """Env var wins over saved config (12-factor style)."""
+    """OpenRouter: env → secret file → config legacy (để tương thích bản cũ)."""
     env = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if env:
         return env
-    return load_config().get("api_key") or None
+    return secretstore.read_provider_key("openrouter") or load_config().get("api_key") or None
+
+
+def get_google_api_key() -> str | None:
+    """Gemini: GOOGLE_API_KEY/GEMINI_API_KEY → secret file → config legacy."""
+    env = (os.environ.get("GOOGLE_API_KEY", "").strip()
+           or os.environ.get("GEMINI_API_KEY", "").strip())
+    if env:
+        return env
+    return secretstore.read_provider_key("google") or load_config().get("google_api_key") or None
+
+
+def get_provider() -> str:
+    """openrouter | google | custom. `gemini` là alias của google."""
+    raw = (os.environ.get("FORGE_PROVIDER", "").strip().lower()
+           or str(load_config().get("provider") or "").strip().lower())
+    if raw == "gemini":
+        raw = "google"
+    if raw in {"openrouter", "google", "custom"}:
+        return raw
+    return "custom" if get_base_url() else "openrouter"
+
+
+def get_active_api_key() -> str | None:
+    """Key của provider đang active; custom local có thể hợp lệ với None."""
+    provider = get_provider()
+    if provider == "google":
+        return get_google_api_key()
+    if provider == "custom":
+        return get_custom_api_key()
+    return get_api_key()
+
+
+def provider_secret_field(provider: str | None = None) -> str:
+    """Tên field tương thích để save_config() route key vào đúng secret store."""
+    return {"google": "google_api_key", "custom": "custom_api_key"}.get(
+        provider or get_provider(), "api_key")
+
+
+def has_llm_credentials() -> bool:
+    """Có thể gọi LLM thật? Custom local không bắt buộc key; Google dùng key riêng."""
+    provider = get_provider()
+    if provider == "custom":
+        return bool(get_base_url())
+    if provider == "google":
+        return bool(get_google_api_key())
+    return bool(get_api_key())
+
+
+def is_release_mode() -> bool:
+    """Khóa Settings + bắt buộc auth cho server dùng chung; chỉ terminal/env đổi được."""
+    env = os.environ.get("FORGE_RELEASE_MODE", "").strip().lower()
+    if env:
+        return env in {"1", "true", "yes", "on"}
+    return bool(load_config().get("release_mode", False))
+
+
+def get_rate_limit_per_min() -> int:
+    """Số request LLM tối đa/phút cho một user+IP ở release mode."""
+    raw = (os.environ.get("FORGE_RATE_LIMIT_PER_MIN", "").strip()
+           or str(load_config().get("rate_limit_per_min", 20)))
+    try:
+        return min(max(int(raw), 1), 1000)
+    except (TypeError, ValueError):
+        return 20
 
 
 def get_model() -> str:
-    cfg_model = load_config().get("model", "").strip()
-    return cfg_model or os.environ.get("FORGE_MODEL", "") or FALLBACK_MODEL
+    cfg = load_config()
+    cfg_model = cfg.get("model", "").strip()
+    env_model = os.environ.get("FORGE_MODEL", "").strip()
+    if cfg_model or env_model:
+        return cfg_model or env_model
+    provider = (os.environ.get("FORGE_PROVIDER", "").strip().lower()
+                or str(cfg.get("provider") or "").strip().lower())
+    return "gemini-3.8-flash" if provider in {"google", "gemini"} else FALLBACK_MODEL
 
 
 def set_profile(name: str) -> bool:

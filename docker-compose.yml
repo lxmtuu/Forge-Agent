@@ -3,15 +3,16 @@ services:
     build: .
     container_name: forge-agent
     ports:
-      - "8000:8000"
-    environment:
-      # Cách 1: đặt key qua biến môi trường (ưu tiên hơn config file)
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - FORGE_MODEL=${FORGE_MODEL:-anthropic/claude-sonnet-5.5}
+      # An toàn mặc định: chỉ reverse proxy trên cùng host truy cập.
+      # Không expose public trực tiếp; dùng HTTPS proxy theo DEPLOY.md.
+      - "127.0.0.1:8000:8000"
     volumes:
+      # Provider key + release password hash chỉ nằm ở volume này, không trong image.
       - ./data:/app/data
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # LƯU Ý: agent chạy lệnh shell BÊN TRONG container này.
-    # Chỉ expose công khai khi đã đặt sau reverse-proxy có auth (xem DEPLOY.md).
+    # Setup trước khi mở cho người dùng:
+    # docker compose run --rm forge python scripts/setup_keys.py --provider openrouter --release
+    # Google: --provider google. Sau đó: docker compose up -d
+    # Không đặt API key/password trong file này hoặc shell history.

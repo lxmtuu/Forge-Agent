@@ -10,14 +10,14 @@
 | Mục OWASP | Ý nghĩa | forge-agent đạt nhờ | Trạng thái |
 |---|---|---|---|
 | **LLM01** Prompt Injection | Nội dung ngoài (email/web/skill) điều khiển model | Skills **trust gating** (v0.16), fetch_url chặn SSRF, approval gate | ✅ |
-| **LLM02** Rò rỉ thông tin nhạy cảm | Token/PII lộ vào model/log | Secrets `data/secrets.json` chmod 600 + **mask mọi nơi**; token không vào system prompt (audit bằng grep: `agent.py` chỉ dùng key cho demo-check) | ✅ |
+| **LLM02** Rò rỉ thông tin nhạy cảm | Token/PII lộ vào model/log | Provider key `data/provider-secrets.json` + connector token `data/secrets.json` (0600); **mask/redact**, subprocess sanitized (v0.33); token không vào system prompt (audit bằng grep: `agent.py` chỉ dùng key cho demo-check) | ✅ |
 | **LLM05** Xử lý output thiếu kiểm soát | Output LLM chảy thẳng vào hệ thống thực thi | `guard.assess_command` chặn danger + **approval** cho warn (vẫn qua khi LLM "nghịch") | ✅ |
 | **LLM06** Quá nhiều quyền/tự chủ *(rủi ro lớn nhất với agent)* | Agent làm việc thật không ai duyệt | Tool MCP chưa allowlist → **phải duyệt** (v0.17.0); `auto (YOLO)` là opt-in rõ ràng | ✅ |
 | **LLM07** Lộ system prompt | Prompt chứa bí mật/logic mật | Prompt KHÔNG chứa secret (đã grep kiểm chứng) — prompt luôn coi như công khai | ✅ |
 | **LLM10** Tiêu thụ không giới hạn | DoS / đốt tiền | Cap tool: buffer 60KB, fetch 20KB, todo 50 mục, skill ≤200, MCP CALL_TIMEOUT; **cost.py** hiển thị $ mỗi lượt | ✅ |
 
 **Còn thiếu (ghi nhận, chưa làm):** audit log mọi tool call ra file (khuyến nghị OWASP), kiểm thử prompt-injection tự động (adversarial suite) — đưa vào backlog P2.
-> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **167 test / 28 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog.
+> ⚠️ **Đối chiếu 05/11 (tổng-kiểm tài liệu):** mục *audit log* ở dòng trên đã **ĐÓNG** (v0.17 log JSONL + v0.18 GET /api/audit + tab 📘, mask token). Số tổng test các vòng 9–15 đã **đếm lại theo per-suite** — hiện hành **179 test / 29 suite** (các vòng ≤8 là số ghi tại thời điểm đó, suite tăng test theo vòng nên không phát sinh lại được). A4/A5/C1 đã **ĐÓNG v0.32** — GAP_ANALYSIS §2b không còn backlog; shared-server security đóng ở v0.33 (§3j).
 
 ## 2. Phát hiện bằng công cụ + đã xử lý
 
@@ -235,6 +235,23 @@ Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Researc
 **Lỗi test bắt trước khi ship:** cache chéo workspace và thiếu budget trong key (T1) · thiếu import asyncio (T5) · sửa lint ISC004 sai làm hỏng 3 thông báo LSP (test_v011) · thêm test workspace rỗng + thay đổi file sau phần tử 200. Không “sửa test để qua”: mock LLM chỉ thay đường gọi mạng; vòng đời agent, hooks, bus và registry chạy thật.
 
 **Kết quả vòng 16: 167/167 test (28 suite) · mypy 0/33 file · bandit Medium+ 0 · ruff sạch cho `repomap.py`/`tools.py`/`hooks.py`; `agent.py`/CLI/TUI không phát sinh lỗi lint mới so với baseline đã ghi nhận.**
+
+## 3j. Vòng 17 (v0.33) — Shared-server security + terminal setup
+
+Phạm vi chốt: một server dùng chung cho nhóm tin cậy, operator giữ key; không phải BYOK per-user và không giả lập multi-tenant isolation. Không đọc/migrate key thật trong regression — toàn bộ suite dùng fake key + `FORGE_DATA_DIR` tạm.
+
+| Hạng mục | Implementation kiểm chứng |
+|---|---|
+| Subprocess secret boundary | `secrets.sanitized_env()` cho shell/hook/background/git/checkpoint/worktree/review/LSP/skill manager; AST scan cả env build từ `os.environ`; MCP chỉ nhận secret explicit trong `env` |
+| Terminal + providers | `scripts/setup_keys.py` nhập ẩn, không `--key`; OpenRouter, Google Gemini OpenAI-compatible, custom; provider-aware demo/fallback/cost/keycheck/CLI/TUI/Web |
+| Secret/auth store | `provider-secrets.json` tách khỏi config + migrate legacy; release password PBKDF2-HMAC-SHA256 240k + salt, file 0600 best-effort; data ngoài git/ZIP |
+| Release middleware | Basic/Bearer auth toàn Web/API/static, thiếu auth 503, sai auth 401, Settings/keycheck 403; UI lock + setup hint |
+| CORS + quota | Release same-origin mặc định, wildcard startup error, preflight explicit origin hoạt động; LLM/auth rate-limit 429 + Retry-After |
+| Error/browser hygiene | Redact Authorization key khỏi provider error; health chỉ mask; Web không lưu credential vào browser storage |
+
+**Lỗi thật test bắt trước ship:** checkpoint `snapshot/undo/list` còn nhánh `{**os.environ}` mà scan keyword-only đã bỏ sót; migration ghi legacy key đè key mới; tên mục doctor làm regression v0.10. Đều vá code và chạy lại, không hạ tiêu chí test.
+
+**Kết quả vòng 17: 179/179 test (29 suite) · mypy 0/34 file · bandit Medium+ 0 · Web build PASS · ruff sạch cho `engine/secrets.py`, `scripts/setup_keys.py`, `scripts/test_v033.py`.** Không tuyên bố ruff toàn repo sạch; các lỗi baseline đã ghi nhận ở các vòng trước giữ nguyên phạm vi.
 
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 

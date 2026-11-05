@@ -1,7 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
-> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.32.0 "Autonomy nâng cao"** · 167 test / 28 suite · mypy 0/33 file · bandit Medium+ 0
-> Lịch sử v0.10 → v0.32 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART.
+> Cập nhật: 2026-11-05 · Phát hành hiện tại: **v0.33.0 "Shared-server security"** · 179 test / 29 suite · mypy 0/34 file · bandit Medium+ 0
+> Lịch sử v0.10 → v0.33 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
 
 ---
 
@@ -22,7 +22,8 @@
 | **v0.7.0** | `24304f6` | **Comfort Sprint** — xóa sổ 5 P0: diff view, checkpoints/undo, /compact+auto, /init, TUI Ctrl+M (+ CLAUDE.md fallback, global rules) |
 | **v0.8.0** | `7a12ab9` | **Extensibility**: @file refs, custom slash commands, fork phiên, /export Markdown, ảnh vision, web search `:online`, permission patterns |
 | **v0.9.0** | `bb62c9c` | **Intelligence**: LSP diagnostics (tự sửa lỗi sau khi ghi file), MCP elicitation đầy đủ (spec 2026-07-28), profiles kiểu config.toml |
-| **v0.32.0** | bản hiện tại | **Autonomy nâng cao**: sub-agent nền + Notification `agent_completed`, repo map + `/repomap`, thêm 4 hook events; đóng A4/A5/C1. Các bản v0.10–v0.31: xem PROJECT_AUDIT.md |
+| **v0.32.0** | `3e754aa` | **Autonomy nâng cao**: sub-agent nền + Notification `agent_completed`, repo map + `/repomap`, thêm 4 hook events; đóng A4/A5/C1 |
+| **v0.33.0** | bản hiện tại | **Shared-server security**: sanitized subprocess env, terminal setup OpenRouter/Google/custom, provider secret store + PBKDF2 release auth, Settings lock, CORS same-origin, auth/LLM rate-limit. 12 regression mới; toàn bộ 179 test PASS |
 
 ---
 
@@ -38,14 +39,15 @@
 | `approvals.py` | Hỏi duyệt lệnh tương tác (ask mode), auto-deny timeout |
 | `checkpoints.py` | Checkpoint git-inner repo riêng, undo theo từng hành động |
 | `session.py` | Phiên bền vững + workspace riêng + pointer dự án thật + fork |
-| `config.py` | Config JSON + profiles + auto-compact + max_tokens + web_search |
+| `config.py` | Provider-aware config + secret migration + profiles + release/rate-limit settings |
+| `secrets.py` | Provider secret store ngoài git/ZIP, PBKDF2 password hash, sanitized child environment |
 | `mcp.py` | MCP client stdio + HTTP, namespace tools, elicitation/create bidirectional |
 | `elicitations.py` | Registry elicitation: accept/decline/cancel, auto-decline secret, required check |
 | `lsp.py` | LSP client (pylsp/pyright/ts-server), publishDiagnostics debounce, format cho LLM |
 | `atfiles.py` | @file references (≤5×40KB, chống traversal, bỏ binary) |
 | `commands.py` | Custom slash commands `.forge/commands/*.md` + global, $ARGUMENTS |
 | `export.py` | Xuất hội thoại Markdown |
-| `llm.py` | OpenRouter SSE client, 401/402 hướng dẫn tiếng Việt, resolve_model `:online`, check_key |
+| `llm.py` | OpenAI-compatible SSE cho OpenRouter/Google/custom, provider-aware fallback/check_key, redact credential trong error |
 
 ### 🖥 4 giao diện
 | Giao diện | Điểm mạnh riêng |
@@ -67,9 +69,12 @@
 | `scripts/test_v07.py` | 16 | Checkpoint roundtrip, diff cap, compact + auto-compact, /init demo, AGENTS.md fallback, server undo/compact/init, LLMError thân thiện | **16/16** ✅ |
 | `scripts/test_v08.py` | 12 | @file (cap, binary, traversal), custom commands ($ARGUMENTS, frontmatter, global), fork độc lập, guard patterns, `:online`, content-parts ảnh, export, server endpoints | **12/12** ✅ |
 | `scripts/test_v09.py` | 8 | Profiles merge, LSP thật với pylsp (lỗi→sạch), tool integration, elicitation registry + MCP e2e + agent event + server | **8/8** ✅ |
-| `scripts/test_tui.py` | pilot | TUI mount, /help, demo turn | ✅ |
+| `scripts/test_tui.py` | 6 | TUI mount, /help, demo turn | **6/6** ✅ |
+| `scripts/test_v033.py` | 12 | Secret store/hash, 3 providers, shell/hook/background/git/MCP env, API redaction, release auth/lock, CORS/preflight, rate-limit, terminal setup, Web bundle | **12/12** ✅ |
 | E2E server thật | mỗi phiên bản | exec → undo → blocked → chat/battle SSE → fork/export → elicitation flow | ✅ |
 | Regression | 36 | v0.7+v0.8 chạy lại trước khi phát hành v0.9 | **36/36** ✅ |
+
+Bug v0.33 bị test bắt: `checkpoints.undo/list` tự build env từ `os.environ` dù đã có `env=`; legacy key ghi đè key mới khi migrate; doctor đổi tên mục gây regression. Cả ba đều sửa rồi chạy lại suite.
 
 Bug thật đã bị test bắt trước khi ship (tiêu biểu): `git init` không tạo thư mục cha (checkpoints luôn fail) · unpack dict 2 giá trị (undo trả rác) · UnboundLocalError `text` trong SSE closure (v0.8) · pylsp publish gói rỗng trước gói lỗi (thêm debounce).
 
@@ -101,12 +106,13 @@ Bug thật đã bị test bắt trước khi ship (tiêu biểu): `git init` kh�
 | `FEATURE_AUDIT.md` | Ma trận 34 hạng mục vs 3 đối thủ + cập nhật từng phiên bản |
 | `PRODUCT_DIRECTION.md` | Kim chỉ nam sản phẩm (research đối thủ 2026) |
 | `BUILD_DESKTOP.md` / `DEPLOY.md` | Đóng gói .exe / deploy server |
+| `SECURITY.md` | Shared-server threat model, terminal setup, HTTPS/CORS/rate-limit, rotation và checklist |
 | `scripts/demo_mcp_server.py` | MCP server mẫu (4 tools, có elicitation thật để thử) |
 
 ## 6. Trạng thái bàn giao
 
-- **Zip phát hành:** `forge-agent-v0.32.0.zip` (kèm web build sẵn)
-- **Git:** nhánh main, release v0.32.0, working tree sạch tại thời điểm đóng gói
-- **Kiểm thử:** 167/167 test · 28 suite · mypy 0/33 file · bandit Medium+ 0
+- **Zip phát hành:** `forge-agent-v0.33.0.zip` (kèm web build sẵn)
+- **Git:** nhánh main, release v0.33.0, working tree sạch tại thời điểm đóng gói
+- **Kiểm thử:** 179/179 test · 29 suite · mypy 0/34 file · bandit Medium+ 0
 - **Server demo:** uvicorn :8000, health OK (không cần key ở demo mode)
-- **Yêu cầu hệ thống:** Python 3.10+ · `pip install -r` theo README · API key OpenRouter (hoặc chạy demo không cần key)
+- **Yêu cầu hệ thống:** Python 3.10+ · `pip install -r` theo README · OpenRouter/Google Gemini/custom provider (hoặc demo không cần key)

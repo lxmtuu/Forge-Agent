@@ -7,6 +7,8 @@ import httpx
 from . import config
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+GOOGLE_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GOOGLE_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def resolve_model(model: str | None = None) -> str:
@@ -20,7 +22,7 @@ def resolve_model(model: str | None = None) -> str:
     if not m:
         m = config.FALLBACK_MODEL
     cfg = config.load_config()
-    if cfg.get("web_search") and not m.endswith(":online"):
+    if cfg.get("web_search") and config.get_provider() == "openrouter" and not m.endswith(":online"):
         bypass = cfg.get("web_search_skip") or []
         if not any(fnmatch(m.lower(), str(p).lower()) for p in bypass):
             m = m + ":online"
@@ -29,6 +31,25 @@ def resolve_model(model: str | None = None) -> str:
 
 class LLMError(Exception):
     pass
+
+
+def _provider_label() -> str:
+    return {"google": "Google Gemini", "custom": "Custom provider"}.get(
+        config.get_provider(), "OpenRouter")
+
+
+def _redact_error(text: str, headers: dict) -> str:
+    """Không để provider echo Authorization/API key vào SSE, response hoặc log."""
+    out = str(text)
+    for name, value in headers.items():
+        if name.lower() not in {"authorization", "x-goog-api-key"}:
+            continue
+        raw = str(value)
+        candidates = {raw, raw.removeprefix("Bearer ")}
+        for secret in candidates:
+            if len(secret) >= 4:
+                out = out.replace(secret, "<redacted>")
+    return out
 
 
 def _headers(api_key: str) -> dict:
@@ -56,7 +77,9 @@ def resolve_sub_model(model_str: str | None, parent_model: str | None = None) ->
     cfg = config.load_config()
     roles = cfg.get("model_roles") or {}
     if low in ("cheap", "free", "fast", "low"):
-        return ((roles.get("cheap") or "").strip() or "openrouter/free")
+        return ((roles.get("cheap") or "").strip()
+                or ("openrouter/free" if config.get_provider() == "openrouter"
+                    else (parent_model or config.get_model())))
     if low in ("strong", "best", "powerful", "high"):
         return ((roles.get("strong") or "").strip()
                 or (parent_model or "").strip()
@@ -76,7 +99,7 @@ def pick_fallback(model: str | None, err: Exception) -> str | None:
     cfg = config.load_config()
     fallbacks = cfg.get("model_fallbacks")
     if fallbacks is None:
-        fallbacks = ["openrouter/free"]
+        fallbacks = ["openrouter/free"] if config.get_provider() == "openrouter" else []
     cur = (model or "").split(":")[0].strip().lower()
     for fb in fallbacks:
         fb = str(fb).strip()
@@ -91,8 +114,21 @@ def _endpoint(api_key: str | None) -> tuple[str, dict]:
     - Base URL custom: key TÙY CHỌN (lấy custom_api_key nếu có — Ollama không cần).
     - OpenRouter: bắt buộc key.
     """
+    provider = config.get_provider()
+    if provider == "google":
+        key = api_key or config.get_google_api_key()
+        if not key:
+            raise LLMError(
+                "Chưa cấu hình Google API key. Chạy `python scripts/setup_keys.py` "
+                "trong terminal (nhập ẩn) hoặc đặt GOOGLE_API_KEY cho tiến trình server."
+            )
+        return GOOGLE_OPENAI_URL, {
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+        }
     base = config.get_base_url()
-    if base:
+    if provider == "custom":
+        if not base:
+            raise LLMError("Provider=custom nhưng thiếu custom_base_url — chạy scripts/setup_keys.py.")
         headers = {
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/forge-agent",
@@ -129,14 +165,15 @@ async def stream_chat(
     """
     url, headers = _endpoint(api_key)
     payload: dict = {
-        "model": resolve_model(model or config.get_model()),
+        "model": (resolve_model(model or config.get_model()).removeprefix("google/").removesuffix(":online")
+                  if config.get_provider() == "google" else resolve_model(model or config.get_model())),
         "messages": messages,
         "stream": True,
         "temperature": temperature,
         "max_tokens": config.get_max_tokens(),
     }
     effort = config.get_reasoning_effort()
-    if effort and not config.get_base_url():
+    if effort and config.get_provider() == "openrouter":
         # D3 — chỉ gửi qua OpenRouter (server OpenAI-compat lạ có thể từ chối field lạ)
         payload["reasoning"] = {"effort": effort}
     if tools:
@@ -154,22 +191,31 @@ async def stream_chat(
                 "POST", url, headers=headers, json=payload
             ) as resp:
                 if resp.status_code != 200:
-                    body = (await resp.aread()).decode("utf-8", "replace")[:2000]
+                    body = _redact_error(
+                        (await resp.aread()).decode("utf-8", "replace")[:2000], headers)
+                    label = _provider_label()
                     if resp.status_code == 401:
+                        if config.get_provider() == "openrouter":
+                            raise LLMError(
+                                "OpenRouter 401 — API key KHÔNG HỢP LỆ (\"User not found\" = key sai, "
+                                "thiếu ký tự hoặc đã bị xóa). Hãy tạo key mới tại https://openrouter.ai/keys, "
+                                "copy ĐỦ toàn bộ chuỗi sk-or-v1-... rồi nhập lại bằng secure setup. "
+                                f"Chi tiết từ OpenRouter: {body[:300]}")
                         raise LLMError(
-                            "OpenRouter 401 — API key KHÔNG HỢP LỆ (\"User not found\" = key sai, "
-                            "thiếu ký tự hoặc đã bị xóa). Hãy tạo key mới tại https://openrouter.ai/keys, "
-                            "copy ĐỦ toàn bộ chuỗi sk-or-v1-... rồi dán lại vào ⚙ Cài đặt. "
-                            f"Chi tiết từ OpenRouter: {body[:300]}")
+                            f"{label} 401 — API key không hợp lệ hoặc thiếu quyền. "
+                            "Kiểm tra key bằng python scripts/setup_keys.py --check. "
+                            f"Chi tiết đã redact: {body[:300]}")
                     if resp.status_code == 402:
-                        raise LLMError(
-                            "OpenRouter 402 — Key hợp lệ nhưng tài khoản KHÔNG ĐỦ CREDIT cho model trả phí này. "
-                            "3 cách xử lý: (1) ⚙ Cài đặt → lọc model 'free' → chọn model miễn phí "
-                            "(vd: openrouter/free, cohere/north-mini-code:free); "
-                            "(2) nạp credit tại https://openrouter.ai/credits nếu muốn dùng Claude/GPT; "
-                            "(3) giảm 'Max tokens' trong ⚙ Cài đặt để giảm số credit cần đặt cọc. "
-                            f"Chi tiết: {body[:250]}")
-                    raise LLMError(f"OpenRouter HTTP {resp.status_code}: {body}")
+                        if config.get_provider() == "openrouter":
+                            raise LLMError(
+                                "OpenRouter 402 — Key hợp lệ nhưng tài khoản KHÔNG ĐỦ CREDIT cho model trả phí này. "
+                                "3 cách xử lý: (1) ⚙ Cài đặt → lọc model 'free' → chọn model miễn phí "
+                                "(vd: openrouter/free, cohere/north-mini-code:free); "
+                                "(2) nạp credit tại https://openrouter.ai/credits nếu muốn dùng Claude/GPT; "
+                                "(3) giảm 'Max tokens' trong ⚙ Cài đặt để giảm số credit cần đặt cọc. "
+                                f"Chi tiết: {body[:250]}")
+                        raise LLMError(f"{label} 402 — hết hạn mức/credit. Chi tiết đã redact: {body[:250]}")
+                    raise LLMError(f"{label} HTTP {resp.status_code}: {body}")
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):
                         continue
@@ -181,7 +227,7 @@ async def stream_chat(
                     except json.JSONDecodeError:
                         continue
                     if obj.get("error"):
-                        raise LLMError(f"OpenRouter error: {obj['error']}")
+                        raise LLMError(f"{_provider_label()} error: {_redact_error(str(obj['error']), headers)}")
                     if obj.get("usage"):
                         usage = obj["usage"]
                     choices = obj.get("choices") or []
@@ -215,7 +261,7 @@ async def stream_chat(
                     if choice.get("finish_reason"):
                         finish_reason = choice["finish_reason"]
         except httpx.HTTPError as e:
-            raise LLMError(f"Lỗi kết nối OpenRouter: {e}") from e
+            raise LLMError(f"Lỗi kết nối {_provider_label()}: {e}") from e
 
     if acc_tool_calls:
         tool_calls = [acc_tool_calls[i] for i in sorted(acc_tool_calls)]
@@ -237,7 +283,22 @@ def build_assistant_message(content: str | None, tool_calls: list[dict] | None) 
 
 
 async def check_key(api_key: str | None = None) -> dict:
-    """Verify an OpenRouter key via GET /api/v1/auth/key."""
+    """Verify key theo provider; key chỉ đi trong header, không vào URL/log."""
+    if config.get_provider() == "google":
+        key = api_key or config.get_google_api_key()
+        if not key:
+            return {"valid": False, "error": "Chưa có Google API key",
+                    "hint": "Chạy python scripts/setup_keys.py hoặc tạo key tại aistudio.google.com/api-keys."}
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                r = await c.get(GOOGLE_MODELS_URL, headers={"x-goog-api-key": key})
+        except httpx.HTTPError as e:
+            return {"valid": False, "error": f"Lỗi kết nối Google AI Studio: {e}", "hint": ""}
+        if r.status_code == 200:
+            return {"valid": True, "label": "Google Gemini API", "usage": None,
+                    "limit": None, "is_free_tier": None}
+        return {"valid": False, "error": f"Google từ chối key (HTTP {r.status_code})",
+                "hint": "Kiểm tra lại key tại https://aistudio.google.com/api-keys và hạn mức Free Tier."}
     key = api_key or config.get_api_key()
     if not key:
         return {"valid": False, "error": "Chưa có key nào được cấu hình",
@@ -258,7 +319,7 @@ async def check_key(api_key: str | None = None) -> dict:
             "is_free_tier": d.get("is_free_tier"),
         }
     try:
-        msg = (r.json().get("error") or {}).get("message") or f"HTTP {r.status_code}"
+        msg = _redact_error((r.json().get("error") or {}).get("message")                             or f"HTTP {r.status_code}", _headers(key))
     except Exception:
         msg = f"HTTP {r.status_code}"
     hint = ""

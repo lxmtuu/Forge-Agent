@@ -1,7 +1,7 @@
 # ⚡ HƯỚNG DẪN SỬ DỤNG forge-agent — cho người mới bắt đầu (Windows-first)
 
 > forge-agent là trợ lý lập trình AI **tự host trên máy bạn** (kiểu Claude Code / Codex),
-> chạy bằng key OpenRouter của chính bạn (BYOK). Không có key vẫn chơi được ở **DEMO MODE**.
+> chạy bằng OpenRouter/Google Gemini của chính bạn (BYOK) hoặc key do operator cấp cho shared server. Không có key vẫn chơi được ở **DEMO MODE**.
 
 ---
 
@@ -46,15 +46,17 @@ Xong! Những lần sau chỉ mất vài giây (bỏ qua setup).
 - Kiểm tra môi trường mà không khởi động: `py -3 scripts\launch.py --check`
 - Đổi cổng (8000 bị chiếm): PowerShell `$env:FORGE_PORT=8010` rồi chạy lại bat.
 
-## 3. Thêm key OpenRouter (hoặc chơi demo trước)
+## 3. Thêm OpenRouter / Google Gemini (hoặc chơi demo trước)
 
-1. Tạo tài khoản https://openrouter.ai → vào **Keys** → *Create Key* → copy `sk-or-v1-…`.
-2. Trên web: bấm **⚙** góc trên → dán key vào ô *API key* → Save. (CLI: gõ `/key sk-or-v1-…`.)
-3. Chọn model (mặc định thường dùng được): ô *Model*, ví dụ `anthropic/claude-sonnet-4.5`.
-4. Bấm **🩺 Hệ thống** → xem mục key/model đều OK (hoặc CLI `/doctor`).
-5. Chưa có key? **Demo mode** vẫn mô phỏng agent tạo/sửa file để bạn quen giao diện — chỉ chậm ở chỗ không gọi model thật.
+**Cách khuyến nghị — terminal, key nhập ẩn:**
+1. Tạo key tại https://openrouter.ai/keys hoặc https://aistudio.google.com/api-keys.
+2. Chạy `python scripts/setup_keys.py --provider openrouter` (Windows: `py -3 scripts\setup_keys.py --provider openrouter`). Với Google, đổi thành `--provider google`.
+3. Nhập key vào prompt ẩn, chọn model. Kiểm tra bằng `python scripts/setup_keys.py --check` — chỉ thấy bản mask.
+4. Khởi động lại Forge, bấm **🩺 Hệ thống** (hoặc CLI `/doctor`) để xem provider/key/model.
 
-Lưu ý BYOK: tiền API trả thẳng cho OpenRouter theo dùng; lỗi `402/429` = hết credit / quá tốc độ (agent tự fallback model rẻ — xem phần 9).
+Trên **máy cá nhân**, bạn vẫn có thể bấm **⚙** → dán key → Save, hoặc CLI `/key`. Shared release sẽ khóa cách nhập qua Web. Chưa có key? **DEMO MODE** vẫn mô phỏng agent tạo/sửa file để làm quen.
+
+Lưu ý chi phí: BYOK trả trực tiếp cho provider; `402/429` thường là hết credit/quá tốc độ. Google Free Tier có thể dùng dữ liệu cải thiện sản phẩm — không gửi code bí mật lên Free Tier.
 
 ## 4. Làm quen màn hình web
 
@@ -114,7 +116,17 @@ Mỗi tool MCP lần đầu chạy đều **hỏi duyệt** (allowlist) — khô
 - Cho phép/chặn lệnh theo glob: `allow_commands` / `deny_commands` trong ⚡ An toàn.
 - **Docker sandbox** (tùy chọn): bật trong ⚙ → mọi lệnh shell chạy trong container.
 - **Audit** 📘: mỗi tool-call 1 dòng (thời gian, phiên, tool, ms, args), token/key tự mask, xuất CSV được.
-- Key lưu tại `data/secrets.json` (máy bạn, không gửi đi đâu khác); listing luôn hiện bản mask.
+- **Provider key** lưu tại `data/provider-secrets.json`; **connector token** lưu riêng tại `data/secrets.json`. Cả hai đều nằm ngoài git/ZIP, listing chỉ hiện bản mask.
+- Shell/hook/background/git/LSP không thừa kế provider/admin key. MCP chỉ nhận secret được khai báo explicit trong `env` của server đó.
+
+### Một server dùng chung — release mode (v0.33)
+
+1. Operator chạy `python scripts/setup_keys.py --provider openrouter --release` (hoặc `--provider google`) **trước khi phát hành**.
+2. Tạo release password ≥16 ký tự. Password không lưu thô — chỉ PBKDF2 hash trong `data/release-auth.json`.
+3. Khởi động `python scripts/launch.py --release --no-browser`. Người dùng đăng nhập username **`forge`** và password đó.
+4. Ở release, Web Settings/keycheck bị khóa; đổi key/model bằng terminal setup. Thiếu auth setup server trả 503, sai đăng nhập 401, Settings bị khóa 403.
+5. CORS mặc định same-origin và có rate-limit LLM/auth. Khi qua mạng **bắt buộc HTTPS reverse proxy** — đọc `SECURITY.md` và `DEPLOY.md`.
+6. Local chỉ listen `127.0.0.1`; chỉ đặt `FORGE_HOST=0.0.0.0` sau khi release/proxy sẵn sàng. Đây là shared server cho nhóm tin cậy, không phải cô lập multi-tenant.
 
 ## 10. Sự cố thường gặp
 

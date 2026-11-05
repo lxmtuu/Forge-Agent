@@ -1024,7 +1024,7 @@ async def init_agents_md(agent: "Agent") -> dict:
         pass
     overview = overview_parts[0]["output"][:2500] + "\n\n" + "\n\n".join(sample)[:8000]
 
-    demo = config.get_api_key() is None
+    demo = not config.has_llm_credentials()
     if demo:
         content = (f"# AGENTS.md — quy tắc dự án\n\n"
                    f"(Sinh ở DEMO MODE — chưa có API key. Nhập key rồi chạy /init lại "

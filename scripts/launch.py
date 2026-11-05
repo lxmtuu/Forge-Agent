@@ -9,6 +9,8 @@ Cách dùng:
     python scripts/launch.py               # setup (nếu cần) + chạy server + mở browser
     python scripts/launch.py --no-browser  # không tự mở tab trình duyệt
     python scripts/launch.py --check       # chỉ khám phá môi trường, không khởi động
+    python scripts/launch.py --setup       # nhập key ẩn trong terminal
+    python scripts/launch.py --release     # chạy server dùng chung (bắt buộc auth)
 """
 import argparse
 import os
@@ -21,10 +23,14 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from engine.secrets import sanitized_env  # child setup không được thừa kế provider key
+
 VENV = ROOT / ".venv"
 IS_WIN = os.name == "nt"
 VPY = VENV / ("Scripts/python.exe" if IS_WIN else "bin/python")
 PORT = int(os.environ.get("FORGE_PORT", "8000"))
+HOST = os.environ.get("FORGE_HOST", "127.0.0.1")
 URL = f"http://localhost:{PORT}"
 
 
@@ -50,7 +56,7 @@ def deps_installed() -> bool:
     if not venv_ready():
         return False
     r = subprocess.run([str(VPY), "-c", "import fastapi, uvicorn, httpx, rich"],
-                       capture_output=True)
+                       capture_output=True, env=sanitized_env())
     return r.returncode == 0
 
 
@@ -60,11 +66,12 @@ def setup_venv() -> None:
         return
     if not venv_ready():
         say(f"① Tạo môi trường ảo .venv bằng Python {sys.version.split()[0]} …")
-        subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+        subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True,
+                          env=sanitized_env())
     if not deps_installed():
         say("② Cài dependencies (pip install -e .) — lần đầu khoảng 1 phút…")
         r = subprocess.run([str(VPY), "-m", "pip", "install", "-e", str(ROOT),
-                            "--quiet", "--disable-pip-version-check"])
+                            "--quiet", "--disable-pip-version-check"], env=sanitized_env())
         if r.returncode != 0:
             say("❌ Cài dependencies THẤT BẠI — xem lỗi phía trên.")
             say("   Kiểm tra mạng rồi chạy lại; vẫn hỏng thì xoá thư mục .venv và chạy lại từ đầu.")
@@ -104,6 +111,16 @@ def check_env() -> None:
     say("node/npx :", shutil.which("npx") or "không có (chỉ cần cho MCP stdio như Playwright/memory)")
     say("git      :", shutil.which("git") or "không có (checkpoint git + autocommit cần git)")
     say(f"Cổng {PORT}  :", "ĐANG BẬN — có thể server đang chạy sẵn" if port_busy() else "rảnh")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from engine import config
+        say("Provider :", config.get_provider(), "·", config.get_model())
+        say("LLM      :", "đã có credentials" if config.has_llm_credentials() else "demo (chưa có key)")
+        say("Release  :", "BẬT" if config.is_release_mode() else "tắt")
+    except Exception as e:  # noqa: BLE001 — check không được chết vì file config lỗi
+        say("Config   : lỗi đọc —", e)
+    say("Secure setup: python scripts/setup_keys.py")
+    say("Listen   :", HOST, "(đặt FORGE_HOST=0.0.0.0 chỉ khi đã cấu hình release/proxy)")
     say("Hướng dẫn chi tiết: USER_GUIDE.md")
 
 
@@ -111,8 +128,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--setup", action="store_true")
+    ap.add_argument("--release", action="store_true")
+    ap.add_argument("--provider", choices=["openrouter", "google", "custom"])
     args, _ = ap.parse_known_args()
     ensure_utf8()
+    if args.setup:
+        sys.path.insert(0, str(ROOT))
+        from scripts.setup_keys import main as secure_setup
+        setup_args = (["--provider", args.provider] if args.provider else [])
+        if args.release:
+            setup_args.append("--release")
+        return secure_setup(setup_args)
+    if args.release:
+        os.environ["FORGE_RELEASE_MODE"] = "1"
     if args.check:
         check_env()
         return 0
@@ -121,15 +150,24 @@ def main() -> int:
     say("│  ⚡ forge-agent — đang khởi động…                 │")
     say("╰──────────────────────────────────────────────────╯")
     setup_venv()
+    sys.path.insert(0, str(ROOT))
+    from engine import config
+    from engine import secrets as secretstore
+    if config.is_release_mode():
+        if not config.has_llm_credentials() or not secretstore.has_release_auth():
+            say("❌ RELEASE MODE chưa sẵn sàng: cần provider key + release password.")
+            say("   Chạy: python scripts/setup_keys.py --release")
+            return 1
+        say("🔒 Release mode: đăng nhập bắt buộc · Settings khóa · CORS same-origin.")
     if port_busy():
         say(f"⚠ Cổng {PORT} đã có server chạy — mở {URL} luôn (không khởi động bản thứ hai).")
         if not args.no_browser:
             open_browser()
         return 0
-    say(f"③ Khởi động server {URL} … (Ctrl+C để dừng)")
+    say(f"③ Khởi động server {URL} · listen {HOST} … (Ctrl+C để dừng)")
     proc = subprocess.Popen(
         [str(VPY), "-m", "uvicorn", "server.main:app",
-         "--host", "0.0.0.0", "--port", str(PORT)],
+         "--host", HOST, "--port", str(PORT)],
         cwd=str(ROOT),
     )
     if not wait_port():
@@ -137,8 +175,11 @@ def main() -> int:
         say(f"   {VPY} -m uvicorn server.main:app --port {PORT}")
         proc.terminate()
         return 1
-    say("✓ Server đã lên.  Chưa có key? Vẫn dùng được ở DEMO MODE (agent mô phỏng).")
-    say("  Thêm key OpenRouter: mở ⚙ trên web, hoặc trong CLI gõ  /key sk-or-v1-…")
+    say("✓ Server đã lên · provider:", config.get_provider(), "· model:", config.get_model())
+    if config.is_release_mode():
+        say("  Đăng nhập username `forge` bằng release password; nên mở qua HTTPS reverse-proxy.")
+    else:
+        say("  Chưa có key? DEMO MODE vẫn chạy. Cấu hình an toàn: python scripts/setup_keys.py")
     say("  Hướng dẫn đầy đủ từng bước: USER_GUIDE.md")
     if not args.no_browser:
         open_browser()

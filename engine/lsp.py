@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from . import config
+from .secrets import sanitized_env
 
 SERVER_DEFS: dict[str, list[list[str]]] = {
     "python": [["pylsp"], ["pyright-langserver", "--stdio"]],
@@ -168,14 +169,14 @@ class LspSession:
                 *self.cmd,
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
-                cwd=str(self.workspace),
+                cwd=str(self.workspace), env=sanitized_env(),
             )
             self._reader_task = asyncio.get_event_loop().create_task(self._reader())
             result = await self._request("initialize", {
                 "processId": None,
                 "rootUri": self.workspace.as_uri(),
                 "capabilities": {"textDocument": {"synchronization": {"didSave": True}}},
-                "clientInfo": {"name": "forge-agent", "version": "0.32.0"},
+                "clientInfo": {"name": "forge-agent", "version": "0.33.0"},
             }, timeout=15)
             if result is None:
                 return False

@@ -316,11 +316,12 @@ class ForgeTUI(App):
 
     def update_status(self) -> None:
         s = store.get(self.sid) if self.sid else None
-        key = config.get_api_key()
+        key = config.get_active_api_key()
         model = (s.model if s and s.model else config.get_model())
         toks = (s.usage or {}).get("total_tokens", 0) if s else 0
         mode = config.load_config().get("approval_mode", "guarded")
-        state = "DEMO" if not key else f"key ✓ {config.mask_key(key)}"
+        state = (f"{config.get_provider()} ✓ {config.mask_key(key) or 'không cần key'}"
+                 if config.has_llm_credentials() else "DEMO")
         mode_ico = {"direct": "💬", "agent": "🤖", "plan": "📋"}.get(self.chat_mode, "")
         self.query_one("#status", Static).update(
             f"{mode_ico} {self.chat_mode} · {model} · {state} · duyệt {mode} · tokens {toks}"
@@ -354,8 +355,8 @@ class ForgeTUI(App):
         elif cmd == "/new":
             self.new_session()
         elif cmd == "/key":
-            config.save_config({"api_key": arg})
-            self.add_line(f"✅ Đã lưu key {config.mask_key(arg)}", cls="tool-ok")
+            config.save_config({config.provider_secret_field(): arg})
+            self.add_line(f"✅ Đã lưu key {config.get_provider()} {config.mask_key(arg)}", cls="tool-ok")
         elif cmd == "/model":
             config.save_config({"model": arg})
             self.add_line(f"✅ Model → {arg}", cls="tool-ok")
@@ -752,7 +753,7 @@ class ForgeTUI(App):
         if attached:
             self.add_line(f"📎 Đã đính kèm: {', '.join('@' + a for a in attached)}", cls="sys-line")
         self.add_user(text.split("\n\n---\n")[0])
-        demo = config.get_api_key() is None
+        demo = not config.has_llm_credentials()
         source = send_demo(self.agent, text) if demo else self.agent.send(
             text, chat_mode=mode or self.chat_mode)
         self._md_widget = None

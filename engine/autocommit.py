@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 
 from . import config
+from .secrets import sanitized_env
 
 CONVENTIONAL = ("feat", "fix", "chore", "docs", "refactor", "test", "style",
                 "perf", "build", "ci", "revert")
@@ -29,7 +30,7 @@ _COMMIT_PROMPT = (
 
 async def _git(ws, *args: str) -> tuple[int, str]:
     p = await asyncio.create_subprocess_exec(
-        "git", *args, cwd=str(ws),
+        "git", *args, cwd=str(ws), env=sanitized_env(),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     out, _err = await p.communicate()
     return p.returncode or 0, out.decode("utf-8", "replace")
@@ -86,7 +87,7 @@ def _cheap_model() -> str | None:
 
 async def _llm_subject(user_text: str, stat: str, assistant_text: str) -> str | None:
     """Hỏi model rẻ sinh subject — bất kỳ lỗi nào → None (dùng fallback)."""
-    if not config.get_api_key():
+    if not config.has_llm_credentials():
         return None
     try:
         from .llm import stream_chat

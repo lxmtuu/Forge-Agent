@@ -9,10 +9,11 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 import uuid
 from pathlib import Path
+
+from .secrets import sanitized_env
 
 MAX_RUNNING = 8
 MAX_TOTAL = 24         # vượt ngưỡng này dọn task đã xong cũ nhất
@@ -38,7 +39,7 @@ async def start(command: str, workspace: Path) -> tuple[str, str]:
         ids = ", ".join(k for k, t in _TASKS.items() if t["status"] == "running")
         return "", (f"Error: đã có {running} tác vụ nền đang chạy ({ids}) — "
                     "kiểm tra/kill bớt bằng check_background rồi hẵng chạy mới.")
-    env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1"}
+    env = sanitized_env({"TERM": "dumb", "NO_COLOR": "1"})
     proc = await asyncio.create_subprocess_shell(
         command, cwd=str(workspace), stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT, env=env)

@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from . import config
+from .secrets import sanitized_env
 
 PROTOCOL_VERSION = "2024-11-05"
 INIT_TIMEOUT = 20.0
@@ -137,7 +138,7 @@ class McpServer:
                 return
             self.status = "starting"
             try:
-                env = {**__import__("os").environ, **self.env}
+                env = sanitized_env(self.env)
                 self.proc = await asyncio.create_subprocess_exec(
                     self.command, *self.args,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -146,7 +147,7 @@ class McpServer:
                 init = await self._request("initialize", {
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "forge-agent", "version": "0.1.0"},
+                    "clientInfo": {"name": "forge-agent", "version": "0.33.0"},
                 }, INIT_TIMEOUT)
                 srv = (init.get("serverInfo") or {}).get("name", "?")
                 await self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -250,7 +251,7 @@ class McpHttpServer:
                 "params": {
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "forge-agent", "version": "0.1.0"},
+                    "clientInfo": {"name": "forge-agent", "version": "0.33.0"},
                 },
             })
             srv = (init.get("serverInfo") or {}).get("name", "?")
