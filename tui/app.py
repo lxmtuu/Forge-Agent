@@ -337,7 +337,7 @@ class ForgeTUI(App):
         if self.busy:
             self.add_line("⏳ Đang xử lý — chờ xong đã!", cls="sys-line")
             return
-        self.run_turn(text)
+        self.run_turn(text)  # @work(exclusive=True) — gọi là tự chạy Worker
 
     async def handle_command(self, text: str) -> None:
         cmd, _, arg = text.partition(" ")
@@ -345,7 +345,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory [clear] /doctor /agents /connectors [add|auth] "
+                          "/profile [tên] /context /memory [clear] /doctor /agents /connectors [add|auth] /audit "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -407,6 +407,10 @@ class ForgeTUI(App):
                 self.add_line(f"🧠 Context: {pct} ({ctx['chars']:,} ký tự ≈ {ctx['est_tokens']:,} "
                               f"tokens / {lim}) · {ctx['messages']} tin · "
                               f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
+        elif cmd == "/audit":
+            from engine import auditlog
+            n = int(arg) if arg.isdigit() else 20
+            self.add_line(auditlog.format_listing(n), cls="sys-line")
         elif cmd == "/connectors":
             from engine import connectors as fconn
             ws = self.agent.workspace if self.agent else Path.cwd()
@@ -506,7 +510,7 @@ class ForgeTUI(App):
             if self.busy:
                 self.add_line("⏳ Đang chạy — chờ xong đã.", cls="sys-line")
             else:
-                self.run_turn(text)
+                self.run_turn(text)  # @work
         elif cmd == "/fork":
             if self._require_idle():
                 ns = store.fork(self.sid)
@@ -531,7 +535,7 @@ class ForgeTUI(App):
             expanded = fcmd.expand(text, ws)
             if expanded is not None:
                 self.add_line(f"⌨ Lệnh custom: {cmd} → chạy", cls="sys-line")
-                self.run_turn(expanded)
+                self.run_turn(expanded)  # @work
             else:
                 reason = fcmd.blocked_reason(ws, text)
                 if reason:
@@ -685,9 +689,13 @@ class ForgeTUI(App):
         finally:
             self.busy = False
             self._md_widget = None
-            self.refresh_sessions(select_latest=False)
-            self.refresh_files()
-            self.update_status()
+            # app có thể đang shutdown (user quit giữa lượt) — widgets đã gỡ thì bỏ qua
+            try:
+                self.refresh_sessions(select_latest=False)
+                self.refresh_files()
+                self.update_status()
+            except Exception:  # noqa: BLE001 — dọn dẹp không được làm crash app
+                pass
 
     # --------------------------------------------------------- bindings
     def action_new_session(self) -> None:

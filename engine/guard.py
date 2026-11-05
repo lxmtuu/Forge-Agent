@@ -16,6 +16,8 @@ _PATTERNS: list[tuple[re.Pattern, str, str]] = [
     # ---- DANGEROUS ----
     (re.compile(r"\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rf][a-zA-Z]*\s+(/|~|\$HOME|\*)", re.I), "danger",
      "xóa đệ quy từ gốc/home"),
+    (re.compile(r"\brm\s+[^|;&\n]*--(recursive|no-preserve-root)\b[^|;&\n]*\s(/|~|\$HOME|\*)", re.I),
+     "danger", "xóa đệ quy từ gốc/home (flag dài)"),
     (re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?[a-zA-Z]*\s+\.", re.I), "danger", "xóa đệ quy thư mục hiện tại"),
     (re.compile(r"\b(mkfs|fdisk|parted|dd\s+if=.*of=/dev/)", re.I), "danger", "ghi/thao tác ổ đĩa thô"),
     (re.compile(r"\b(shutdown|reboot|halt|poweroff)\b", re.I), "danger", "tắt/khởi động lại máy"),
@@ -73,8 +75,10 @@ def assess_command(cmd: str) -> dict:
         return {"level": "danger",
                 "reasons": ["block_network=true — lệnh ra mạng bị chặn (tắt trong config nếu cần)"]}
     reasons: dict[str, list[str]] = {"danger": [], "warn": []}
+    # chuẩn hoá ${IFS}/$IFS → dấu cách: bash sẽ expansion, guard phải thấy như shell thấy
+    cmd_norm = re.sub(r"\$\{?IFS\}?", " ", cmd or "")
     for rx, level, reason in _PATTERNS:
-        if rx.search(cmd or ""):
+        if rx.search(cmd or "") or (cmd_norm != cmd and rx.search(cmd_norm)):
             if reason not in reasons[level]:
                 reasons[level].append(reason)
     if reasons["danger"]:

@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 📘 Audit log (v0.17.2)
+
+Mọi tool call của agent (kể cả MCP, lệnh bị từ chối, hook chặn) được ghi `data/audit/<ngày>.jsonl` — token tự mask. Xem: `/audit [n]` trên cả 3 UI.
+
 ### 🔌 Connectors (v0.17) — nối SaaS qua MCP
 
 ```bash

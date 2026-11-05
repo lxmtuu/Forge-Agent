@@ -6,12 +6,14 @@ Emits UI-friendly events consumed by both the CLI and the web server:
 """
 import datetime
 import platform
+import time
 import traceback
 from pathlib import Path
 
 from . import config, guard, llm, tools
 from .llm import LLMError
 from .mcp import manager as mcp_manager
+from .auditlog import log_tool, monotonic_ms
 from .session import SessionStore
 
 MAX_ITERATIONS = 30
@@ -186,6 +188,8 @@ class Agent:
             yield {"type": "tool_start", "id": tc["id"], "name": "spawn_subagent", "args": args}
             task = str(args.get("task", "")).strip()
             if turn_state["spawns"] >= MAX_SUBAGENTS_PER_TURN:
+                log_tool(s.id, "spawn_subagent", args, False, source="subagent",
+                         note="vượt giới hạn lượt")
                 yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
                        "args": args, "ok": False,
                        "output": f"Đã đạt giới hạn {MAX_SUBAGENTS_PER_TURN} sub-agent "
@@ -194,6 +198,8 @@ class Agent:
                                    "content": "Đã đạt giới hạn sub-agent trong lượt này."})
                 messages.append(s.messages[-1])
             elif not task:
+                log_tool(s.id, "spawn_subagent", args, False, source="subagent",
+                         note="thiếu task")
                 yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
                        "args": args, "ok": False, "output": "Error: thiếu task cho sub-agent"}
                 s.messages.append({"role": "tool", "tool_call_id": tc["id"],
@@ -210,6 +216,8 @@ class Agent:
                 except Exception:
                     pass
                 if blocked:
+                    log_tool(s.id, "spawn_subagent", args, False, source="hook",
+                             note="blocked bởi pre_tool_use")
                     yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
                            "args": args, "ok": False,
                            "output": f"BLOCKED by hook pre_tool_use: {reason}"}
@@ -259,6 +267,8 @@ class Agent:
         # tool_result + messages theo thứ tự gốc của batch
         for tc, args, _task, _model in batch:
             out = outputs.get(tc["id"], "(sub-agent không trả kết quả)")
+            log_tool(s.id, "spawn_subagent", args,
+                     bool(out and "subagent lỗi" not in out[:20]), source="subagent")
             yield {"type": "tool_result", "id": tc["id"], "name": "spawn_subagent",
                    "args": args, "ok": bool(out and "subagent lỗi" not in out[:20]),
                    "output": out}
@@ -431,6 +441,7 @@ class Agent:
                     except _json.JSONDecodeError:
                         args = {"_raw": raw_args}
                     yield {"type": "tool_start", "id": tc["id"], "name": name, "args": args}
+                    _t0 = time.monotonic()
 
                     # ---- hooks: pre_tool_use (exit 2 = chặn, chuẩn Claude Code) ----
                     try:
@@ -439,6 +450,7 @@ class Agent:
                         if pre and pre.get("blocked"):
                             result = {"ok": False,
                                       "output": f"BLOCKED by hook pre_tool_use: {pre.get('reason')}"}
+                            log_tool(s.id, name, args, False, source="hook", note="blocked bởi pre_tool_use")
                             yield {"type": "tool_result", "id": tc["id"], "name": name,
                                    "args": args, "ok": False, "output": result["output"]}
                             s.messages.append({"role": "tool", "tool_call_id": tc["id"],
@@ -469,6 +481,9 @@ class Agent:
                                     result = {"ok": True, "output": _sev["output"]}
                                 else:
                                     yield _sev
+                        log_tool(s.id, name, args, result.get("ok", False),
+                                 monotonic_ms(_t0),
+                                 "mcp" if name in mcp_routing else "internal")
                         ev = {"type": "tool_result", "id": tc["id"], "name": name,
                               "args": args, "ok": result.get("ok", False),
                               "output": result.get("output", "")}
@@ -494,6 +509,8 @@ class Agent:
                             decision = await approvals.wait(aid)
                             yield {"type": "approval_decision", "id": aid, "decision": decision}
                             if decision == "deny":
+                                log_tool(s.id, name, args, False, source="denied",
+                                         note="người dùng từ chối (guard)")
                                 result = {"ok": False, "output": (
                                     "User DENIED this command. Do not retry it unchanged; "
                                     "explain and propose a different approach.")}
@@ -530,6 +547,8 @@ class Agent:
                         if _decision == "approve_always":
                             _conn.allow(_srv.name, _tool)
                         if _decision == "deny":
+                            log_tool(s.id, name, args, False, source="denied",
+                                     note="người dùng từ chối (MCP)")
                             result = {"ok": False, "output": (
                                 "User DENIED this MCP tool call. Do not retry it unchanged; "
                                 "explain and offer to allow it via /connectors allow.")}
@@ -574,6 +593,8 @@ class Agent:
                                    "items": _jtodo.loads(_tp.read_text(encoding="utf-8"))}
                         except Exception:
                             pass
+                    log_tool(s.id, name, args, result["ok"], monotonic_ms(_t0),
+                             "mcp" if name in mcp_routing else "internal")
                     ev = {"type": "tool_result", "id": tc["id"], "name": name,
                           "args": args, "ok": result["ok"], "output": result["output"]}
                     if result.get("diff"):

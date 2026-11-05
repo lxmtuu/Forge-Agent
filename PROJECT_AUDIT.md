@@ -51,13 +51,28 @@
 
 - Quy tắc mới áp dụng cho vòng sau: **mỗi fix bắt buộc kèm test hồi quy** (test_v018 T2–T5 đã làm mẫu).
 
+## 3b. Vòng 2 (v0.17.2) — triển khai backlog P2 đúng nguyên tắc
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **A1** | **Audit log tool calls** (OWASP audit trail) | `engine/auditlog.py` — JSONL `data/audit/<ngày>.jsonl`, xoay theo ngày; **8 điểm ghi** trong agent.py (internal/MCP/hook-blocked/2 deny/3 spawn); **scrub token 2 lớp** (prefix `ghp_…`/`sk-…` + nhãn `Bearer|token|key[:=]`) — test xác nhận `sk-or-v1-SUPERSECRET99` KHÔNG lọt log; lệnh `/audit [n]` đồng bộ 3 UI |
+| **A2** | **TUI smoke harness** (Textual Pilot headless) | `test_tui.py` 6 test: boot, /help, /skills, /audit, /connectors qua ô nhập THẬT + gửi tin chạy `run_turn` THẬT (key giả + LLM stub). **tui/app.py coverage 14% → 44%** |
+| **A3** | **Adversarial security suite** | `test_security.py` 6 test: guard chống 21 payload bypass (chain `;&&||`, backtick, `$()`, newline, `${IFS}`, `--recursive`, hoa/thường) · approval (id khó đoán, double-resolve, timeout tự deny) · skill-chưa-trust chứa payload KHÔNG vào prompt · audit scrub · E2E audit entry |
+
+### Bài học & phát hiện vòng 2 (đo đếm, không đoán)
+1. **Bug thật #1 — auditlog nuốt log im lặng**: `(Path / "file".open(...))` — ưu tiên toán tử khiến `.open` gọi trên **chuỗi** → mọi log bịexcept nuốt. Test bắt được ngay, đã sửa (tách biến path).
+2. **Bug thật #2 — quit giữa lượt làm TUI crash**: worker `finally` gọi `refresh_sessions` khi app đang shutdown (widgets đã gỡ) → `WorkerFailed: NoMatches('#sessions')`. Xác định bằng instrumentation `query_one` in stack — **không phỏng đoán**. Đã bọc try/except trong finally.
+3. **Sửa guard theo kỹ thuật bypass đã research**: `${IFS}`/`$IFS` expansion + `rm --recursive/--no-preserve-root` từng là BYPASS — giờ là test hồi quy (và trước khi vá, test chạy THẤT đúng như kỳ vọng → chứng minh test có giá trị).
+4. **Sai lầm được sửa trung thực**: đoán `run_turn` không chạy và "vá" bằng `asyncio.create_task` — test T7 văng `TypeError: a coroutine was expected, got Worker` → hóa ra `run_turn` có decorator **`@work(exclusive=True)`** (gọi là tự chạy Worker) — code gốc ĐÚNG, đã revert và viết lại test theo hành vi thật. Bài học: instrumentation trước, vá sau.
+
+**Kết quả vòng 2: 102/102 test xanh (14 suite) · bandit 0 findings · TUI coverage 14%→44% · guard 95% · auditlog 86%.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
 |---|---|---|
-| P2 | TUI smoke test qua harness của Textual | tui/app.py 14% — UI có thể âm thầm hỏng |
-| P2 | Audit log mọi tool call (JSONL trong data/) | OWASP khuyến nghị "audit trail" cho agent hành động thật |
-| P2 | Adversarial prompt-injection suite (skill/email giả lệnh) | LLM01 — hiện chỉ chặn bằng gate, chưa test định kỳ |
+| ~~P2~~ ✅ v0.17.2 | ~~TUI smoke~~ · ~~Audit log~~ · ~~Adversarial suite~~ | Đã làm — xem mục 3b |
+| P3 | Audit-log UI trong web (bảng lọc theo phiên/tool) | hiện /audit là text; bảng đẹp hơn |
 | P3 | mypy dần dần cho engine/ (bắt đầu từ tools.py, agent.py) | bắt lỗi kiểu sớm hơn ruff |
 | P3 | ASYNC240 → `to_thread` cho lsp/review khi có dư địa | nhất quán async thuần |
 

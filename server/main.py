@@ -429,6 +429,14 @@ async def chat(sid: str, body: ChatBody, request: Request):
             model = ag_model
         if ag_mode:
             chat_mode = ag_mode
+    # /audit [n] — xem nhật ký tool call, không cần LLM
+    audit_synthetic: list[dict] | None = None
+    if text == "/audit" or text.startswith("/audit "):
+        from engine import auditlog
+        a_arg = text[6:].strip()
+        a_n = int(a_arg) if a_arg.isdigit() else 20
+        audit_synthetic = [{"type": "assistant_message",
+                            "content": auditlog.format_listing(a_n)}]
     # /connectors [add|auth|allow|deny|remove] — quản lý connector MCP, không cần LLM
     connectors_synthetic: list[dict] | None = None
     if text == "/connectors" or text.startswith("/connectors "):
@@ -481,8 +489,9 @@ async def chat(sid: str, body: ChatBody, request: Request):
             if expanded is not None:
                 text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
-    synthetic: list[dict] | None = (connectors_synthetic
-                                    if connectors_synthetic is not None else skills_synthetic)
+    synthetic: list[dict] | None = (audit_synthetic if audit_synthetic is not None else
+                                    (connectors_synthetic
+                                     if connectors_synthetic is not None else skills_synthetic))
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

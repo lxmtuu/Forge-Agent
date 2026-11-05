@@ -50,6 +50,7 @@ HELP = """[bold]Lệnh[/bold]
   /usage              tokens đã dùng         /keytest         kiểm tra API key
   /skills [add|new|remove …]  quản lý skill (chuẩn Agent Skills SKILL.md)
   /connectors [add|auth|allow…] kết nối GitHub/Linear/Gmail… qua MCP
+  /audit [n]           nhật ký tool call (JSONL data/audit/)
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -483,6 +484,12 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows:
                 console.print(f"  🤖 [bold]{r['name']}[/bold] — {r['description'] or '(không mô tả)'}"
                               + (f" · {r['model']}" if r["model"] else ""))
+            continue
+        if text == "/audit" or text.startswith("/audit "):
+            from engine import auditlog
+            _n = text[6:].strip()
+            n = int(_n) if _n.isdigit() else 20
+            console.print(Text(auditlog.format_listing(n)))
             continue
         if text == "/connectors" or text.startswith("/connectors "):
             from engine import connectors as fconn
