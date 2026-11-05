@@ -69,6 +69,8 @@ class SettingsBody(BaseModel):
     deny_commands: list[str] | None = None
     custom_base_url: str | None = None
     custom_api_key: str | None = None
+    auto_commit: bool | None = None
+    reasoning_effort: str | None = None
 
 
 class FileSaveBody(BaseModel):
@@ -121,6 +123,8 @@ async def health():
         "active_profile": cfg.get("active_profile"),
         "profiles": sorted(config.list_profiles().keys()),
         "custom_base_url": config.get_base_url(),
+        "auto_commit": config.get_auto_commit(),
+        "reasoning_effort": config.get_reasoning_effort(),
         "lsp_available": _lsp_available(),
     }
 
@@ -173,6 +177,11 @@ async def set_settings(body: SettingsBody):
         patch["custom_base_url"] = body.custom_base_url.strip().rstrip("/")
     if body.custom_api_key is not None and body.custom_api_key.strip():
         patch["custom_api_key"] = body.custom_api_key.strip()
+    if body.auto_commit is not None:
+        patch["auto_commit"] = bool(body.auto_commit)
+    if body.reasoning_effort is not None:  # sai giá trị → về mặc định (không gửi)
+        e = body.reasoning_effort.strip().lower()
+        patch["reasoning_effort"] = e if e in ("low", "medium", "high") else ""
     config.save_config(patch)
     return await health()
 
@@ -683,10 +692,24 @@ async def chat(sid: str, body: ChatBody, request: Request):
             else:
                 source = agent.send(text, chat_mode=chat_mode, content=content,
                                     append_user=not body.rerun)
+            last_assistant = ""
             async for ev in source:
                 if await request.is_disconnected():
                     return
+                if ev.get("type") == "assistant_message" and ev.get("content"):
+                    last_assistant = str(ev["content"])
                 yield sse(ev)
+            # B1 auto-commit (opt-in) — sau lượt agent thật, chỉ mode đổi file
+            if (not demo and chat_mode in ("agent", "architect")
+                    and config.get_auto_commit()):
+                try:
+                    from engine import autocommit as fac
+                    res = await fac.commit_turn(ws, sid, text, last_assistant)
+                    if res:
+                        yield sse({"type": "auto_commit", "subject": res["subject"],
+                                   "files": res["files"]})
+                except Exception as _ace:
+                    print(f"[autocommit] bỏ qua: {_ace}")
         except Exception as e:
             yield sse({"type": "error", "message": f"Lỗi server: {e}"})
         yield sse({"type": "done"})

@@ -25,7 +25,7 @@ type TabId = typeof TABS[number]['id']
 export function SettingsModal(props: {
   settings: Settings
   onClose: () => void
-  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string }) => Promise<void>
+  onSave: (apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; web_search?: boolean; allow_commands?: string[]; deny_commands?: string[]; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) => Promise<void>
 }) {
   const [tab, setTab] = useState<TabId>('conn')
   const [key, setKey] = useState('')
@@ -37,6 +37,8 @@ export function SettingsModal(props: {
   const [allowCmds, setAllowCmds] = useState((props.settings.allow_commands ?? []).join('\n'))
   const [denyCmds, setDenyCmds] = useState((props.settings.deny_commands ?? []).join('\n'))
   const [baseUrl, setBaseUrl] = useState(props.settings.custom_base_url ?? '')
+  const [effort, setEffort] = useState(props.settings.reasoning_effort ?? '')
+  const [autoCommit, setAutoCommit] = useState(props.settings.auto_commit ?? false)
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState<string | null>(null)
   const [mcp, setMcp] = useState<McpServerStatus[]>([])
@@ -74,7 +76,9 @@ export function SettingsModal(props: {
     webSearch !== initial.webSearch ||
     allowCmds !== initial.allowCmds ||
     denyCmds !== initial.denyCmds ||
-    baseUrl !== (props.settings.custom_base_url ?? '')
+    baseUrl !== (props.settings.custom_base_url ?? '') ||
+    effort !== (props.settings.reasoning_effort ?? '') ||
+    autoCommit !== (props.settings.auto_commit ?? false)
 
   const applyTheme = (t: string) => {
     setTheme(t)
@@ -154,6 +158,8 @@ export function SettingsModal(props: {
         allow_commands: allowCmds.split('\n').map((s) => s.trim()).filter(Boolean),
         deny_commands: denyCmds.split('\n').map((s) => s.trim()).filter(Boolean),
         custom_base_url: baseUrl.trim(),
+        reasoning_effort: effort,
+        auto_commit: autoCommit,
         ...(Number.isFinite(mt) && mt >= 256 && mt <= 65536 ? { max_tokens: mt } : {}),
       })
       props.onClose()
@@ -205,6 +211,15 @@ export function SettingsModal(props: {
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
               <small>Dán URL rồi đặt Model thành tên cục bộ (vd <code>llama3.2</code>, <code>qwen2.5-coder</code>). API key tuỳ chọn — điền ở ô key bên trên nếu server cần.</small>
+            </div>
+            <div className="field">
+              <span>Effort suy luận <em>(reasoning budget — chỉ áp dụng qua OpenRouter)</em></span>
+              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+                <option value="">Mặc định của model</option>
+                <option value="low">Low — nhanh, rẻ</option>
+                <option value="medium">Medium — cân bằng</option>
+                <option value="high">High — suy luận sâu, chậm hơn</option>
+              </select>
             </div>
             <label className="field">
               <span>OpenRouter API Key {props.settings.key_masked && <em>(hiện tại: {props.settings.key_masked})</em>}</span>
@@ -304,6 +319,11 @@ export function SettingsModal(props: {
                 <span>🐳 Chạy lệnh trong Docker sandbox (không mạng, giới hạn CPU/RAM)</span>
               </label>
             )}
+
+            <label className="field check">
+              <input type="checkbox" checked={autoCommit} onChange={(e) => setAutoCommit(e.target.checked)} />
+              <span>📦 Auto-commit mỗi lượt <em>— git init workspace (nếu chưa có) và commit thay đổi với message Conventional Commits do model rẻ sinh (theo pattern Aider). Xem <code>git log</code> trong workspace.</em></span>
+            </label>
 
             <label className="field check">
               <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />

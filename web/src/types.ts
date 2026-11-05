@@ -73,6 +73,8 @@ export interface Settings {
   allow_commands: string[]
   deny_commands: string[]
   custom_base_url?: string
+  auto_commit?: boolean
+  reasoning_effort?: string
 }
 
 export interface ContextStats {
@@ -128,6 +130,7 @@ export type AgentEvent =
   | { type: 'subagent_done'; id: string; session_id: string; tools: number; summary: string }
   | { type: 'subagent_output'; id: string; output: string }
   | { type: 'model_fallback'; from: string; to: string; reason: string }
+  | { type: 'auto_commit'; subject: string; files: number }
   | { type: 'elicitation_request'; id: string; server?: string; message?: string; schema?: { type: string; properties?: Record<string, { type: string; description?: string }>; required?: string[] } | null; url?: string | null }
   | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
   | { type: 'approval_decision'; id: string; decision: string }

@@ -346,7 +346,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find "
+                          "/profile [tên] /context /memory /doctor /agents /connectors /audit /rename /find /commit /autocommit "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -420,6 +420,30 @@ class ForgeTUI(App):
             for r in rows:
                 self.add_line(f"  {r['id']}  {r['title'][:40]} · {r['message_count']} tin",
                               cls="sys-line")
+        elif cmd == "/commit":
+            import threading as _th
+            ws = self.agent.workspace if self.agent else Path.cwd()
+            self.add_line("📦 Đang commit…", cls="sys-line")
+
+            def _work() -> None:
+                from engine import autocommit as fac
+                res = fac.commit_turn_sync(ws, self.sid, "(thủ công /commit)", "")
+
+                def _show() -> None:
+                    self.add_line("📦 Không có thay đổi nào." if res is None
+                                  else f"📦 {res['subject']} ({res['files']} file)", cls="sys-line")
+                try:
+                    self.call_from_thread(_show)
+                except Exception:  # noqa: BLE001 — app đã thoát giữa flow
+                    pass
+            self.run_worker(_work, thread=True)
+        elif cmd == "/autocommit":
+            from engine import config as fcfg
+            if arg.lower() in ("on", "off", "true", "false"):
+                fcfg.save_config({"auto_commit": arg.lower() in ("on", "true")})
+            self.add_line(("🟢 auto-commit BẬT" if fcfg.get_auto_commit()
+                           else "⚪ auto-commit TẮT") + " — commit mỗi lượt có thay đổi",
+                          cls="sys-line")
         elif cmd == "/audit":
             from engine import auditlog
             n = int(arg) if arg.isdigit() else 20

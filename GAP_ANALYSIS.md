@@ -34,7 +34,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 
 | # | Tính năng | Ai có | Forge | Ưu tiên |
 |---|---|---|---|---|
-| B1 | **Auto-commit mỗi thay đổi vào repo người dùng** (message do AI, conventional commits) | Aider (signature), Codex (auto-PR) | ❌ checkpoint chỉ là git nội bộ ẩn | **P0** (opt-in) |
+| B1 | **✅ ĐÃ LÀM v0.22** Auto-commit (opt-in) mỗi lượt — git init ngầm workspace, message Conventional Commits do model rẻ sinh (fallback heuristic), attribution 🤖 | Aider (signature), Codex (auto-PR) | /commit + /autocommit ở cả 3 UI | **P0** (opt-in) |
 | B2 | Worktree isolation cho fork/subagent | Claude (/fork→worktree, isolation: worktree) | ❌ fork copy nguyên chỗ | P2 |
 
 ### Nhóm C — Hooks & sự kiện
@@ -49,7 +49,7 @@ subagents (song song ≤3, cap 6, alias model cheap/strong) · battle/batch · p
 |---|---|---|---|---|
 | D1 | **Chi phí $ theo phiên/lượt** — đã có giá từ /api/models + usage tokens → chỉ cần nhân | Claude (projected cost), Aider | ❌ chỉ hiện tokens | **P0** (nhỏ, giá trị cao) |
 | D2 | **✅ ĐÃ LÀM v0.19** Local models — OpenAI-compatible base URL (Ollama/LM Studio) | Aider, OpenCode (75+ providers) | custom_base_url + custom_api_key (Ollama không cần key), cost tự ẩn | P1 |
-| D3 | Effort/reasoning budget per request | Claude (--effort), OpenRouter reasoning | ❌ | P2 |
+| D3 | **✅ ĐÃ LÀM v0.22** Effort/reasoning budget — setting low/medium/high → payload reasoning.effort (chỉ OpenRouter) | Claude (--effort), OpenRouter reasoning | test bằng fake-OpenRouter chụp payload | P2 |
 
 ### Nhóm E — UX phiên
 

@@ -241,6 +241,15 @@ Test: **6/6 OAuth suite (gồm E2E flow với fake provider: loopback thật, fa
 
 Test: **4/4 suite v0.22 (stub chứng minh strong/cheap + đủ/không tool đúng pha; rerun validate index; append_user=False) — tổng 120/120 / 18 suite.**
 
+## 📦 v0.22 "Auto-commit & Effort"
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **📦 Auto-commit (B1 — P0 cuối cùng)** | Opt-in (mặc định TẮT): mỗi lượt agent có thay đổi → git commit workspace với message Conventional Commits do model rẻ sinh (pattern Aider); fallback heuristic khi không có LLM; `git log` workspace thành nhật ký công việc; `/commit` + `/autocommit on\|off` ở 3 UI |
+| 2 | **🧠 Reasoning effort (D3)** | ⚙ Cài đặt chọn Low/Medium/High → payload `reasoning.effort` (OpenRouter); model suy luận tốn ít token hơn khi việc đơn giản |
+
+Test: **5/5 suite v0.23 (git thật: log/-1 chứa subject+attribution; fallback; payload chụp qua fake-OpenRouter) — tổng 125/125 / 19 suite · bandit Medium+ 0.**
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

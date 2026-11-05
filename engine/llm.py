@@ -135,6 +135,10 @@ async def stream_chat(
         "temperature": temperature,
         "max_tokens": config.get_max_tokens(),
     }
+    effort = config.get_reasoning_effort()
+    if effort and not config.get_base_url():
+        # D3 — chỉ gửi qua OpenRouter (server OpenAI-compat lạ có thể từ chối field lạ)
+        payload["reasoning"] = {"effort": effort}
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"

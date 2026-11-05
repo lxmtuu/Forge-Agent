@@ -63,6 +63,9 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
     case 'model_fallback':
       return [...prev, { kind: 'notice', id: uid(),
                          text: `🔁 Model lỗi — chuyển từ ${ev.from} → ${ev.to}` }]
+    case 'auto_commit':
+      return [...prev, { kind: 'notice', id: uid(),
+                         text: `📦 Đã tự commit (${ev.files} file): ${ev.subject}` }]
     case 'todo_update': {
       const idx = prev.findIndex((it) => it.kind === 'todo')
       const card: Item = { kind: 'todo', id: idx >= 0 ? (prev[idx] as { id: string }).id : uid(), items: ev.items }
@@ -546,7 +549,7 @@ export default function App() {
   }
 
   // ------------------------------------------------------------- settings
-  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string }) {
+  async function saveSettings(apiKey?: string, model?: string, patch?: { approval_mode?: string; docker_sandbox?: boolean; max_tokens?: number; custom_base_url?: string; auto_commit?: boolean; reasoning_effort?: string }) {
     const s = await api.saveSettings(apiKey, model, patch)
     setSettings(s)
   }

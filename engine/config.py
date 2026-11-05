@@ -26,6 +26,17 @@ DEFAULT_MODELS = [
 FALLBACK_MODEL = "anthropic/claude-sonnet-5.5"
 
 
+def get_auto_commit() -> bool:
+    """B1: tự git-commit workspace sau mỗi lượt agent (mặc định TẮT — opt-in)."""
+    return bool(load_config().get("auto_commit", False))
+
+
+def get_reasoning_effort() -> str:
+    """D3: effort suy luận ('low'|'medium'|'high') — '' = không gửi field reasoning."""
+    v = (load_config().get("reasoning_effort") or "").strip().lower()
+    return v if v in ("low", "medium", "high") else ""
+
+
 def get_max_tokens() -> int:
     """Max output tokens per LLM call. Lower = cheaper pre-auth on pay-as-you-go."""
     try:

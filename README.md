@@ -165,6 +165,10 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 📦 Auto-commit + 🧠 Reasoning effort (v0.22)
+
+⚙ → **An toàn** → bật **Auto-commit mỗi lượt**: workspace tự `git init` ngầm, sau mỗi lượt agent có thay đổi sẽ commit với message Conventional Commits do model rẻ sinh (pattern Aider) — `git log` trong workspace thành lịch sử công việc. `/commit` commit thủ công; `/autocommit on|off` bật/tắt nhanh. ⚙ → **Kết nối** → **Effort suy luận** (Low/Medium/High) đặt budget reasoning cho model (chỉ qua OpenRouter).
+
 ### 🧭 Architect mode + ✏️ Sửa tin (v0.21)
 
 Chip **🧭 Kiến trúc sư**: model mạnh lập kế hoạch → model rẻ tự thi công (đặt role trong `data/config.json`: `model_roles: {"strong": "...", "cheap": "..."}` — mặc định strong=model chính, cheap=openrouter/free). Hover tin nhắn của bạn → **✏️** sửa rồi Enter để chạy lại từ đó. Tab 🔗 Dịch vụ giờ cài/gỡ preset trực tiếp.

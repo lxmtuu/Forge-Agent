@@ -99,6 +99,17 @@
 
 **Kết quả vòng 5: 120/120 test (18 suite) · bandit Medium+ 0 · tsc sạch · ruff các dòng sửa sạch (phần never-raise cũ giữ làm baseline có ghi chú).**
 
+## 3f. Vòng 6 (v0.22) — Auto-commit & Effort
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **B1 (P0!)** | **Auto-commit (opt-in)** | `engine/autocommit.py`: git init ngầm + định danh bot cục bộ → sau lượt agent có thay đổi → commit Conventional Commits do model `cheap` sinh từ `diff --stat` + ngữ cảnh (stub test xác nhận nhận đúng prompt); LLM lỗi → fallback heuristic vẫn đúng format; không đổi gì → không commit; trailer "🤖 forge-agent" để lọc. Bật/tắt: ⚙ An toàn (web) · `/autocommit on\|off` (CLI/TUI) · `/commit` thủ công |
+| **D3** | **Reasoning effort** | setting low/medium/high → payload `"reasoning": {"effort": …}` — **chỉ gửi qua OpenRouter** (server OpenAI-compat lạ có thể từ chối field lạ — thiết kế an toàn, test (c) chứng minh); validate giá trị sai → về mặc định |
+
+**Bài học vòng 6:** test D3 lần đầu đặt `custom_base_url` về fake-server để chặn traffic → tự tắt chính tính năng đang test (đúng thiết kế!) và một request đi thẳng ra OpenRouter thật (401). Bài học: **khi test thứ gắn chặt với 1 nhà cung cấp, giả mạo điểm chọn-endpoint (`_endpoint`), không phải base_url.**
+
+**Kết quả vòng 6: 125/125 test (19 suite) · bandit Medium+ 0 · ruff module mới sạch.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |

@@ -52,6 +52,7 @@ HELP = """[bold]Lệnh[/bold]
   /connectors [add|auth|oauth|allow…]  GitHub/Linear/Notion… qua MCP · oauth <tên> <client_id> [secret] = đăng nhập browser (PKCE)
   /audit [n]           nhật ký tool call (JSONL data/audit/)
   /rename <tên>        đổi tên phiên        /find <từ-khóa>  tìm phiên (tiêu đề+nội dung)
+  /commit              commit thay đổi workspace (message conventional)   /autocommit [on|off]
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -499,6 +500,22 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows[:20]:
                 console.print(f"  [bold]{r['id']}[/bold]  {r['title'][:46]} "
                               f"[dim]· {r['message_count']} tin[/dim]")
+            continue
+        if text == "/commit":
+            from engine import autocommit as fac
+            res = await fac.commit_turn(store.workspace(session_id), session_id,
+                                        "(thủ công /commit)", "")
+            console.print("📦 Không có thay đổi nào để commit." if res is None
+                          else f"📦 {res['subject']} ({res['files']} file)")
+            continue
+        if text.startswith("/autocommit"):
+            from engine import config as fcfg
+            arg = text[11:].strip().lower()
+            if arg in ("on", "off", "true", "false"):
+                fcfg.save_config({"auto_commit": arg in ("on", "true")})
+            console.print(("🟢 auto-commit BẬT" if fcfg.get_auto_commit()
+                           else "⚪ auto-commit TẮT")
+                          + " — mỗi lượt agent có thay đổi sẽ git commit (xem `git log` trong workspace)")
             continue
         if text == "/audit" or text.startswith("/audit "):
             from engine import auditlog
