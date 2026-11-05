@@ -158,6 +158,7 @@ export default function App() {
     ['/memory', 'xem bộ nhớ đang nạp · “/memory clear” để xoá'],
     ['/run', 'chạy custom agent từ .forge/agents/<tên>.md'],
     ['/skills', 'quản lý skill chuẩn SKILL.md · /skills add <git|thư-mục> · new · remove'],
+    ['/connectors', 'kết nối GitHub/Linear/Gmail… qua MCP · /connectors add github · auth <tên> <token>'],
   ]
   const queuedRef = useRef<string[]>([])
   const abortRef = useRef<AbortController | null>(null)

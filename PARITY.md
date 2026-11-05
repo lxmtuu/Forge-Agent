@@ -197,6 +197,19 @@ Test: **6/6 smoke v0.15 (×2) + regression 67 xanh (tổng 73)**.
 
 Test: **6/6 smoke v0.16 ×2 + toàn bộ regression (tổng 79 test xanh)**.
 
+## 🔌 v0.17 "Connectors" — GitHub/Linear/Gmail… qua MCP (P0)
+
+Theo CONNECTORS_RESEARCH.md (chuẩn ngành 2026: remote MCP chính thức + hub managed-OAuth):
+
+| # | Mục | Chi tiết |
+|---|---|---|
+| 1 | **C1 · Presets** | 9 connector khai báo sẵn: GitHub (api.githubcopilot.com/mcp — PAT), Linear (mcp.linear.app — API key), Supabase (read_only mặc định), Notion/Sentry (OAuth — P1), Figma Desktop, Context7, Playwright (stdio), Composio hub (Gmail/Slack/Vercel — managed OAuth) |
+| 2 | **C2 · Lệnh /connectors** | `add <preset> [url] [--write]` · `auth <tên> <token>` · `allow/deny <tên> [tool\|*]` · `remove` · listing nhóm đã-cài/presets — đồng bộ CLI/TUI/Web |
+| 3 | **C3 · Secrets** | Token lưu `data/secrets.json` (chmod 600 posix), **mask mọi nơi hiển thị** (`ghp_…zz`), không bao giờ vào context LLM/không echo |
+| 4 | **C4 · Approval MCP** (vá lỗ hổng) | Tool MCP chưa allowlist → **phải duyệt như lệnh shell**; `approve_always` tự lưu allowlist; auto (YOLO) bỏ qua; `/doctor` có mục Connectors |
+
+Test: **6/6 smoke v0.17 ×2 + regression 79 (tổng 85 test xanh)** · E2E: add → auth → listing mask token 0 lần echo.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

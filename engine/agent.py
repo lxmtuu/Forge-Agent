@@ -511,26 +511,49 @@ class Agent:
                                 self.session.allowed_commands.append(cmd)
 
                     if name in mcp_routing:
-                        # tool MCP có thể kích hoạt elicitation/create giữa chừng —
-                        # vừa chờ kết quả vừa đẩy event elicitation_request ra UI
-                        import asyncio as _aio2
-                        from . import elicitations as _el
-                        seen: set[str] = set()
-                        base = set(_el.PENDING.keys())
-                        task = _aio2.create_task(
-                            mcp_manager.call_namespaced(mcp_routing, name, args))
-                        while not task.done():
-                            fresh = [e for e in _el.PENDING if e not in base and e not in seen]
-                            for eid in fresh:
-                                seen.add(eid)
-                                ent = _el.PENDING.get(eid) or {}
-                                yield {"type": "elicitation_request", "id": eid,
-                                       "server": ent.get("server"), "message": ent.get("message"),
-                                       "schema": ent.get("schema"), "url": ent.get("url")}
-                            await _aio2.sleep(0.12)
-                        result = task.result()
-                        if seen:
-                            self.store.save(s)
+                        # ---- v0.17: tool MCP chưa allowlist phải được duyệt ----
+                        _srv, _tool = mcp_routing[name]
+                        from . import approvals as _ap
+                        from . import connectors as _conn
+                        _mode = config.load_config().get("approval_mode", "guarded")
+                        _decision = "approve"
+                        if (not _conn.tool_allowed(_srv.name, _tool)) and _mode != "auto":
+                            _disp = f"mcp:{_srv.name}:{_tool}"
+                            aid = _ap.create(_disp, "warn",
+                                             ["Tool MCP — hành động thật trên dịch vụ ngoài"])
+                            yield {"type": "approval_request", "id": aid, "command": _disp,
+                                   "level": "warn",
+                                   "reasons": [f"Tool MCP chưa allowlist — "
+                                               f"/connectors allow {_srv.name} {_tool} để bỏ duyệt"]}
+                            _decision = await _ap.wait(aid)
+                            yield {"type": "approval_decision", "id": aid, "decision": _decision}
+                        if _decision == "approve_always":
+                            _conn.allow(_srv.name, _tool)
+                        if _decision == "deny":
+                            result = {"ok": False, "output": (
+                                "User DENIED this MCP tool call. Do not retry it unchanged; "
+                                "explain and offer to allow it via /connectors allow.")}
+                        else:
+                            # tool MCP có thể kích hoạt elicitation/create giữa chừng —
+                            # vừa chờ kết quả vừa đẩy event elicitation_request ra UI
+                            import asyncio as _aio2
+                            from . import elicitations as _el
+                            seen: set[str] = set()
+                            base = set(_el.PENDING.keys())
+                            task = _aio2.create_task(
+                                mcp_manager.call_namespaced(mcp_routing, name, args))
+                            while not task.done():
+                                fresh = [e for e in _el.PENDING if e not in base and e not in seen]
+                                for eid in fresh:
+                                    seen.add(eid)
+                                    ent = _el.PENDING.get(eid) or {}
+                                    yield {"type": "elicitation_request", "id": eid,
+                                           "server": ent.get("server"), "message": ent.get("message"),
+                                           "schema": ent.get("schema"), "url": ent.get("url")}
+                                await _aio2.sleep(0.12)
+                            result = task.result()
+                            if seen:
+                                self.store.save(s)
                     else:
                         result = await tools.execute_tool(name, args, self.workspace, override=override)
                     # hooks: post_tool_use — nối nhận xét hook vào output cho LLM

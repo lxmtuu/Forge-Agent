@@ -345,7 +345,7 @@ class ForgeTUI(App):
         if cmd == "/help":
             self.add_line("Lệnh: /new /key <api> /model <m> /perm guarded|ask|auto "
                           "/plan /agent /direct /undo /compact [gợi ý] /init /fork /export [file] "
-                          "/profile [tên] /context /memory [clear] /doctor /agents /skills [add|new|remove] "
+                          "/profile [tên] /context /memory [clear] /doctor /agents /connectors [add|auth] "
                           "/usage /files /review [file|A...B] /diff [file] /quit · "
                           "@file.py đính file · «# ghi nhớ» → MEMORY.md · "
                           "custom: .forge/commands + .forge/agents → /<tên> hoặc /run <tên>",
@@ -407,6 +407,29 @@ class ForgeTUI(App):
                 self.add_line(f"🧠 Context: {pct} ({ctx['chars']:,} ký tự ≈ {ctx['est_tokens']:,} "
                               f"tokens / {lim}) · {ctx['messages']} tin · "
                               f"memory {'✓' if ctx['memory'] else '—'}", cls="sys-line")
+        elif cmd == "/connectors":
+            from engine import connectors as fconn
+            ws = self.agent.workspace if self.agent else Path.cwd()
+            if arg.startswith("add "):
+                parts = arg[4:].strip().split()
+                self.add_line(fconn.add(parts[0], parts[1] if len(parts) > 1 else "",
+                                        "--write" in parts), cls="sys-line")
+            elif arg.startswith("auth "):
+                parts = arg[5:].strip().split(None, 1)
+                self.add_line(fconn.auth(parts[0], parts[1] if len(parts) > 1 else ""),
+                              cls="sys-line")
+            elif arg.startswith("allow "):
+                parts = arg[6:].strip().split()
+                self.add_line(fconn.allow(parts[0], parts[1] if len(parts) > 1 else "*"),
+                              cls="sys-line")
+            elif arg.startswith("deny "):
+                parts = arg[5:].strip().split()
+                self.add_line(fconn.deny(parts[0], parts[1] if len(parts) > 1 else "*"),
+                              cls="sys-line")
+            elif arg.startswith("remove "):
+                self.add_line(fconn.remove(arg[7:].strip()), cls="sys-line")
+            else:
+                self.add_line(fconn.status_listing(), cls="sys-line")
         elif cmd == "/skills":
             from engine import skillmgr
             ws = self.agent.workspace if self.agent else (

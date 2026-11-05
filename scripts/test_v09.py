@@ -155,9 +155,12 @@ async def t4():
 async def t5():
     from engine import config
     config.ensure_dirs()
+    # v0.17: tool MCP phải allowlist (hoặc được duyệt) — test này trọng tâm elicitation
+    # nên pre-allow toàn bộ tool của server demo
     (config.DATA_DIR / "mcp.json").write_text(json.dumps({"servers": [
         {"name": "demo", "command": sys.executable,
-         "args": [str((ROOT / "scripts" / "demo_mcp_server.py").resolve())], "env": {}}]}),
+         "args": [str((ROOT / "scripts" / "demo_mcp_server.py").resolve())], "env": {},
+          "allowed_tools": "*"}]}),
         encoding="utf-8")
     from engine.mcp import manager as mm
     specs, routing = await mm.get_tool_specs()

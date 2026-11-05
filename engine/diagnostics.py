@@ -53,6 +53,17 @@ async def doctor(store) -> dict:
     except Exception as e:  # noqa: BLE001
         add("MCP servers", False, f"lỗi: {e}")
 
+    # connectors (v0.17)
+    try:
+        from .connectors import has_auth, PRESETS
+        from .mcp import load_servers
+        cfgs = load_servers()
+        n_token = sum(1 for c in cfgs if has_auth(c["name"]))
+        add("Connectors", True, f"{len(cfgs)} cài · {n_token} có token"
+            + ("" if cfgs else f" — preset sẵn: {', '.join(sorted(PRESETS))}"))
+    except Exception as e:  # noqa: BLE001
+        add("Connectors", False, f"lỗi: {e}")
+
     # sandbox / guard
     cfg = config.load_config()
     guards = []

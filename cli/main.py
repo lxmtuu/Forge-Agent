@@ -50,6 +50,7 @@ HELP = """[bold]Lệnh[/bold]
   /mcp [refresh]      xem MCP servers        /mode [g|a]      guarded / auto (YOLO)
   /usage              tokens đã dùng         /keytest         kiểm tra API key
   /skills [add|new|remove …]  quản lý skill (chuẩn Agent Skills SKILL.md)
+  /connectors [add|auth|allow…] kết nối GitHub/Linear/Gmail… qua MCP
   /undo               hoàn tác thay đổi gần nhất của agent (checkpoint)
   /compact [gợi ý]    nén hội thoại bằng LLM   /init         sinh AGENTS.md
   /fork               fork phiên hiện tại       /export [f]  xuất hội thoại Markdown
@@ -483,6 +484,28 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             for r in rows:
                 console.print(f"  🤖 [bold]{r['name']}[/bold] — {r['description'] or '(không mô tả)'}"
                               + (f" · {r['model']}" if r["model"] else ""))
+            continue
+        if text == "/connectors" or text.startswith("/connectors "):
+            from engine import connectors as fconn
+            arg = text[11:].strip()
+            if arg.startswith("add "):
+                parts = arg[4:].strip().split()
+                out = fconn.add(parts[0], parts[1] if len(parts) > 1 else "",
+                                "--write" in parts)
+            elif arg.startswith("auth "):
+                parts = arg[5:].strip().split(None, 1)
+                out = fconn.auth(parts[0], parts[1] if len(parts) > 1 else "")
+            elif arg.startswith("allow "):
+                parts = arg[6:].strip().split()
+                out = fconn.allow(parts[0], parts[1] if len(parts) > 1 else "*")
+            elif arg.startswith("deny "):
+                parts = arg[5:].strip().split()
+                out = fconn.deny(parts[0], parts[1] if len(parts) > 1 else "*")
+            elif arg.startswith("remove "):
+                out = fconn.remove(arg[7:].strip())
+            else:
+                out = fconn.status_listing()
+            console.print(Text(out))
             continue
         if text == "/skills" or text.startswith("/skills "):
             from engine import skillmgr

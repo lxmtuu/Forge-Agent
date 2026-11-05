@@ -428,6 +428,28 @@ async def chat(sid: str, body: ChatBody, request: Request):
             model = ag_model
         if ag_mode:
             chat_mode = ag_mode
+    # /connectors [add|auth|allow|deny|remove] — quản lý connector MCP, không cần LLM
+    connectors_synthetic: list[dict] | None = None
+    if text == "/connectors" or text.startswith("/connectors "):
+        from engine import connectors as fconn
+        c_arg = text[11:].strip()
+        if c_arg.startswith("add "):
+            parts = c_arg[4:].strip().split()
+            c_out = fconn.add(parts[0], parts[1] if len(parts) > 1 else "", "--write" in parts)
+        elif c_arg.startswith("auth "):
+            parts = c_arg[5:].strip().split(None, 1)
+            c_out = fconn.auth(parts[0], parts[1] if len(parts) > 1 else "")
+        elif c_arg.startswith("allow "):
+            parts = c_arg[6:].strip().split()
+            c_out = fconn.allow(parts[0], parts[1] if len(parts) > 1 else "*")
+        elif c_arg.startswith("deny "):
+            parts = c_arg[5:].strip().split()
+            c_out = fconn.deny(parts[0], parts[1] if len(parts) > 1 else "*")
+        elif c_arg.startswith("remove "):
+            c_out = fconn.remove(c_arg[7:].strip())
+        else:
+            c_out = fconn.status_listing()
+        connectors_synthetic = [{"type": "assistant_message", "content": c_out}]
     # /skills [add|new|remove …] — quản lý skill (chuẩn Agent Skills), không cần LLM
     skills_synthetic: list[dict] | None = None
     if text == "/skills" or text.startswith("/skills "):
@@ -457,7 +479,8 @@ async def chat(sid: str, body: ChatBody, request: Request):
             if expanded is not None:
                 text = expanded
     # ---- lệnh nội bộ không cần LLM: /review /diff /memory và '# ' quick-memory ----
-    synthetic: list[dict] | None = skills_synthetic
+    synthetic: list[dict] | None = (connectors_synthetic
+                                    if connectors_synthetic is not None else skills_synthetic)
     from engine import memory as fmem
     if text.startswith("/review"):
         from engine import review as freview

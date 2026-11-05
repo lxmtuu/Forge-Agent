@@ -165,6 +165,21 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🔌 Connectors (v0.17) — nối SaaS qua MCP
+
+```bash
+/connectors                       # xem đã cài + presets sẵn sàng
+/connectors add github            # GitHub chính thức (api.githubcopilot.com/mcp)
+/connectors auth github <PAT>     # dán Personal Access Token (được mask, không lộ)
+/connectors add playwright        # browser thật cho test E2E (stdio)
+/connectors add composio-hub <url-từ-composio.dev>   # Gmail/Slack/Vercel — managed OAuth
+/connectors allow github search_* # cho phép tool bỏ duyệt (mặc định: tool MCP phải duyệt)
+```
+
+Preset sẵn: `github` · `linear` · `supabase` (read_only) · `notion` · `sentry` · `figma-desktop` · `context7` · `playwright` · `composio-hub`.
+Token lưu `data/secrets.json` (chmod 600), mask khi hiển thị, **không bao giờ** vào context của model.
+Tool MCP chưa allowlist phải được bạn duyệt trước khi chạy (như lệnh shell).
+
 ### 🧩 Skills 2.0 (v0.15) — chuẩn mở Agent Skills
 
 ```bash
