@@ -82,7 +82,6 @@ async def t2():
     # depth=1 vẫn loại spawn_subagent (không đệ quy)
     from engine.agent import Agent
     from engine.session import SessionStore
-    from engine import agent as ag_mod
     store = SessionStore()
     sid = store.create().id
     a = Agent(store, sid, depth=0)
@@ -195,7 +194,7 @@ async def t4():
 # ────────────────────────────────────────────── T5 availability fallback ─
 @check("T5 fallback: 402 → model_fallback event → thử openrouter/free → trả lời được")
 async def t5():
-    from engine.llm import LLMError, pick_fallback, resolve_sub_model
+    from engine.llm import LLMError, pick_fallback
     from engine.agent import Agent
     from engine.session import SessionStore
     from engine import config

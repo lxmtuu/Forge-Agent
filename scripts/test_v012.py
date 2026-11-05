@@ -6,7 +6,6 @@
 Chạy:  python scripts/test_v012.py
 """
 import asyncio
-import json
 import os
 import subprocess
 import sys

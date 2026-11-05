@@ -60,7 +60,7 @@ def quick_memory(workspace: Path, text: str) -> str:
 
 
 def memory_overview(workspace: Path, data_dir: Path | None = None) -> str:
-    """Tổng kêeh bộ nhớ đang nạp — cho lệnh /memory (xem, không tốn LLM)."""
+    """Tổng quan bộ nhớ đang nạp — cho lệnh /memory (xem, không tốn LLM)."""
     from .context_files import load_with_imports
 
     data_dir = data_dir or _default_data_dir()
@@ -88,8 +88,8 @@ def memory_overview(workspace: Path, data_dir: Path | None = None) -> str:
 
     mem = workspace / "MEMORY.md"
     if mem.is_file():
-        entries = [l for l in mem.read_text(encoding="utf-8", errors="replace").splitlines()
-                   if l.strip().startswith("- [")]
+        entries = [ln for ln in mem.read_text(encoding="utf-8", errors="replace").splitlines()
+                   if ln.strip().startswith("- [")]
         rows.append(f"  • MEMORY.md (dự án) — ✓ {_kb(len(mem.read_text(encoding='utf-8', errors='replace').encode()))} · "
                     f"{len(entries)} ghi nhớ")
         if entries:

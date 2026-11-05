@@ -7,7 +7,6 @@ Chạy:  python scripts/test_v010.py
 import asyncio
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import traceback
@@ -104,7 +103,7 @@ async def t2():
 async def t3():
     from engine import config
     from engine.tools import execute_tool
-    config.save_config({"on_file_change": f"echo hook-nhan-file:$FORGE_CHANGED_FILE"})
+    config.save_config({"on_file_change": "echo hook-nhan-file:$FORGE_CHANGED_FILE"})
     try:
         ws = TMP / "ws3"; ws.mkdir()
         r = await execute_tool("write_file", {"path": "a.py", "content": "x = 1\n"}, ws)

@@ -6,7 +6,6 @@ format chuẩn <tên>/SKILL.md + YAML lenient · đa vị trí quét (.forge/.ag
 Chạy:  python scripts/test_v015.py
 """
 import asyncio
-import json
 import os
 import shutil
 import sys
@@ -98,7 +97,6 @@ async def t1():
 # ────────────────────────────── T2 đa vị trí + precedence ──────────────────
 @check("T2 quét .forge/.agents/.claude/user/legacy, project đè user, ẩn catalog khi tắt model-invocation")
 async def t2():
-    import engine.skills as sk
     from engine.skills import list_skills, skills_block
     w = ws_tmp("t2")
     _skill(w / ".agents" / "skills", "tu-agents", 'name: tu-agents\ndescription: từ .agents/skills')

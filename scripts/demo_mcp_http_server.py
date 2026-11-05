@@ -4,11 +4,9 @@
 Run:  python -m uvicorn scripts.demo_mcp_http_server:app --port 8931
 Endpoint: POST /mcp  (JSON-RPC; trả JSON hoặc SSE tùy header Accept của client)
 """
-import json
-from datetime import datetime
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Demo MCP HTTP Server")
 SESSIONS: set[str] = set()

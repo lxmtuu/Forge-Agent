@@ -33,6 +33,9 @@ def main() -> int:
     ap.add_argument("--json", action="store_true",
                     help="(--once) đầu ra JSON structured cho script/CI")
     ap.add_argument("--list-sessions", action="store_true")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="địa chỉ bind cho --web (mặc định 127.0.0.1 — an toàn; "
+                         "dùng 0.0.0.0 chỉ khi cần truy cập từ máy khác)")
     args = ap.parse_args()
 
     if getattr(args, "profile", None):
@@ -59,7 +62,7 @@ def main() -> int:
         import uvicorn
         from server.main import app
         print(f"==> Forge Web: http://localhost:{args.port}")
-        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
+        uvicorn.run(app, host=getattr(args, "host", "127.0.0.1"), port=args.port, log_level="info")
         return 0
 
     if args.once or args.parallel or args.battle:

@@ -27,7 +27,6 @@ from rich.text import Text                           # noqa: E402
 
 from engine import config                            # noqa: E402
 from engine.agent import Agent, send_demo, run_batch  # noqa: E402
-from engine.llm import LLMError                      # noqa: E402
 from engine.session import SessionStore              # noqa: E402
 
 console = Console()
@@ -509,7 +508,6 @@ async def interactive(session_id: str | None, model: str | None) -> None:
             continue
         if text == "/skills" or text.startswith("/skills "):
             from engine import skillmgr
-            from rich.text import Text
             arg = text[7:].strip()
             if arg.startswith("add "):
                 out = skillmgr.add(agent0_ws(store, session_id), arg[4:].strip())

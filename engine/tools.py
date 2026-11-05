@@ -792,9 +792,9 @@ async def _run_lsp_tool(name: str, workspace: Path, args: dict) -> tuple[str, bo
                     "(kiểm tra lại line/cột — dùng lsp_symbols để định vị trước)", True, None)
         ws_str = str(workspace)
         rows = []
-        for l in locs:
-            short = l["file"].replace(ws_str + "/", "").replace(ws_str, ".")
-            rows.append(f"  {short}:{l['line']}:{l['character']}")
+        for ln in locs:
+            short = ln["file"].replace(ws_str + "/", "").replace(ws_str, ".")
+            rows.append(f"  {short}:{ln['line']}:{ln['character']}")
         verb = "Định nghĩa" if name == "lsp_definition" else "Nơi dùng"
         return f"{verb} ({len(locs)} vị trí):\n" + "\n".join(rows), True, None
     return f"Error: unknown lsp tool {name}", False, None

@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import checkpoints, config, lsp
+from . import checkpoints, config
 
 
 async def doctor(store) -> dict:

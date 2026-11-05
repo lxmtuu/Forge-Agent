@@ -122,7 +122,7 @@ async def t4():
     import engine.llm as llm
     from engine.agent import Agent
     from engine.tools import execute_tool
-    ws = TMP / "ws3";  # tái dùng: new.py đang x = 42
+    ws = TMP / "ws3"  # tái dùng: new.py đang x = 42
     await execute_tool("write_file", {"path": "new.py", "content": "x = 42\n"}, ws)
     store = make_store()
     sid = store.create().id

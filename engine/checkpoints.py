@@ -23,7 +23,7 @@ def available() -> bool:
 def key_for(workspace) -> str:
     """Khóa checkpoint ổn định cho 1 workspace (dùng chung tools/TUI/server)."""
     import hashlib
-    return hashlib.md5(str(workspace).encode()).hexdigest()[:12]
+    return hashlib.md5(str(workspace).encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 def _repo_dir(sid: str):

@@ -2,6 +2,7 @@
 
 Run:  uvicorn server.main:app --host 0.0.0.0 --port 8000
 """
+import asyncio
 import io
 import json
 import time
@@ -309,7 +310,7 @@ async def list_models():
             _MODELS_CACHE["ts"] = time.time()
         except Exception as e:
             if not _MODELS_CACHE["data"]:
-                raise HTTPException(502, f"Không tải được danh sách model: {e}")
+                raise HTTPException(502, f"Không tải được danh sách model: {e}") from e
     return {"models": _MODELS_CACHE["data"], "count": len(_MODELS_CACHE["data"])}
 
 
@@ -456,7 +457,8 @@ async def chat(sid: str, body: ChatBody, request: Request):
         from engine import skillmgr
         s_arg = text[7:].strip()
         if s_arg.startswith("add "):
-            s_out = skillmgr.add(ws, s_arg[4:].strip())
+            # git clone có thể tới 90s — đẩy sang thread để không khoá event loop
+            s_out = await asyncio.to_thread(skillmgr.add, ws, s_arg[4:].strip())
         elif s_arg.startswith("new "):
             parts = s_arg[4:].strip().split(None, 1)
             s_out = skillmgr.new_skill(ws, parts[0] if parts else "",
@@ -643,7 +645,7 @@ async def workspace_open(sid: str, body: OpenWorkspaceBody):
     try:
         target = store.open_workspace(sid, body.path)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return {"ok": True, "workspace": str(target)}
 
 

@@ -222,7 +222,6 @@ async def t4():
     import engine.llm as llm
     from engine.agent import Agent
     from engine.session import SessionStore
-    from engine import config as cfg_mod
     store = SessionStore()
     sid = store.create().id
     parent = Agent(store, sid)
