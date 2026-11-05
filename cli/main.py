@@ -146,6 +146,12 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
                     reasoning_open = False
                 live.stop()
                 console.print(f"  [cyan]⚙ {ev['name']}[/cyan] [dim]{fmt_args(ev['args'])}[/dim]")
+            elif t == "todo_update":
+                items = ev.get("items") or []
+                done = sum(1 for x in items if x.get("status") == "done")
+                mk = {"pending": "◻", "doing": "▶", "done": "✅"}
+                body = "\n".join(f"      {mk.get(x.get('status'), '·')} {x.get('text')}" for x in items)
+                console.print(f"  📋 [bold]TIẾN ĐỘ {done}/{len(items)}[/bold]\n{body}")
             elif t == "tool_result":
                 mark = "[green]✓[/green]" if ev["ok"] else "[red]✗[/red]"
                 out = ev["output"]
@@ -200,6 +206,10 @@ async def run_turn(session_id: str, user_text: str, model: str | None = None,
                         f"(prompt {su.get('prompt_tokens', 0)} · completion {su.get('completion_tokens', 0)}"
                         + (f" · ${su.get('cost', 0)}" if su.get("cost") else "") + ")[/dim]"
                     )
+                if ev.get("cost_usd") is not None:
+                    su_cost = su.get("cost_usd")
+                    extra = f" · cộng dồn phiên ~${su_cost:.4f}" if su_cost else ""
+                    console.print(f"[dim]💵 Chi phí lượt này: ~${ev['cost_usd']:.4f}{extra}[/dim]")
     finally:
         try:
             live.stop()

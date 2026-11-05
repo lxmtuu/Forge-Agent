@@ -165,6 +165,16 @@ Script hook đọc JSON từ stdin (`{"session_id", "tool_name", "tool_input", "
 }
 ```
 
+### 🤖 Autonomy & Cost (v0.14)
+
+| Tính năng | Dùng thế nào |
+|---|---|
+| **🌐 fetch_url** | Agent tự đọc URL (docs, API reference) — chặn SSRF, strip HTML |
+| **⚡ Shell nền** | Agent chạy dev server/test dài mà không khoá phiên: `run_background` → `check_background` → `kill_background` |
+| **📋 Todo** | Agent tự lập checklist tiến độ — thẻ 📋 ✓/▶/◻ realtime trên cả 3 UI |
+| **💵 Chi phí** | Footer web + TUI hiện ~$ mỗi lượt và cộng dồn phiên (theo giá OpenRouter thật) |
+| **⏳ Hàng đợi** | Enter khi agent đang chạy → tin nhắn xếp hàng, tự gửi khi xong |
+
 Ví dụ `profiles` trong `data/config.json`:
 ```json
 {

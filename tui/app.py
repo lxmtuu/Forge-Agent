@@ -600,6 +600,13 @@ class ForgeTUI(App):
                 elif t == "approval_request":
                     self.app.push_screen(ApprovalModal(ev["id"], ev["command"],
                                                        ev["level"], ev["reasons"]))
+                elif t == "todo_update":
+                    items = ev.get("items") or []
+                    done = sum(1 for x in items if x.get("status") == "done")
+                    mark = {"pending": "◻", "doing": "▶", "done": "✅"}
+                    lines = [f"📋 TIẾN ĐỘ {done}/{len(items)}"]
+                    lines += [f"   {mark.get(x.get('status'), '·')} {x.get('text')}" for x in items]
+                    self.add_line("\n".join(lines), cls="tool-line")
                 elif t == "model_fallback":
                     self.add_line(f"🔁 Model lỗi — chuyển từ {ev['from']} → {ev['to']}",
                                   cls="sys-line")
@@ -619,6 +626,12 @@ class ForgeTUI(App):
                 elif t == "error":
                     self.add_line(f"⚠ {ev['message']}", cls="tool-bad")
                 elif t == "turn_end":
+                    if ev.get("cost_usd") is not None:
+                        c = ev["cost_usd"]
+                        self.add_line(f"💵 Chi phí lượt này: ~${c:.4f}"
+                                      + (f" · cộng dồn phiên ~${(ev.get('session_usage') or {}).get('cost_usd', 0):.4f}"
+                                         if (ev.get("session_usage") or {}).get("cost_usd") else ""),
+                                      cls="sys-line")
                     su = ev.get("session_usage") or {}
                     if su.get("total_tokens"):
                         self.add_line(f"🔢 lượt này: {ev.get('usage', {}).get('total_tokens', '?')} tokens · "

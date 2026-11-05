@@ -695,3 +695,20 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .doctor-detail { color: var(--dim); }
 .doctor-summary { padding: 5px 0 2px; font-weight: 700; border-top: 1px dashed var(--border-soft); margin-top: 5px; }
 @media (max-width: 620px) { .perm-grid { flex-direction: column; } .settings-body { min-height: 0; } }
+
+/* ═══ v0.14 — todo checklist + hàng đợi tin nhắn + chi phí ═══ */
+.todo-list { display: flex; flex-direction: column; gap: 4px; }
+.todo-row { display: flex; gap: 9px; align-items: baseline; font-size: 13px; line-height: 1.5; }
+.todo-mark { width: 18px; text-align: center; flex-shrink: 0; }
+.todo-row.st-doing { color: var(--cyan); font-weight: 650; }
+.todo-row.st-pending { color: var(--dim); }
+.todo-done { text-decoration: line-through; opacity: 0.75; }
+.queued-list { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
+.queued-pill {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 420px;
+  background: var(--panel2); border: 1px dashed var(--border); color: var(--dim);
+  border-radius: 14px; padding: 4px 11px; font-size: 12px;
+}
+.queued-pill span, .queued-pill { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queued-x { background: none; border: none; color: var(--faint); font-size: 11px; padding: 0 2px; border-radius: 50%; }
+.queued-x:hover { color: var(--red); }

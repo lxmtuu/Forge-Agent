@@ -64,7 +64,8 @@ Explore the workspace, then produce: (1) a short understanding of the current st
 """
 
 READ_ONLY_TOOLS = {"list_dir", "read_file", "search_files", "lsp_diagnostics", "lsp_symbols",
-                   "lsp_definition", "lsp_references", "lsp_search_symbols"}
+                   "lsp_definition", "lsp_references", "lsp_search_symbols",
+                   "fetch_url", "check_background"}
 CHAT_MODES = ("direct", "agent", "plan")
 
 
@@ -541,6 +542,15 @@ class Agent:
                             result["output"] = str(result.get("output", "")) + "\n" + extra
                     except Exception as _he:
                         print(f"[hooks] post_tool_use lỗi (bỏ qua): {_he}")
+                    # todo_write → phát event checklist cho 3 UI render tiến độ
+                    if name == "todo_write":
+                        try:
+                            import json as _jtodo
+                            _tp = self.workspace / ".forge" / "todo.json"
+                            yield {"type": "todo_update",
+                                   "items": _jtodo.loads(_tp.read_text(encoding="utf-8"))}
+                        except Exception:
+                            pass
                     ev = {"type": "tool_result", "id": tc["id"], "name": name,
                           "args": args, "ok": result["ok"], "output": result["output"]}
                     if result.get("diff"):
@@ -566,9 +576,23 @@ class Agent:
             return
 
         s.usage = _accumulate(s.usage, total_usage)
+        # chi phí $ ước lượng (giá OpenRouter) — lỗi/ thiếu giá → None, không chạm chat
+        cost_usd = None
+        if total_usage:
+            try:
+                from . import cost as _cost
+                cost_usd = await _cost.estimate(self.model, total_usage)
+            except Exception:
+                cost_usd = None
+            if cost_usd is not None:
+                try:
+                    s.usage = dict(s.usage or {})
+                    s.usage["cost_usd"] = round(float(s.usage.get("cost_usd") or 0) + cost_usd, 6)
+                except Exception:
+                    pass
         self.store.save(s)
         yield {"type": "turn_end", "usage": total_usage, "session_usage": s.usage,
-               "message_count": len(s.messages)}
+               "cost_usd": cost_usd, "message_count": len(s.messages)}
 
 
 def _accumulate(session_usage: dict, turn_usage: dict | None) -> dict:

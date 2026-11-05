@@ -215,6 +215,97 @@ TOOL_SPECS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "fetch_url",
+            "description": "Tải nội dung 1 URL (docs, API reference, trang web) về dạng CHỮ "
+                           "để bạn đọc. Chỉ http/https, tự strip HTML, cap 20KB. "
+                           "Bị chặn với host nội bộ/localhost (chống SSRF).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL đầy đủ bắt đầu bằng http(s)://"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_background",
+            "description": "Chạy lệnh shell trong NỀN (dev server, test suite dài, build) — "
+                           "KHÔNG block phiên: bạn làm việc khác tiếp, dùng check_background "
+                           "để xem output mới và kill_background để dừng.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Lệnh cần chạy nền"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_background",
+            "description": "Xem trạng thái + OUTPUT MỚI của tác vụ nền (từ lần xem trước). "
+                           "Bỏ trống id → liệt kê tất cả tác vụ nền. Gọi định kỳ để theo dõi "
+                           "tiến độ, lệnh xong sẽ có exit code.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "(tuỳ chọn) task id, vd bg-a1b2c3"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_background",
+            "description": "Dừng (kill) một tác vụ nền đang chạy theo task id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "task id, vd bg-a1b2c3"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo_write",
+            "description": "GHI LẠI danh sách việc của nhiệm vụ hiện tại (checklist người dùng "
+                           "nhìn thấy tiến độ realtime). Gọi ĐẦU nhiệm vụ để lập kế hoạch, rồi "
+                           "cập nhật mỗi khi trạng thái 1 việc đổi (pending → doing → done). "
+                           "Luôn gửi DANH SÁCH ĐẦY ĐỦ (mục cũ + mới), tối đa 50 mục.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "description": "Danh sách đầy đủ; mỗi mục {'text', 'status'} với "
+                                       "status: pending|doing|done",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "status": {"type": "string",
+                                           "enum": ["pending", "doing", "done"]},
+                            },
+                            "required": ["text"],
+                        },
+                    },
+                },
+                "required": ["items"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": "Run a shell command (bash) inside the workspace and return "
                            "combined stdout/stderr plus exit code. Use for builds, tests, "
@@ -415,8 +506,146 @@ async def _run_command(workspace: Path, args: dict, override: bool = False) -> s
         return f"Error running command: {e}"
 
 
+_TODO_MARK = {"pending": "◻", "doing": "▶", "done": "✅"}
+
+
+def _todo_write(workspace: Path, args: dict) -> str:
+    """Ghi checklist nhiệm vụ vào <ws>/.forge/todo.json (thay toàn bộ danh sách)."""
+    import json as _json
+    raw = args.get("items")
+    if not isinstance(raw, list) or not raw:
+        return "Error: thiếu items — gửi danh sách [{text, status}] ĐẦY ĐỦ"
+    norm: list[dict] = []
+    for it in raw[:50]:
+        if isinstance(it, str):
+            if it.strip():
+                norm.append({"text": it.strip(), "status": "pending"})
+        elif isinstance(it, dict):
+            text = str(it.get("text") or "").strip()
+            st = str(it.get("status") or "pending").lower()
+            if text:
+                norm.append({"text": text,
+                             "status": st if st in _TODO_MARK else "pending"})
+    if not norm:
+        return "Error: không có mục hợp lệ nào"
+    d = workspace / ".forge"
+    d.mkdir(exist_ok=True)
+    (d / "todo.json").write_text(
+        _json.dumps(norm, ensure_ascii=False, indent=1), encoding="utf-8")
+    done = sum(1 for i in norm if i["status"] == "done")
+    body = "\n".join(f"{_TODO_MARK[i['status']]} {i['text']}" for i in norm)
+    return f"TODO cập nhật — {done}/{len(norm)} xong:\n{body}"
+
+
+def _host_is_private(hostname: str) -> bool:
+    """True = host nội bộ/không công khai → chặn (chống SSRF)."""
+    import ipaddress as _ip
+    import socket as _socket
+    host = hostname.strip("[]").lower()
+    if not host or host in ("localhost", "*") or host.endswith(".localhost"):
+        return True
+    try:
+        infos = _socket.getaddrinfo(host, None)
+    except OSError:
+        return True  # không phân giải được → không cho
+    for info in infos:
+        try:
+            ip = _ip.ip_address(info[4][0])
+        except ValueError:
+            return True
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return True
+    return False
+
+
+def _strip_html(html: str) -> str:
+    import re as _re
+    from html import unescape
+    s = _re.sub(r"(?is)<(script|style|noscript|svg|head)[^>]*>.*?</\1>", " ", html)
+    s = _re.sub(r"(?is)<br\s*/?>", "\n", s)
+    s = _re.sub(r"(?is)</(p|div|li|tr|h[1-6]|section|article|table)>", "\n", s)
+    s = _re.sub(r"(?s)<[^>]+>", " ", s)
+    s = unescape(s)
+    s = s.replace("\u00a0", " ")  # &nbsp; → space thường
+    s = _re.sub(r"[ \t]+", " ", s)
+    s = _re.sub(r"\n\s*\n\s*", "\n\n", s)
+    return s.strip()
+
+
+async def _fetch_url(workspace: Path, args: dict) -> str:
+    import httpx
+    from urllib.parse import urlparse
+    url = str(args.get("url") or "").strip()
+    if not url:
+        return "Error: thiếu url"
+    u = urlparse(url)
+    if u.scheme not in ("http", "https"):
+        return "Error: chỉ hỗ trợ http/https"
+    if _host_is_private(u.hostname or ""):
+        return ("Error: bị chặn vì bảo mật (SSRF) — không được truy cập "
+                "host nội bộ/localhost/metadata")
+    try:
+        async with httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True,
+                headers={"User-Agent": "forge-agent/0.14 (+self-hosted BYOK)"}) as client:
+            resp = await client.get(url)
+    except httpx.HTTPError as e:
+        return f"Error: không tải được URL: {e}"
+    if _host_is_private(str(resp.url).split("/")[2] if "://" in str(resp.url) else ""):
+        return "Error: redirect đưa về host nội bộ — bị chặn"
+    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip()
+    if any(k in ctype for k in ("image/", "video/", "audio/", "font", "octet-stream",
+                                "zip", "pdf")):
+        return f"Error: URL trả về nội dung nhị phân ({ctype}) — không đọc được dạng chữ"
+    text = resp.text
+    if "html" in ctype:
+        text = _strip_html(text)
+    text = text.strip()
+    cap = 20000
+    if len(text) > cap:
+        text = text[:cap] + f"\n… (đã cắt ở {cap} ký tự — trang dài {len(text)} ký tự)"
+    return f"[{resp.status_code}] {resp.url} · {ctype or 'text'}\n\n{text or '(trang trống)'}"
+
+
+async def _run_background(workspace: Path, args: dict) -> str:
+    from . import background as bg
+    from . import config, guard
+    cmd = str(args.get("command") or "").strip()
+    if not cmd:
+        return "Error: thiếu command"
+    verdict = guard.assess_command(cmd)
+    approval = config.load_config().get("approval_mode", "guarded")
+    if verdict["level"] == "danger" and approval != "auto":
+        return guard.guard_message(cmd, verdict)
+    tid, msg = await bg.start(cmd, workspace)
+    if not tid:
+        return msg
+    await asyncio.sleep(0.3)  # cho có output đầu để LLM thấy ngay
+    t = bg.get(tid)
+    return msg + "\n" + (bg.render(t, incremental=False) if t else "(?)")
+
+
+def _check_background(workspace: Path, args: dict) -> str:
+    from . import background as bg
+    tid = str(args.get("id") or "").strip()
+    if not tid:
+        return bg.summary()
+    t = bg.get(tid)
+    if not t:
+        return f"Error: không có tác vụ «{tid}» — gọi check_background không id để xem danh sách"
+    return bg.render(t, incremental=True)
+
+
+async def _kill_background(workspace: Path, args: dict) -> str:
+    from . import background as bg
+    return await bg.kill(str(args.get("id") or ""))
+
+
 _IMPL = {
     "list_dir": _list_dir,
+    "todo_write": _todo_write,
+    "check_background": _check_background,
     "read_file": _read_file,
     "write_file": _write_file,
     "edit_file": _edit_file,
@@ -435,13 +664,25 @@ async def execute_tool(name: str, args: dict, workspace: Path, override: bool = 
     diff = None
     changed_path = None
     try:
-        if name in ("write_file", "edit_file", "run_command", "memory_save"):
+        if name in ("write_file", "edit_file", "run_command", "memory_save", "run_background"):
             await checkpoints.snapshot(
                 checkpoints.key_for(workspace), workspace,
                 f"{name}: {args.get('path', args.get('command', ''))[:60]}")
         if name == "run_command":
             output = await _run_command(workspace, args, override=override)
             ok = not output.startswith(("Error", "BLOCKED"))
+        elif name == "fetch_url":
+            output = await _fetch_url(workspace, args)
+            ok = not output.startswith("Error")
+        elif name == "run_background":
+            output = await _run_background(workspace, args)
+            ok = not output.startswith(("Error", "BLOCKED"))
+        elif name == "check_background":
+            output = _check_background(workspace, args)
+            ok = not output.startswith("Error")
+        elif name == "kill_background":
+            output = await _kill_background(workspace, args)
+            ok = not output.startswith("Error")
         elif name in ("lsp_diagnostics", "lsp_symbols", "lsp_definition", "lsp_references"):
             output, ok, changed_path = await _run_lsp_tool(name, workspace, args)
         elif name == "lsp_search_symbols":

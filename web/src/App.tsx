@@ -63,6 +63,12 @@ function applyEvent(prev: Item[], ev: AgentEvent): Item[] {
     case 'model_fallback':
       return [...prev, { kind: 'notice', id: uid(),
                          text: `🔁 Model lỗi — chuyển từ ${ev.from} → ${ev.to}` }]
+    case 'todo_update': {
+      const idx = prev.findIndex((it) => it.kind === 'todo')
+      const card: Item = { kind: 'todo', id: idx >= 0 ? (prev[idx] as { id: string }).id : uid(), items: ev.items }
+      if (idx >= 0) return [...prev.slice(0, idx), card, ...prev.slice(idx + 1)]
+      return [...prev, card]
+    }
     case 'subagent_progress':
       return prev.map((it) => it.kind === 'subagent' && it.saId === ev.id
         ? { ...it, tools: ev.tools } : it)
@@ -142,6 +148,7 @@ export default function App() {
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [ctx, setCtx] = useState<ContextStats | null>(null)
   const [showSb, setShowSb] = useState(false)
+  const [queued, setQueued] = useState<string[]>([])
   const [menu, setMenu] = useState<{ kind: 'cmd' | 'file'; items: string[]; sel: number } | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
@@ -151,6 +158,7 @@ export default function App() {
     ['/memory', 'xem bộ nhớ đang nạp · “/memory clear” để xoá'],
     ['/run', 'chạy custom agent từ .forge/agents/<tên>.md'],
   ]
+  const queuedRef = useRef<string[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -252,9 +260,10 @@ export default function App() {
   }, [items, batch])
 
   // ------------------------------------------------------------------ send
-  async function send() {
-    const text = input.trim()
-    if (!text || !sid || streaming) return
+  async function send(textArg?: string) {
+    const text = (textArg ?? input).trim()
+    if (!text || !sid) return
+    if (streaming) { enqueue(text); return }
     setInput('')
     setErrorBanner(null)
     setBatch(null)
@@ -324,11 +333,27 @@ export default function App() {
       abortRef.current = null
       refreshSessions()
       refreshTree(sid)
+      const [next, ...rest] = queuedRef.current
+      if (next !== undefined) {
+        queuedRef.current = rest
+        setQueued(rest)
+        setTimeout(() => { void send(next) }, 80)
+      }
     }
   }
 
   function stop() {
     abortRef.current?.abort()
+  }
+
+  function enqueue(text: string) {
+    queuedRef.current = [...queuedRef.current, text]
+    setQueued(queuedRef.current)
+  }
+
+  function unqueue(i: number) {
+    queuedRef.current = queuedRef.current.filter((_, j) => j !== i)
+    setQueued(queuedRef.current)
   }
 
   // ------------------------------------------------------------ sessions
@@ -550,6 +575,29 @@ export default function App() {
         </div>
       )
     }
+    if (it.kind === 'todo') {
+      const done = it.items.filter((x) => x.status === 'done').length
+      return (
+        <div key={it.id} className="msg tool-wrap">
+          <div className={`tool-card ${done === it.items.length && it.items.length > 0 ? 'ok' : ''}`}>
+            <div className="tool-head">
+              <span className="tool-icon">📋</span>
+              <span className="tool-label">Tiến độ</span>
+              <code className="tool-arg">{done}/{it.items.length} việc xong</code>
+              <span className="tool-status">{done === it.items.length ? 'hoàn tất' : 'đang làm'}</span>
+            </div>
+            <div className="tool-body todo-list">
+              {it.items.map((x, i) => (
+                <div key={i} className={`todo-row st-${x.status}`}>
+                  <span className="todo-mark">{x.status === 'done' ? '✅' : x.status === 'doing' ? '▶' : '◻'}</span>
+                  <span className={x.status === 'done' ? 'todo-done' : ''}>{x.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )
+    }
     if (it.kind === 'notice') return <div key={it.id} className="msg sys-msg">{it.text}</div>
     return <div key={it.id} className="msg error-msg">⚠ {it.message}</div>
   }
@@ -652,6 +700,16 @@ export default function App() {
               onChange={(e) => setBattleModels(e.target.value)}
               placeholder="Các model thi đấu, cách nhau bằng dấu phẩy (tối đa 4)" />
           )}
+          {queued.length > 0 && (
+            <div className="queued-list">
+              {queued.map((q, i) => (
+                <span key={i} className="queued-pill" title="Sẽ tự gửi khi lượt hiện tại xong">
+                  ⏳ {q.slice(0, 60)}
+                  <button className="queued-x" title="Bỏ khỏi hàng đợi" onClick={() => unqueue(i)}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
           {menu && (
             <div className="cmd-menu" role="listbox" aria-label="Gợi ý lệnh">
               {menu.items.map((it, i) => (
@@ -697,19 +755,26 @@ export default function App() {
                 }
                 if ((e.key === 'Enter' && !e.shiftKey && (!parallel || chatMode === 'battle')) ||
                     (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-                  e.preventDefault(); send()
+                  e.preventDefault()
+                  if (streaming && input.trim()) { enqueue(input.trim()); setInput(''); updateInput('') }
+                  else send()
                 }
               }}
               rows={parallel && chatMode !== 'battle' ? Math.min(6, Math.max(3, input.split('\n').length)) : Math.min(6, input.split('\n').length)}
             />
             {streaming
               ? <button className="btn-stop" onClick={stop}>■ Dừng</button>
-              : <button className="btn-send" onClick={send} disabled={!input.trim()}>Gửi ➤</button>}
+              : <button className="btn-send" onClick={() => send()} disabled={!input.trim()}>Gửi ➤</button>}
           </div>
           <div className="composer-foot">
             <span>Phiên: <code>{sid ?? '—'}</code></span>
             <span>Model: <code>{settings?.model ?? '—'}</code></span>
             {sessionUsage && <span>🔢 Tokens: <code>{sessionUsage.total_tokens ?? 0}</code> (↑{sessionUsage.prompt_tokens ?? 0} ↓{sessionUsage.completion_tokens ?? 0})</span>}
+            {sessionUsage?.cost_usd != null && (
+              <span title="Chi phí ước lượng theo giá OpenRouter — chỉ tính các lượt đã chạy trong phiên này">
+                💵 <code>~${sessionUsage.cost_usd < 0.01 ? sessionUsage.cost_usd.toFixed(4) : sessionUsage.cost_usd.toFixed(2)}</code>
+              </span>
+            )}
             {ctx && <span className={`ctx-chip ${ctx.percent !== null && ctx.percent >= 90 ? 'ctx-danger' : ctx.percent !== null && ctx.percent >= 70 ? 'ctx-warn' : ''}`} title={`≈ ${ctx.est_tokens.toLocaleString()} tokens / giới hạn ${(ctx.limit || 0).toLocaleString()} ký tự · ${ctx.messages} tin nhắn${ctx.memory ? ' · có MEMORY.md' : ''}${ctx.percent !== null && ctx.percent >= 70 ? ' · nên /compact (nút 🧹)' : ''}`}>🧠 Context: <code>{ctx.percent !== null ? ctx.percent + '%' : '∞'}</code></span>}
             <span className="foot-actions">
               <button className="foot-btn" disabled={busyTool !== null} title="Hoàn tác thay đổi gần nhất của agent (checkpoint git nội bộ)" onClick={doUndo}>{busyTool === 'undo' ? '…' : '↩'} Undo</button>

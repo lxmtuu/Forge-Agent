@@ -160,6 +160,20 @@ multi-agent research system · RouteLLM/FrugalGPT/OpenRouter). 5 mục đã làm
 | 4 | **Cap chống phình** | Tối đa **6 sub-agent/lượt** (thừa → báo giới hạn cho LLM tự hoàn thiện); vẫn cấm đệ quy |
 | 5 | **Availability fallback** | Lỗi 402/429/5xx → thử model dự phòng (`model_fallbacks`, mặc định `openrouter/free`) đúng 1 lần + event `🔁` trên cả 3 UI — tách bạch khỏi quality routing |
 
+## 🤖 v0.14 "Autonomy & Cost" — tự chủ hơn + thấy được tiền
+
+Theo GAP_ANALYSIS.md (research Claude Code/OpenCode/Aider 2026) — 5 mục P0:
+
+| # | Tính năng | Chi tiết |
+|---|---|---|
+| 1 | **🌐 Tool fetch_url** | LLM tự đọc URL (docs/API) → text 20KB; **chặn SSRF** (localhost/IP riêng/metadata, cả redirect); strip HTML bỏ script/style |
+| 2 | **⚡ Shell nền** | `run_background` → id · `check_background` (output MỚI kể từ lần xem, không lặp) · `kill_background`; buffer đuôi 60KB, tối đa 8 running; guard danger vẫn chặn |
+| 3 | **📋 Todo checklist** | tool `todo_write` (pending/doing/done) → event realtime → Web render thẻ tiến độ ✓/▶/◻, TUI/CLI in danh sách; LLM tự cập nhật trong vòng lặp |
+| 4 | **💵 Chi phí $** | usage × giá OpenRouter (cache 1h) → chip 💵 footer web + dòng TUI/CLI + cộng dồn phiên; thiếu giá/mất mạng → ẩn, không lỗi |
+| 5 | **⏳ Hàng đợi tin nhắn** | gõ Enter khi agent đang chạy → xếp hàng, tự gửi khi lượt xong; pill ⏳ có nút ✕ gỡ |
+
+Kết quả test: **5/5 smoke v0.14 (chạy 2 lần, chống flaky) + regression 16+12+8+9+5+5+7 = 67 test xanh**.
+
 ## ⭐ 4 điểm Forge hơn/nhất thị trường
 
 1. **⚔ Battle mode** — cùng 1 prompt chạy N model side-by-side: **không ai có**

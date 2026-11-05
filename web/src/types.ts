@@ -27,7 +27,10 @@ export interface Usage {
   completion_tokens?: number
   total_tokens?: number
   cost?: number
+  cost_usd?: number
 }
+
+export interface TodoItem { text: string; status: 'pending' | 'doing' | 'done' | string }
 
 export interface SessionFull {
   id: string
@@ -127,7 +130,8 @@ export type AgentEvent =
   | { type: 'elicitation_request'; id: string; server?: string; message?: string; schema?: { type: string; properties?: Record<string, { type: string; description?: string }>; required?: string[] } | null; url?: string | null }
   | { type: 'approval_request'; id: string; command: string; level: string; reasons: string[] }
   | { type: 'approval_decision'; id: string; decision: string }
-  | { type: 'turn_end'; usage: unknown; session_usage?: Usage; message_count: number }
+  | { type: 'turn_end'; usage: unknown; session_usage?: Usage; cost_usd?: number | null; message_count: number }
+  | { type: 'todo_update'; items: TodoItem[] }
   | { type: 'mcp_ready'; tools: string[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -186,6 +190,7 @@ export type Item =
     }
   | { kind: 'subagent'; id: string; saId: string; task: string; sessionId?: string; tools: number; status: 'running' | 'done'; output?: string; model?: string }
   | { kind: 'notice'; id: string; text: string }
+  | { kind: 'todo'; id: string; items: TodoItem[] }
   | { kind: 'error'; id: string; message: string }
 
 let counter = 0
