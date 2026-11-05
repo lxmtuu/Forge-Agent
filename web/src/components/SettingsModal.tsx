@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
+import type { AuditEntry, DoctorReport, KeyCheckResult, McpServerStatus, ModelInfo, Settings, UsageTotals } from '../types'
 
 const THEMES = [
   { id: 'dark', label: '🌑 Tối (mặc định)' },
@@ -16,6 +16,7 @@ const TABS = [
   { id: 'conn', label: '📡 Kết nối' },
   { id: 'safe', label: '🛡 An toàn' },
   { id: 'mcp', label: '🔌 MCP' },
+  { id: 'audit', label: '📘 Audit' },
   { id: 'sys', label: '🩺 Hệ thống' },
 ] as const
 type TabId = typeof TABS[number]['id']
@@ -85,6 +86,16 @@ export function SettingsModal(props: {
   }
 
   const reloadMcp = () => api.mcpStatus().then(setMcp).catch(() => {})
+
+  // ── Audit log tab ──
+  const [auditRows, setAuditRows] = useState<AuditEntry[] | null>(null)
+  const [auditFilter, setAuditFilter] = useState('')
+  const loadAudit = () => api.audit(200).then((rows) => setAuditRows(rows)).catch(() => setAuditRows([]))
+  useEffect(() => {
+    if (tab === 'audit' && auditRows === null) loadAudit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
   useEffect(() => {
     reloadMcp()
     api.models().then((d) => setModels(d.models)).catch(() => {})
@@ -323,6 +334,47 @@ export function SettingsModal(props: {
           </>
         )}
 
+        {tab === 'audit' && (
+          <>
+            <div className="field">
+              <span>Audit log <em>(mọi tool call của agent — token tự mask, file data/audit/)</em></span>
+              <div className="audit-bar">
+                <input
+                  placeholder="Lọc theo tool/nguồn/đối số…"
+                  value={auditFilter}
+                  onChange={(e) => setAuditFilter(e.target.value)}
+                />
+                <button className="btn-ghost btn-sm" onClick={() => { setAuditRows(null); loadAudit() }}>⟳ Nạp lại</button>
+              </div>
+              <div className="audit-list">
+                {!auditRows && <div className="empty" style={{ padding: 10 }}>Đang nạp…</div>}
+                {auditRows && auditRows.length === 0 && (
+                  <div className="empty" style={{ padding: 10 }}>Chưa có tool call nào — cho agent chạy một lượt rồi quay lại.</div>
+                )}
+                {auditRows && auditRows
+                  .filter((e) => {
+                    if (!auditFilter.trim()) return true
+                    const q = auditFilter.toLowerCase()
+                    return (e.tool + ' ' + e.source + ' ' + JSON.stringify(e.args ?? {}) + ' ' + (e.note ?? '')).toLowerCase().includes(q)
+                  })
+                  .map((e, i) => (
+                    <div key={i} className={`audit-row ${e.ok ? '' : 'bad'}`}>
+                      <span className="audit-ts">{String(e.ts).slice(11, 19)}</span>
+                      <span className="audit-ok">{e.ok ? '✅' : '❌'}</span>
+                      <b className="audit-tool">{e.tool}</b>
+                      <span className="audit-src">{e.source}</span>
+                      <span className="audit-ms">{e.ms != null ? `${e.ms}ms` : '—'}</span>
+                      <span className="audit-args" title={JSON.stringify(e.args ?? {})}>
+                        {Object.entries(e.args ?? {}).map(([k, v]) => `${k}=${v}`).join(' ').slice(0, 90)}
+                        {e.note ? ` · ${e.note}` : ''}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+              <small>Hiển thị tối đa 200 mục mới nhất. Xem đầy đủ: <code>/audit</code> hoặc <code>data/audit/&lt;ngày&gt;.jsonl</code></small>
+            </div>
+          </>
+        )}
         {tab === 'sys' && (
           <>
             <div className="field">

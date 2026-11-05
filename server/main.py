@@ -379,6 +379,13 @@ async def session_context(sid: str):
     return Agent(store, sid).context_stats()
 
 
+@app.get("/api/audit")
+async def audit_tail(n: int = 120):
+    """Nhật ký tool call (JSONL data/audit/) — n giới hạn 1..500."""
+    from engine import auditlog
+    return {"entries": auditlog.tail(max(1, min(n, 500)))}
+
+
 @app.get("/api/doctor")
 async def doctor_endpoint():
     """🩺 Chẩn đoán toàn hệ thống (python/git/key/model/MCP/LSP/dữ liệu…)."""

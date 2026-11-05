@@ -198,3 +198,15 @@ export function uid(): string {
   counter += 1
   return `i${Date.now().toString(36)}${counter}`
 }
+
+
+export interface AuditEntry {
+  ts: string
+  session: string
+  tool: string
+  source: string
+  ok: boolean
+  ms?: number | null
+  args?: Record<string, string>
+  note?: string
+}

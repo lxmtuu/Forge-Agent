@@ -226,7 +226,8 @@ class LspSession:
         uri = path.as_uri()
         if uri not in self.opened:
             try:
-                text = path.read_text(encoding="utf-8", errors="replace")
+                text = await asyncio.to_thread(
+                    path.read_text, encoding="utf-8", errors="replace")
                 await self.refresh_file(path, text)
             except OSError:
                 return []
@@ -259,7 +260,8 @@ class LspSession:
         uri = path.as_uri()
         if uri not in self.opened:
             try:
-                text = path.read_text(encoding="utf-8", errors="replace")
+                text = await asyncio.to_thread(
+                    path.read_text, encoding="utf-8", errors="replace")
             except OSError:
                 return None
             await self.refresh_file(path, text)

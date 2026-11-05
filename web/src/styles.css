@@ -712,3 +712,16 @@ a.foot-btn { text-decoration: none; display: inline-block; }
 .queued-pill span, .queued-pill { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queued-x { background: none; border: none; color: var(--faint); font-size: 11px; padding: 0 2px; border-radius: 50%; }
 .queued-x:hover { color: var(--red); }
+
+/* ── v0.18: Audit tab trong Settings ── */
+.audit-bar { display: flex; gap: 8px; margin: 8px 0; }
+.audit-bar input { flex: 1; }
+.audit-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border, #2a2b33); border-radius: 8px; }
+.audit-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border, #232428); font-size: 12.5px; }
+.audit-row:last-child { border-bottom: none; }
+.audit-row.bad { background: rgba(220, 60, 60, 0.07); }
+.audit-ts { color: var(--dim, #8b8d96); font-variant-numeric: tabular-nums; }
+.audit-tool { min-width: 110px; }
+.audit-src { color: var(--dim, #8b8d96); font-size: 11px; border: 1px solid var(--border, #2a2b33); border-radius: 999px; padding: 0 7px; }
+.audit-ms { color: var(--dim, #8b8d96); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.audit-args { color: var(--dim, #a5a7ae); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }

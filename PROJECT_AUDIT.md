@@ -67,14 +67,24 @@
 
 **Kết quả vòng 2: 102/102 test xanh (14 suite) · bandit 0 findings · TUI coverage 14%→44% · guard 95% · auditlog 86%.**
 
+## 3c. Vòng 3 (v0.18) — P3 closeout
+
+| # | Mục | Kết quả thực đo |
+|---|---|---|
+| **W1** | **Bảng Audit trong web** | `GET /api/audit?n=` (cap 1..500) + tab **📘 Audit** trong ⚙ Cài đặt: bảng ts/tool/source/ms/args, ô lọc realtime (tool/nguồn/đối số/note), nạp lại; test xác nhận token KHÔNG lọt qua endpoint |
+| **W2** | **ASYNC240 → to_thread** | 3 chỗ blocking path ops (lsp.py ×2, review.py ×1) → ruff ASYNC240 giờ **0 findings**; hồi quy review/checkpoint chạy đúng |
+| **W3** | **mypy baseline** | mypy 2.4.1: **6 module mới nhất (mcp/auditlog/connectors/skills/skillmgr/cost/background) SẠCH 100%** (fix annotation `dict[str, McpServer \| McpHttpServer]`); toàn engine/ = **75 lỗi/4 file — mốc baseline P3**, quy tắc: module sửa tới đâu sạch tới đó, module mới bắt buộc sạch |
+
+**Kết quả vòng 3: 105/105 test (15 suite) · ruff F/E7/E9/B/ASYNC chỉ còn 3 mục đã-chấp-nhận-ghi-rõ · bandit 0.**
+
 ## 4. Việc còn lại (backlog theo mức ưu tiên)
 
 | Ưu tiên | Việc | Vì sao |
 |---|---|---|
 | ~~P2~~ ✅ v0.17.2 | ~~TUI smoke~~ · ~~Audit log~~ · ~~Adversarial suite~~ | Đã làm — xem mục 3b |
 | P3 | Audit-log UI trong web (bảng lọc theo phiên/tool) | hiện /audit là text; bảng đẹp hơn |
-| P3 | mypy dần dần cho engine/ (bắt đầu từ tools.py, agent.py) | bắt lỗi kiểu sớm hơn ruff |
-| P3 | ASYNC240 → `to_thread` cho lsp/review khi có dư địa | nhất quán async thuần |
+| P3 | mypy engine/ (baseline 75 lỗi/4 file — đã ghi v0.18, module mới bắt buộc sạch) | giảm dần theo từng vòng |
+| P3 | Audit-log xuất CSV/JSON từ web (một nút) | tiện phân tích ngoài |
 
 ## 5. Kết luận
 

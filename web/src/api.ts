@@ -2,6 +2,7 @@ import type {
   AgentEvent, BatchEvent, ContextStats, DoctorReport, FileNode,
   KeyCheckResult, McpServerStatus, ModelInfo,
   SessionFull, SessionSummary, Settings, UsageTotals,
+  AuditEntry,
 } from './types'
 
 async function j<T>(res: Response): Promise<T> {
@@ -137,6 +138,9 @@ export const api = {
     fetch(`/api/sessions/${sid}/context`).then((r) => j<ContextStats>(r)),
 
   doctor: () => fetch('/api/doctor').then((r) => j<DoctorReport>(r)),
+
+  audit: (n = 120) =>
+    fetch(`/api/audit?n=${n}`).then((r) => j<{ entries: AuditEntry[] }>(r)).then((d) => d.entries),
 
   fork: (sid: string) =>
     fetch(`/api/sessions/${sid}/fork`, { method: 'POST' }).then((r) => j<{ session: { id: string; title: string } }>(r)),

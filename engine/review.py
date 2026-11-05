@@ -43,7 +43,7 @@ async def is_repo(ws: Path) -> bool:
 async def _ckpt_first_commit(ws: Path, sid: str) -> str | None:
     from . import config
     repo = str(config.WORKSPACES_DIR / f".ckpt-{sid}.git")
-    if not Path(repo).exists():
+    if not await asyncio.to_thread(Path(repo).exists):
         return None
     rc, out = await _git(ws, "rev-list", "--max-parents=0", "forge", git_dir=repo)
     first = out.strip().splitlines()[-1] if out.strip() else ""

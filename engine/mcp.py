@@ -297,7 +297,7 @@ class McpManager:
     """Global registry: lazy-start servers, expose namespaced tool specs."""
 
     def __init__(self) -> None:
-        self._servers: dict[str, object] = {}
+        self._servers: dict[str, McpServer | McpHttpServer] = {}
         self._lock = asyncio.Lock()
 
     def _build(self, cfg: dict):
