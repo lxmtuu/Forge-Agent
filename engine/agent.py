@@ -885,6 +885,8 @@ async def send_demo(agent: Agent, user_text: str):
     s.messages.append({"role": "assistant", "content": None, "tool_calls": [tc1]})
     yield {"type": "tool_start", "id": tc1["id"], "name": "write_file", "args": args1}
     result = await tools.execute_tool("write_file", args1, agent.workspace)
+    log_tool(agent.session.id, "write_file", args1, result["ok"],
+             source="demo")
     yield {"type": "tool_result", "id": tc1["id"], "name": "write_file",
            "args": args1, "ok": result["ok"], "output": result["output"]}
     s.messages.append({"role": "tool", "tool_call_id": tc1["id"], "content": result["output"]})
@@ -898,6 +900,8 @@ async def send_demo(agent: Agent, user_text: str):
     s.messages.append({"role": "assistant", "content": None, "tool_calls": [tc2]})
     yield {"type": "tool_start", "id": tc2["id"], "name": "run_command", "args": args2}
     result = await tools.execute_tool("run_command", args2, agent.workspace)
+    log_tool(agent.session.id, "run_command", args2, result["ok"],
+             source="demo")
     yield {"type": "tool_result", "id": tc2["id"], "name": "run_command",
            "args": args2, "ok": result["ok"], "output": result["output"]}
     s.messages.append({"role": "tool", "tool_call_id": tc2["id"], "content": result["output"]})
