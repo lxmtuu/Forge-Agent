@@ -17,9 +17,9 @@
 <p align="center">
   <a href="https://github.com/lxmtuu/Forge-Agent/releases/latest"><strong>Download the latest release</strong></a>
   · <a href="#quick-start">Quick start</a>
-  · <a href="USER_GUIDE.md">User guide</a>
-  · <a href="SECURITY.md">Security</a>
-  · <a href="DEPLOY.md">Deployment</a>
+  · <a href="docs/guides/USER_GUIDE.md">User guide</a>
+  · <a href="docs/guides/SECURITY.md">Security</a>
+  · <a href="docs/guides/DEPLOY.md">Deployment</a>
 </p>
 
 ---
@@ -146,7 +146,7 @@ python scripts/setup_keys.py --provider google
 
 Keys are entered hidden and stored server-side, outside the source tree. You can also use **Settings → Connection** on a private installation. Never commit API keys or share them in chat.
 
-For Docker and public deployments, follow [DEPLOY.md](DEPLOY.md) and the [security checklist](SECURITY.md).
+For Docker and public deployments, follow [DEPLOY.md](docs/guides/DEPLOY.md) and the [security checklist](docs/guides/SECURITY.md).
 
 ## Use it your way
 
@@ -177,7 +177,7 @@ Interactive REPL ───┘              │
 - Workspaces restrict file paths, while guarded mode and approvals help control shell execution.
 - Account sessions use HttpOnly cookies and CSRF protection; owner ACLs isolate application-level sessions and workspaces.
 - Optional Docker execution can disable networking and limit CPU, memory, and capabilities.
-- Release mode, HTTPS deployment, rate limits, and shared-server hardening are documented in [SECURITY.md](SECURITY.md).
+- Release mode, HTTPS deployment, rate limits, and shared-server hardening are documented in [SECURITY.md](docs/guides/SECURITY.md).
 
 > **Important:** prompts and relevant workspace content are still sent to the model provider you select. Forge's owner ACLs are designed for trusted teams, not as an OS sandbox between hostile users.
 
@@ -190,19 +190,19 @@ Interactive REPL ───┘              │
 - Chromium regressions: **37/37 responsive UX**, **23/23 English/i18n**, and **1/1 persistent provider-error** checks passed.
 - TypeScript, Vite (43 modules), mypy (39 source files), scoped Ruff, Bandit Medium+, archive integrity, and secret scans passed.
 
-See [PROJECT_AUDIT.md](PROJECT_AUDIT.md) for engineering notes and release evidence.
+See [PROJECT_AUDIT.md](docs/reports/PROJECT_AUDIT.md) for engineering notes and release evidence.
 
 ## Documentation
 
 | Document | What you will find |
 |---|---|
-| [QUICKSTART.md](QUICKSTART.md) | A compact setup path |
-| [USER_GUIDE.md](USER_GUIDE.md) | Step-by-step user guide in Vietnamese |
-| [SECURITY.md](SECURITY.md) | Security model and hardening checklist |
-| [DEPLOY.md](DEPLOY.md) | Docker, VPS, and production deployment |
-| [MCP_CATALOG.md](MCP_CATALOG.md) | MCP servers and connector presets |
-| [BUILD_DESKTOP.md](BUILD_DESKTOP.md) | Standalone desktop packaging |
-| [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md) | Product principles and direction |
+| [QUICKSTART.md](docs/guides/QUICKSTART.md) | A compact setup path |
+| [USER_GUIDE.md](docs/guides/USER_GUIDE.md) | Step-by-step user guide in Vietnamese |
+| [SECURITY.md](docs/guides/SECURITY.md) | Security model and hardening checklist |
+| [DEPLOY.md](docs/guides/DEPLOY.md) | Docker, VPS, and production deployment |
+| [MCP_CATALOG.md](docs/guides/MCP_CATALOG.md) | MCP servers and connector presets |
+| [BUILD_DESKTOP.md](docs/guides/BUILD_DESKTOP.md) | Standalone desktop packaging |
+| [PRODUCT_DIRECTION.md](docs/reports/PRODUCT_DIRECTION.md) | Product principles and direction |
 
 ---
 

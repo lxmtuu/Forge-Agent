@@ -149,7 +149,7 @@ Kết quả test: **5/5 smoke v0.12 + regression 16/16 v0.7 + 12/12 v0.8 + 8/8 v
 
 ## 🔀 v0.13 "Multi-Model Orchestrator" — đa model đúng chuẩn ngành
 
-Research đầy đủ trong `MULTI_MODEL.md` (Claude Code subagent model routing · Anthropic
+Research đầy đủ trong `../research/MULTI_MODEL.md` (Claude Code subagent model routing · Anthropic
 multi-agent research system · RouteLLM/FrugalGPT/OpenRouter). 5 mục đã làm:
 
 | # | Tính năng | Chi tiết |
@@ -176,7 +176,7 @@ Kết quả test: **5/5 smoke v0.14 (chạy 2 lần, chống flaky) + regression
 
 ## 🧩 v0.15 "Skills 2.0" — theo chuẩn mở Agent Skills (SKILL.md)
 
-Theo SKILLS_RESEARCH.md (chuẩn agentskills.io — 70+ nền tảng, quyên cho Linux Foundation 10/2026):
+Theo [SKILLS_RESEARCH.md](../research/SKILLS_RESEARCH.md) (chuẩn agentskills.io — 70+ nền tảng, quyên cho Linux Foundation 10/2026):
 
 | # | Mục | Chi tiết |
 |---|---|---|
@@ -199,7 +199,7 @@ Test: **6/6 smoke v0.16 ×2 + toàn bộ regression (tổng 79 test xanh)**.
 
 ## 🔌 v0.17 "Connectors" — GitHub/Linear/Gmail… qua MCP (P0)
 
-Theo CONNECTORS_RESEARCH.md (chuẩn ngành 2026: remote MCP chính thức + hub managed-OAuth):
+Theo [CONNECTORS_RESEARCH.md](../research/CONNECTORS_RESEARCH.md) (chuẩn ngành 2026: remote MCP chính thức + hub managed-OAuth):
 
 | # | Mục | Chi tiết |
 |---|---|---|
@@ -308,7 +308,7 @@ Cộng OAuth 2.1 (Notion/Sentry/Linear) + hub Composio (500+ app). `$VAR` trong 
 
 ## 🧭 v0.29 "MCP catalog mở rộng" — 18 preset theo research
 
-7 gói mới: **Stripe** (remote chính thức, Restricted Key như Bearer) · **Atlassian** v2 · **Vercel** · **Supabase** remote read_only · **Memory** (knowledge-graph) · **Fetch** (uvx) · **Brave Search** (gói chính thức `@brave`). Loại có chủ đích các bản archived upstream (github/slack/brave stdio cũ, puppeteer, sqlite) — lý do đầy đủ trong **MCP_CATALOG.md**. Cộng OAuth 2.1 tự chạy (Notion/Sentry/Linear) + hub 500+ app.
+7 gói mới: **Stripe** (remote chính thức, Restricted Key như Bearer) · **Atlassian** v2 · **Vercel** · **Supabase** remote read_only · **Memory** (knowledge-graph) · **Fetch** (uvx) · **Brave Search** (gói chính thức `@brave`). Loại có chủ đích các bản archived upstream (github/slack/brave stdio cũ, puppeteer, sqlite) — lý do đầy đủ trong **[MCP_CATALOG.md](../guides/MCP_CATALOG.md)**. Cộng OAuth 2.1 tự chạy (Notion/Sentry/Linear) + hub 500+ app.
 
 ## 📘 v0.30 "Audit UI v2"
 
@@ -316,7 +316,7 @@ Tab 📘 Audit (từ v0.18) nâng cấp chuẩn log-viewer: quick-filter **Tất
 
 ## 🚀 v0.31 "Onboarding" — 1 click là chạy
 
-`run_forge.bat` (Windows, double-click): tự .venv → tự cài → tự mở trình duyệt; banner tiếng Việt UTF-8 chuẩn mọi máy (theo research codepage-bat: logic chữ nằm ở Python helper, bat thuần ASCII). `--check` khám phá môi trường trước khi cài. **USER_GUIDE.md** tiếng Việt 11 mục cho người mới, có test bảo đảm mọi lệnh trong guide tồn tại thật trong code. Đối thủ cần bước `npm install -g` / install script; Forge: giải nén + double-click.
+`run_forge.bat` (Windows, double-click): tự .venv → tự cài → tự mở trình duyệt; banner tiếng Việt UTF-8 chuẩn mọi máy (theo research codepage-bat: logic chữ nằm ở Python helper, bat thuần ASCII). `--check` khám phá môi trường trước khi cài. **[USER_GUIDE.md](../guides/USER_GUIDE.md)** tiếng Việt 11 mục cho người mới, có test bảo đảm mọi lệnh trong guide tồn tại thật trong code. Đối thủ cần bước `npm install -g` / install script; Forge: giải nén + double-click.
 
 ## 🌙 v0.32 "Autonomy nâng cao" — đóng A4/A5/C1
 

@@ -77,7 +77,7 @@ async def t3():
 
 @check("T4 USER_GUIDE: MỌI lệnh /slash trong guide phải tồn tại trong CODE (docs không được bịa)")
 async def t4():
-    guide = (ROOT / "USER_GUIDE.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs/guides/USER_GUIDE.md").read_text(encoding="utf-8")
     guide = re.sub(r"https?://\S+", "", guide)          # URL chứa /không-phải-lệnh
     tokens = sorted({m.lower() for m in re.findall(r"(?<![\w.])/([a-z][a-z0-9_-]{1,20})\b", guide)})
     assert tokens, "guide phải nhắc lệnh slash"
@@ -91,7 +91,7 @@ async def t4():
 
 @check("T5 USER_GUIDE: cấu hình đầy đủ — numbered steps, run_forge.bat, DEMO, sự cố, launch.py nhắc guide")
 async def t5():
-    g = (ROOT / "USER_GUIDE.md").read_text(encoding="utf-8")
+    g = (ROOT / "docs/guides/USER_GUIDE.md").read_text(encoding="utf-8")
     for sec in ("## 1.", "## 2.", "## 3.", "## 10.", "Sự cố", "run_forge.bat", "DEMO MODE",
                 "openrouter.ai", "Allow once", "chcp 65001", "Bước 1.", "Bước 2."):
         assert sec in g, f"guide thiếu '{sec}'"

@@ -120,7 +120,7 @@ def check_env() -> None:
         say("Config   : lỗi đọc —", e)
     say("Secure setup: python scripts/setup_keys.py")
     say("Listen   :", HOST, "(đặt FORGE_HOST=0.0.0.0 chỉ khi đã cấu hình release/proxy)")
-    say("Hướng dẫn chi tiết: USER_GUIDE.md")
+    say("Hướng dẫn chi tiết: docs/guides/USER_GUIDE.md")
 
 
 def main() -> int:
@@ -189,7 +189,7 @@ def main() -> int:
         say("  Đăng nhập bằng tài khoản email/Google đã được mời; bắt buộc HTTPS reverse-proxy.")
     else:
         say("  Chưa có key? DEMO MODE vẫn chạy. Cấu hình an toàn: python scripts/setup_keys.py")
-    say("  Hướng dẫn đầy đủ từng bước: USER_GUIDE.md")
+    say("  Hướng dẫn đầy đủ từng bước: docs/guides/USER_GUIDE.md")
     if not args.no_browser:
         open_browser()
     try:

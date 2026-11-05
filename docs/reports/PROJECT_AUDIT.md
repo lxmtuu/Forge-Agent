@@ -138,7 +138,7 @@
 | # | Mục | Kết quả thực đo |
 |---|---|---|
 | **F2** | **Cross-session messaging** | `engine/bus.py`: JSONL `data/messages/<sid>.jsonl` + mốc đọc theo offset (`<sid>.read`); tool **send_message** (validate phiên tồn tại, chặn self-send) + **check_inbox** (đọc = mark-read); đầu lượt có tin chưa đọc → system prompt nhắc "INBOX: N tin — gọi check_inbox" (test chứng minh có/hết tin); REST POST/GET (peek=true không đổi mốc); `/msg <phiên> <nội dung>` + `/inbox` đủ 3 UI. Hợp lực: gửi chỉ đạo cho phiên `/loop` đang nền |
-| **S7** | **allowed-tools hiển thị** | /skills listing hiện `🔑 read_file, list_dir…` cho skill khai báo allowed-tools (chỉ hiển thị — experimental, đúng kế hoạch SKILLS_RESEARCH) |
+| **S7** | **allowed-tools hiển thị** | /skills listing hiện `🔑 read_file, list_dir…` cho skill khai báo allowed-tools (chỉ hiển thị — experimental, đúng kế hoạch SKILLS_RESEARCH — xem `../research/SKILLS_RESEARCH.md`) |
 
 **Bài học vòng 9:** chèn 2 tool specs vào TOOLS_LIST — chèn đúng vị trí tên nhưng SAI mức lồng (thiếu wrapper `{"type": "function", "function": {…}}` giữa 2 entry) → SyntaxError. py_compile bắt ngay; sửa bằng edit_file từng khớp nối. Quy tắc nhắc lại: **với cấu trúc lồng nhau (list[dict]), mọi chèn giữa phải kèm cả wrapper đóng/mở.**
 
@@ -187,7 +187,7 @@ Yêu cầu: "xem còn các MCP nào nữa" — research 3 hướng (PulseMCP/top
 
 **Thêm 7 preset (11 → 18):** stripe (`mcp.stripe.com`, Bearer Restricted Key — research: OAuth hoặc API key), atlassian (`mcp.atlassian.com/v2/mcp`), vercel (`mcp.vercel.com`), supabase remote (mặc định read_only), memory (npx chính thức, E2E thật: create_entities/search_nodes vào specs), fetch (uvx `mcp-server-fetch` — E2E skip khi máy thiếu uv), brave-search (**gói chính thức mới `@brave/brave-search-mcp-server`** — bản modelcontextprotocol đã archived).
 
-**Cố tình KHÔNG thêm (ghi lý do trong MCP_CATALOG.md):** server-github/brave/slack stdio (archived upstream), git/time/everything (trùng/trivial), puppeteer/sqlite/redis/gdrive (archived hoặc OAuth service-account phức tạp — Google apps qua hub Composio).
+**Cố tình KHÔNG thêm (ghi lý do trong [MCP_CATALOG.md](../guides/MCP_CATALOG.md)):** server-github/brave/slack stdio (archived upstream), git/time/everything (trùng/trivial), puppeteer/sqlite/redis/gdrive (archived hoặc OAuth service-account phức tạp — Google apps qua hub Composio).
 
 **Bài học vòng 13:** (1) cùng một server có thể có vòng đời 2 đời — active tại modelcontextprotocol/servers vs servers-archived: PHẢI trỏ gói mới nhất (brave là ví dụ); (2) endpoint remote phải lấy từ docs nhà cung cấp/nguồn độc lập ≥2 — không đoán URL authorize/token nếu chưa thấy tài liệu (vercel/atlassian → oauth-pending + hub thay vì bịa endpoint).
 
@@ -206,7 +206,7 @@ Yêu cầu chọn "Audit-log UI bảng (P3)". **Điều tra bằng git làm lộ
 
 **Kết quả vòng 14: 157/157 test (26 suite) · mypy 0 · bandit Medium+ 0 · tsc/vite build ✓.**
 
-## 3h. Vòng 15 (v0.31) — Onboarding: launcher 1-click + USER_GUIDE tiếng Việt
+## 3h. Vòng 15 (v0.31) — Onboarding: launcher 1-click + USER_GUIDE tiếng Việt (`../guides/USER_GUIDE.md`)
 
 Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Research trước: (1) bat phải **pure-ASCII** vì cmd parse file theo codepage console TRƯỚC khi chcp trong file kịp chạy → chữ có dấu chuyển hết vào `scripts/launch.py` (Python tự reconfigure stdout UTF-8); (2) pattern onboarding đối thủ (Claude Code quickstart): install → verify → chạy → hướng dẫn xác thực lần đầu.
 
@@ -215,7 +215,7 @@ Hai mục "quà cho người dùng cuối" còn lại — làm cả hai. Researc
 | `run_forge.bat` | wrapper mỏng ASCII: tìm `py -3` → `python`; lỗi không có Python → hướng dẫn + pause; double-click chạy được |
 | `scripts/launch.py` | logic thật: tạo `.venv` (lần đầu) → `pip install -e .` → chạy uvicorn → chờ cổng → mở browser; `--check` khám phá môi trường không khởi động; `FORGE_PORT` đổi cổng; cổng bận → mở luôn tab, không chạy bản thứ hai |
 | `run_forge.sh` | macOS/Linux mỏng, exec launch.py |
-| `USER_GUIDE.md` | 11 mục đánh số + phụ lục lệnh: yêu cầu → cài/chạy 2 bước → key OpenRouter → 3 chế độ → việc thường ngày → skills/subagents → 18 MCP → an toàn → sự cố (bảng) → cập nhật/gỡ |
+| [`USER_GUIDE.md`](../guides/USER_GUIDE.md) | 11 mục đánh số + phụ lục lệnh: yêu cầu → cài/chạy 2 bước → key OpenRouter → 3 chế độ → việc thường ngày → skills/subagents → 18 MCP → an toàn → sự cố (bảng) → cập nhật/gỡ |
 | **Test chống bịa docs** | test_v031-T4: tách MỌI token `/slash` khỏi guide (đã strip URL) — mỗi token phải tồn tại trong source cli/tui/server/engine; T1 assert bat thuần ASCII + không chữ chcp |
 
 **E2E thật của launcher (sandbox):** venv tạo thật → pip install thật → server :8010 lên thật → health ok · demo true → banner UTF-8 chuẩn.

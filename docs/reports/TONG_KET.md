@@ -1,7 +1,7 @@
 # 📋 TỔNG KẾT DỰ ÁN FORGE AGENT — mọi thứ đã làm
 
 > Cập nhật: 2026-11-06 · Phát hành hiện tại: **v0.38.0 "Bilingual Web UI"** · 228 test / 35 suite · Chromium UX 37/37 + English 23/23 + hotfix 1/1 · mypy 0 lỗi · 39 files · bandit Medium+ 0
-> Lịch sử v0.10 → v0.37 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: README · USER_GUIDE · MCP_CATALOG · QUICKSTART · SECURITY.
+> Lịch sử v0.10 → v0.37 chi tiết: **PROJECT_AUDIT.md** (mỗi vòng 1 mục) + **PARITY.md**. Tài liệu chính cho người dùng: [README](../../README.md) · [USER_GUIDE](../guides/USER_GUIDE.md) · [MCP_CATALOG](../guides/MCP_CATALOG.md) · [QUICKSTART](../guides/QUICKSTART.md) · [SECURITY](../guides/SECURITY.md).
 
 ---
 
@@ -131,12 +131,12 @@ v0.38 bổ sung English mà không bỏ tiếng Việt: `LanguageProvider` mặc
 
 | File | Nội dung |
 |---|---|
-| `README.md` | Toàn bộ tính năng 3 giao diện + bảng v0.7/v0.8/v0.9 + hướng dẫn + bảo mật |
-| `QUICKSTART.md` | 5 phút chạy lần đầu (dành người mới, Windows) |
+| [`README.md`](../../README.md) | Toàn bộ tính năng 3 giao diện + bảng v0.7/v0.8/v0.9 + hướng dẫn + bảo mật |
+| [`QUICKSTART.md`](../guides/QUICKSTART.md) | 5 phút chạy lần đầu (dành người mới, Windows) |
 | `FEATURE_AUDIT.md` | Ma trận 34 hạng mục vs 3 đối thủ + cập nhật từng phiên bản |
 | `PRODUCT_DIRECTION.md` | Kim chỉ nam sản phẩm (research đối thủ 2026) |
-| `BUILD_DESKTOP.md` / `DEPLOY.md` | Đóng gói .exe / deploy server |
-| `SECURITY.md` | Account/signup threat model, owner ACL, cookie/CSRF, OIDC, abuse controls, provider/MCP boundary, migration/rotation và checklist |
+| [`BUILD_DESKTOP.md`](../guides/BUILD_DESKTOP.md) / [`DEPLOY.md`](../guides/DEPLOY.md) | Đóng gói .exe / deploy server |
+| [`SECURITY.md`](../guides/SECURITY.md) | Account/signup threat model, owner ACL, cookie/CSRF, OIDC, abuse controls, provider/MCP boundary, migration/rotation và checklist |
 | `scripts/demo_mcp_server.py` | MCP server mẫu (4 tools, có elicitation thật để thử) |
 
 ## 6. Trạng thái bàn giao

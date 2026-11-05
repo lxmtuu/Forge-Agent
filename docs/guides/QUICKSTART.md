@@ -74,4 +74,4 @@ python cli/main.py --parallel "task A" "task B"
 - Shell/hook/git/MCP không tự thừa kế provider key; MCP chỉ nhận secret được khai báo explicit.
 - Release có per-user cookie auth + owner ACL, CSRF, CORS same-origin và rate-limit; đây không phải OS sandbox. Chỉ bật public signup khi operator chấp nhận cấp workspace cho người ngoài và đã có kiểm soát abuse phù hợp.
 
-Chi tiết: **README.md · USER_GUIDE.md · SECURITY.md · DEPLOY.md**.
+Chi tiết: **[README.md](../../README.md) · USER_GUIDE.md · SECURITY.md · DEPLOY.md**.

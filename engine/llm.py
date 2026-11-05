@@ -81,7 +81,7 @@ def _headers(api_key: str) -> dict:
 
 
 def resolve_sub_model(model_str: str | None, parent_model: str | None = None) -> str | None:
-    """Alias model cho sub-agent (chuẩn Claude Code — MULTI_MODEL.md §2.1).
+    """Alias model cho sub-agent (chuẩn Claude Code — docs/research/MULTI_MODEL.md §2.1).
 
     '' / inherit / same → None (thừa kế model phiên cha)
     cheap / free / fast → config.model_roles.cheap  (mặc định: openrouter/free)
