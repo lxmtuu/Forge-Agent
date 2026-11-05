@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">Forge Agent — Build locally. Ship with any model.</title>
+  <desc id="desc">A dark banner with an orange lightning mark, a coding window, and the words Forge Agent.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101114"/>
+      <stop offset="0.55" stop-color="#15161a"/>
+      <stop offset="1" stop-color="#0c0d10"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb27a"/>
+      <stop offset="1" stop-color="#e7683f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(790 40) rotate(120) scale(420 500)">
+      <stop offset="0" stop-color="#d96643" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#d96643" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.025"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="320" rx="26" fill="url(#bg)"/>
+  <rect width="1200" height="320" rx="26" fill="url(#grid)"/>
+  <rect width="1200" height="320" rx="26" fill="url(#glow)"/>
+  <rect x="1" y="1" width="1198" height="318" rx="25" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+
+  <g transform="translate(64 68)">
+    <rect width="72" height="72" rx="20" fill="url(#accent)" filter="url(#shadow)"/>
+    <path d="M42 8L19 40h16l-5 24 24-34H38z" fill="#17191d"/>
+    <text x="94" y="49" fill="#f4f5f7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="54" font-weight="750" letter-spacing="-1.5">Forge <tspan fill="#ef9b72">Agent</tspan></text>
+    <text x="2" y="126" fill="#f1f2f4" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="29" font-weight="600">Build locally. Ship with any model.</text>
+    <text x="2" y="164" fill="#a6a9b1" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="19">Your self-hosted AI coding workspace for Web, Terminal, and REPL.</text>
+    <g transform="translate(2 194)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="650" letter-spacing="1.6">
+      <rect width="92" height="30" rx="15" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
+      <text x="46" y="20" text-anchor="middle" fill="#d5d7dc">LOCAL</text>
+      <rect x="104" width="102" height="30" rx="15" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
+      <text x="155" y="20" text-anchor="middle" fill="#d5d7dc">PRIVATE</text>
+      <rect x="218" width="145" height="30" rx="15" fill="#e98255" fill-opacity="0.11" stroke="#e98255" stroke-opacity="0.26"/>
+      <text x="290" y="20" text-anchor="middle" fill="#f0aa86">MULTI-MODEL</text>
+    </g>
+  </g>
+
+  <g transform="translate(780 54)" filter="url(#shadow)">
+    <rect width="356" height="214" rx="18" fill="#111317" stroke="#ffffff" stroke-opacity="0.11"/>
+    <path d="M0 44h356" stroke="#ffffff" stroke-opacity="0.08"/>
+    <circle cx="24" cy="22" r="5" fill="#ef835f"/>
+    <circle cx="42" cy="22" r="5" fill="#d8ad63"/>
+    <circle cx="60" cy="22" r="5" fill="#65ae8c"/>
+    <text x="326" y="27" text-anchor="end" fill="#777c86" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="12">agent.loop</text>
+    <g font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="14">
+      <text x="24" y="76" fill="#777c86">01</text>
+      <text x="58" y="76" fill="#e99973">→ understand</text>
+      <text x="24" y="108" fill="#777c86">02</text>
+      <text x="58" y="108" fill="#d7d9df">→ read &amp; edit files</text>
+      <text x="24" y="140" fill="#777c86">03</text>
+      <text x="58" y="140" fill="#d7d9df">→ run commands</text>
+      <text x="24" y="172" fill="#777c86">04</text>
+      <text x="58" y="172" fill="#78c39c">✓ verify the result</text>
+    </g>
+    <rect x="24" y="190" width="308" height="4" rx="2" fill="#ffffff" fill-opacity="0.05"/>
+    <rect x="24" y="190" width="238" height="4" rx="2" fill="url(#accent)"/>
+  </g>
+</svg>
