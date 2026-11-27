@@ -349,11 +349,19 @@ async def merge(sub_sid: str, src_sid: str, parent_sid: str, parent_ws) -> dict:
         checkpoint = None
     warning = ("" if checkpoint else
                " Cảnh báo: không tạo được checkpoint trước khi gộp; undo có thể không khôi phục trạng thái trước khi gộp.")
-    # `git apply` uses -C for the parent workspace. A timeout, overflow or
-    # failure cannot prove the patch had no side effects; never claim rollback.
+    # Name the repository and the work tree explicitly. Without --git-dir Git looks for a
+    # repository above the workspace: inside a clone it then skips every path ("Skipped
+    # patch", exit 0), and a global core.autocrlf converts line endings. The checkpoint
+    # repository carries the rule that disables conversions (see checkpoints).
+    # A timeout, overflow or failure cannot prove the patch had no side effects; never
+    # claim rollback.
+    if not checkpoints.ensure_exact_attributes(repo):
+        return {"ok": False, "message": "không thể đặt quy tắc byte-exact cho repo; patch chưa được áp",
+                "files": 0, "checkpoint_created": bool(checkpoint)}
     try:
         rc, _out, _err = await _run_binary_git(
-            GIT, ["-C", str(parent_ws), "apply", "--whitespace=nowarn", "-"], _git_env(),
+            GIT, ["-C", str(parent_ws), "--git-dir", str(repo), "--work-tree", str(parent_ws),
+                  "apply", "--whitespace=nowarn", "-"], _git_env(),
             stdout_limit=WORKTREE_APPLY_STDOUT_LIMIT, stderr_limit=WORKTREE_GIT_STDERR_LIMIT,
             timeout=WORKTREE_GIT_TIMEOUT, input_data=raw)
     except Exception:
@@ -363,8 +371,56 @@ async def merge(sub_sid: str, src_sid: str, parent_sid: str, parent_ws) -> dict:
                 "message": ("Không thể xác nhận áp patch; workspace có thể đã thay đổi một phần. "
                             "Hãy kiểm tra trước khi thử lại.") + warning,
                 "files": 0, "checkpoint_created": bool(checkpoint)}
+    # Exit code 0 does not prove the patch was applied; compare with the work folder.
+    mismatched = await _paths_not_applied(wt, parent_ws, sub_sid)
+    if mismatched is None or mismatched:
+        return {"ok": False,
+                "message": ("Git báo đã áp patch nhưng workspace không khớp worktree"
+                            + (f" ({len(mismatched)} đường dẫn)" if mismatched else "")
+                            + "; workspace có thể đã thay đổi một phần. Hãy kiểm tra trước khi thử lại.")
+                           + warning,
+                "files": 0, "checkpoint_created": bool(checkpoint)}
     return {"ok": True, "message": f"Đã gộp {n_files} file từ worktree về workspace cha." + warning,
             "files": n_files, "checkpoint_created": bool(checkpoint)}
+
+
+def _entry_state(path: Path):
+    """Comparable content of one path: None if absent, else ('link'|'file', bytes)."""
+    import os
+    if path.is_symlink():
+        return ("link", os.fsencode(os.readlink(path)))
+    if path.is_file():
+        return ("file", path.read_bytes())
+    if path.exists():
+        return ("other", b"")
+    return None
+
+
+async def _paths_not_applied(wt: Path, parent_ws, sub_sid: str) -> list[str] | None:
+    """Paths of the patch whose parent content differs from the work folder; None if unknown.
+
+    The work folder was just staged, so ``diff --name-only`` against the branch lists exactly
+    the paths of the patch. ``--no-renames`` lists both sides of a rename.
+    """
+    try:
+        rc, raw, _err = await _run_binary_git(
+            GIT, ["-C", str(wt), "diff", "--name-only", "-z", "--no-renames", f"iso/{sub_sid}", "--"],
+            _git_env(), stdout_limit=WORKTREE_PATCH_LIMIT, stderr_limit=WORKTREE_GIT_STDERR_LIMIT,
+            timeout=WORKTREE_GIT_TIMEOUT)
+        if rc != 0:
+            return None
+        import os
+        parent = Path(parent_ws)
+        bad: list[str] = []
+        for item in raw.split(b"\0"):
+            if not item:
+                continue
+            rel = os.fsdecode(item)
+            if _entry_state(parent / rel) != _entry_state(wt / rel):
+                bad.append(rel)
+        return bad
+    except Exception:
+        return None
 
 
 async def discard(sub_sid: str, src_sid: str) -> dict:
