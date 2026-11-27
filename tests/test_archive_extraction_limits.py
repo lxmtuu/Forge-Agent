@@ -75,7 +75,8 @@ class ArchiveLimits(unittest.IsolatedAsyncioTestCase):
              patch.object(worktree,'available_for',new_callable=AsyncMock,return_value=True), \
              patch.object(worktree,'_run_binary_git',new_callable=AsyncMock,return_value=(0,raw,b'')), \
              patch.object(worktree,'_run_binary_sync',return_value=(0,raw,b'')), \
-             patch.object(worktree,'GIT','git'), patch.object(worktree,'_repo') as repo:
+             patch.object(worktree,'GIT','git'), patch.object(worktree,'_repo') as repo, \
+             patch('engine.checkpoints.ensure_exact_attributes',return_value=True):
             repo.return_value.exists.return_value=True
             self.assertFalse(await worktree.export_tree('source',self.dst)); self.assert_clean()
             self.assertFalse(worktree.export_tree_sync('source',self.dst)); self.assert_clean()

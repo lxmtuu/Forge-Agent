@@ -207,6 +207,9 @@ async def make(src_sid: str, sub_sid: str) -> str | None:
     config.ensure_dirs()
     if path.exists() or path.is_symlink():
         return None
+    from . import checkpoints
+    if not checkpoints.ensure_exact_attributes(repo):
+        return None
     rc, out = await _run("--git-dir", repo, "worktree", "add", "-b",
                          f"iso/{sub_sid}", str(path), "forge")
     if rc != 0:
@@ -492,6 +495,9 @@ async def export_tree(src_sid: str, dst_dir) -> bool:
     """Xuất cây snapshot `forge` của src vào dst_dir (fork từ trạng thái nhất quán)."""
     if not _valid_session_id(src_sid) or not GIT or not await available_for(src_sid):
         return False
+    from . import checkpoints
+    if not checkpoints.ensure_exact_attributes(_repo(src_sid)):
+        return False
     try:
         rc, out, _err = await _run_binary_git(
             GIT, ["--git-dir", str(_repo(src_sid)), "archive", "forge", "--"], _git_env(),
@@ -581,6 +587,9 @@ def _run_binary_sync(executable, args, env, *, stdout_limit, stderr_limit, timeo
 def export_tree_sync(src_sid: str, dst_dir) -> bool:
     """Bản sync của export_tree cho SessionStore.fork() (archive cục bộ, nhanh)."""
     if not _valid_session_id(src_sid) or not GIT or not _repo(src_sid).exists():
+        return False
+    from . import checkpoints
+    if not checkpoints.ensure_exact_attributes(_repo(src_sid)):
         return False
     try:
         rc, raw, _err = _run_binary_sync(

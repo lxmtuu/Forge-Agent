@@ -45,6 +45,8 @@ async def capture(child_sid: str, workspace) -> dict:
             rc, _ = await run(*step)
             if rc != 0:
                 return fail
+        if not checkpoints.ensure_exact_attributes(repo, new=True):
+            return fail
         rc, _ = await run('add', '-A', '--', '.', *[f':(exclude){e}' for e in checkpoints.EXCLUDES])
         if rc != 0:
             return fail

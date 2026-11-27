@@ -28,7 +28,9 @@ class WorktreeGitRunner(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(rc,125); self.assertIn('output',out.lower())
 
     async def test_small_stderr_and_exit_code_remain_visible(self):
-        rc,out=await self.run_python("import sys; sys.stderr.write('Việt'); sys.exit(7)")
+        # The runner decodes UTF-8. Write the bytes: a child's own stderr uses the ANSI code page on
+        # Windows, so writing the text would send an escape (or fail) under a narrow encoding.
+        rc,out=await self.run_python("import sys; sys.stderr.buffer.write('Vi\\u1ec7t'.encode('utf-8')); sys.stderr.flush(); sys.exit(7)")
         self.assertEqual((rc,out),(7,'Việt'))
 
     async def test_timeout_reaps_direct_child(self):
