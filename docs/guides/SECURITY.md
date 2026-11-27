@@ -68,6 +68,7 @@ Session IDs must now match exactly: nonempty alphanumeric Unicode, hyphen or und
 | Audit/usage/inbox/approval/elicitation của chính mình | ✓ | ✓ |
 | Đổi default model/provider/settings toàn server | ✓ | — |
 | Quản lý Team, public signup, Google login, MCP/connectors toàn server | ✓ | — |
+| Xem và dừng loop đang chạy của mọi user (`/api/admin/loops`) | ✓ | — |
 | Mở arbitrary host workspace | ✓ | — |
 | Dùng MCP tools với credential toàn server | ✓ | — |
 | Cài/xoá/sửa global skill | ✓ | — |
@@ -235,4 +236,4 @@ Normal non-demo, non-synthetic server chat, the manual compact endpoint, non-dem
 
 An approval ends 30 minutes after its review request was submitted. An administrator's decision does not extend it, and submitting the same configuration again returns the same request. A scheduled loop in a workspace that has a hook configuration therefore runs only while that approval lasts: its first tick runs at once, and the first tick after the approval has ended is denied. A denied tick stops the loop; the loop status and `/loop` in chat report `hook_trust_denied`. With the default interval of 30 minutes the denied tick is the second one. To continue, submit a new review request, have it approved and start the loop again. A loop in a workspace without a hook configuration needs no approval.
 
-Every non-demo loop tick also rechecks that the owner account is enabled and still owns the session and its workspace, with or without a hook configuration. A loop of a disabled owner is denied at its next tick and stops; it does not resume when the account is enabled again. A demo loop is not checked and continues. A denied tick does not undo what earlier ticks did.
+Every loop tick, demo or not, first checks that the owner account still exists and is enabled, and then opens the session through that owner's own store, with or without a hook configuration. A tick whose account or session is gone ends the loop; the loop status names the reason (`owner_disabled`, `owner_missing`, `owner_check_failed` or `session_deleted`). Disabling an account also ends that account's loops at once, including a tick that is running, and they do not resume when the account is enabled again. Deleting a session stops its loop in the same way. An administrator can list the running loops of all accounts with `GET /api/admin/loops`, which leaves out the task text, and stop one with `DELETE /api/admin/loops/{sid}`. A stopped or denied tick does not undo what it or earlier ticks did. A chat turn is not stopped by a deletion: a session that is deleted while a chat turn is running on it is saved again by that turn (issue #16).
